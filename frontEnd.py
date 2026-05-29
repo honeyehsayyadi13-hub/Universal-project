@@ -1,9 +1,8 @@
 " Program that shows a user an optimized map of getting to rides at the amusement park Universal"
 import pygame
-from tkinter import *
-
 pygame.init()
-win = Tk()
+
+popup = None  # will store (x, y, text)
 
 clock = pygame.time.Clock()
 
@@ -22,9 +21,9 @@ mapImage = pygame.transform.scale(mapImage, (1000, 800))
 
 # button positions
 buttons = [
-    (300, 200, False),
-    (500, 350, False),
-    (700, 150, False)
+     [300, 200, False],
+    [500, 350, False],
+    [700, 150, False]
 ]
 
 running = True
@@ -43,8 +42,14 @@ while running:
                 y=button[1]
                 distance=((mx-x)**2+(my-y)**2)*0.5
                 
-                if distance <=10:
-                    button[2]=True
+                if distance <= 10:
+
+                    # turn ALL buttons red
+                    for b in buttons:
+                        b[2] = False
+
+                    # turn clicked button green
+                    button[2] = True
 
                     
 
