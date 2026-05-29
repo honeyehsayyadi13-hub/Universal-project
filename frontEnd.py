@@ -8,8 +8,10 @@ pygame.display.set_caption("front_end")
 
 clock = pygame.time.Clock()
 
+##map image
 mapImage=pygame.image.load("map.png")
-mapImage = pygame.transform.scale(mapImage, (1000, 900))
+##scaling image
+mapImage = pygame.transform.scale(mapImage, (1000, 800))
 
 
 running = True
