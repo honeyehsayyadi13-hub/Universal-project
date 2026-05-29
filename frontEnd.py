@@ -1,30 +1,59 @@
 " Program that shows a user an optimized map of getting to rides at the amusement park Universal"
 import pygame
+import requests
+import threading
+import Data
+
+
 pygame.init()
-
-popup = None  # will store (x, y, text)
-
-clock = pygame.time.Clock()
-
 
 screen = pygame.display.set_mode((1200,800))
 pygame.display.set_caption("front_end")
 
+threading.Thread(target=Data.update_backend, daemon=True).start()
+
 clock = pygame.time.Clock()
 
-##map image
+##map image and scaling
 mapImage=pygame.image.load("map.png")
-##scaling image
 mapImage = pygame.transform.scale(mapImage, (1000, 800))
 
-##clickable buttons work
+#images
+hulk_img = pygame.image.load("hulk_logo.webp")
+hulk_img = pygame.transform.scale(hulk_img, (60, 60))
+
+#image array
+ride_images = {
+    "hulk": hulk_img,
+}
+
+
 
 # button positions
 buttons = [
-     [300, 200, False],
-    [500, 350, False],
-    [700, 150, False]
+    [490, 620, False, "hulk"],
+    [457, 622, False, "stormForce"],
+    [404, 574, False, "doctorDoom"],
+    [410, 530, False, "spiderMan"],
+    [394, 380, False, "bilgeRat"],
+    [276, 379, False, "ripsawFalls"],
+    [271, 246, False, "skullIsland"],
+    [514, 308, False, "velociCoaster"],
+    [412, 217, False, "riverAdventure"],
+    [745, 204, False, "hogwartsTrain"],
+    [635, 186, False, "hippogriff"],
+    [717, 248, False, "hagrid"],
+    [715, 495, False, "drSuessAirRide"],
+    [715, 495, False, "caroSuessel"],
+    [714, 572, False, "oneFishtwoFish"],
+    [695, 597, False, "catInTheHat"],
+    [605, 192, False, "harryPotter"]
 ]
+
+##wait times connection
+ride_waits = {}
+popup = None  # will store (x, y, text)
+
 
 running = True
 
@@ -37,19 +66,33 @@ while running:
         
         if event.type==pygame.MOUSEBUTTONDOWN:
             mx, my=pygame.mouse.get_pos()
+            
+            popup= None #resets popup at every click
+            
             for button in buttons:
-                x=button[0]
-                y=button[1]
-                distance=((mx-x)**2+(my-y)**2)*0.5
-                
-                if distance <= 10:
+                x, y = button[0], button[1]
 
-                    # turn ALL buttons red
+                distance_squared = (mx - x)**2 + (my - y)**2
+
+                if distance_squared <= 400:
+
+                    # turn ALL buttons off first
                     for b in buttons:
                         b[2] = False
 
-                    # turn clicked button green
+                    # turn clicked one ON
                     button[2] = True
+
+                    # popup
+                    ride_id = button[3]
+                    wait = Data.ride_waits.get(ride_id, None)
+
+                    if wait is None:
+                        text = f"{ride_id}\nLoading..."
+                    else:
+                        text = f"{ride_id} - {wait} min"
+
+                        popup = (x + 15, y - 15, text)
 
                     
 
@@ -60,20 +103,46 @@ while running:
     screen.blit(mapImage, (0, 0))
     
     # draw buttons
+ # draw buttons
     for button in buttons:
-
         x = button[0]
         y = button[1]
         clicked = button[2]
+        ride_id = button[3]
 
-        # if clicked -> green
-        if clicked:
-            color = (0,255,0)
+        # ============================================================
+        # CHANGE 3: Blit the image if one exists, otherwise draw circle
+        # ============================================================
+        if ride_id in ride_images:
+            img = ride_images[ride_id]
+            img_rect = img.get_rect(center=(x, y))
+            if clicked:
+                pygame.draw.circle(screen, (0, 255, 0), (x, y), 18)  # green highlight behind image
+            screen.blit(img, img_rect)
         else:
-            color = (255,0,0)
+            color = (0, 255, 0) if clicked else (255, 0, 0)
+            pygame.draw.circle(screen, color, (x, y), 10)
 
-        pygame.draw.circle(screen, color, (x,y), 10)
-    
+            
+    if popup is not None:
+
+        px, py, text = popup
+
+        pygame.draw.rect(screen, (30, 30, 30), (px, py, 120, 50))  # box
+        pygame.draw.rect(screen, (255, 255, 255), (px, py, 120, 50), 2)  # border
+
+        font = pygame.font.SysFont("Arial", 14)
+        
+        
+
+
+        lines = text.split("\n")
+        
+        for i, line in enumerate(lines):
+                label = font.render(line, True, (255, 255, 255))
+                screen.blit(label, (px + 10, py + 10 + i * 18))
+            
+            
     # update window
     pygame.display.update()
 
