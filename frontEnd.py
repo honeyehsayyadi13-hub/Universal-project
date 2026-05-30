@@ -75,6 +75,7 @@ ride_images = {
     "harryPotter":    harryPotter_img,
 }
 
+# ride names
 ride_names = {
     "hulk": "The Incredible Hulk Coaster",
     "stormForce": "Storm Force Accelatron",
@@ -160,7 +161,7 @@ while running:
                     if wait is None:
                         text = f"{display_name}\nLoading..."
                     else:
-                        text = f"{display_name} - {wait} min"
+                        text = f"{display_name}\n{wait} min"
 
                     popup = (x + 15, y - 15, text)
                     break
