@@ -19,7 +19,7 @@ print(current_time)
 rides = ["hulk", "stormForce", "doctorDoom", "spiderMan", 
          "bilgeRat", "ripsawFalls", "skullIsland", "velociCoaster", 
          "riverAdventure", "hogwartsTrain", "hippogriff", "hagrid", 
-         "drSuessAirRide", "caroSuessel", "oneFishtwoFish", "catInTheHat", "harryPotter"]
+         "drSeussAirRide", "caroSeussel", "oneFishtwoFish", "catInTheHat", "harryPotter"]
 
 rideInfo = []
 
@@ -134,14 +134,14 @@ def getLiveWaitTimes():
                 
             elif name=="The High in the Sky Seuss Trolley Train Ride!™":
                 print(f"  {name}: {status}")
-                rideLog("drSuessAirRide", current_day, current_time, wait)
-                ride_waits["drSuessAirRide"] = wait
+                rideLog("drSeussAirRide", current_day, current_time, wait)
+                ride_waits["drSeussAirRide"] = wait
                 print()
                 
             elif name=="Caro-Seuss-el™":
                 print(f"  {name}: {status}")
-                rideLog("caroSuessel", current_day, current_time, wait)
-                ride_waits["caroSuessel"] = wait
+                rideLog("caroSeussel", current_day, current_time, wait)
+                ride_waits["caroSeussel"] = wait
                 print()
                 
             elif name=="One Fish, Two Fish, Red Fish, Blue Fish™":

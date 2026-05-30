@@ -18,19 +18,65 @@ clock = pygame.time.Clock()
 mapImage=pygame.image.load("map.png")
 mapImage = pygame.transform.scale(mapImage, (1000, 800))
 
-#images
-hulk_img = pygame.image.load("hulk_logo.webp")
-hulk_img = pygame.transform.scale(hulk_img, (60, 60))
+# ── helper functions ──────────────────────────────────────────────
+def scale_img(img, target_width=90):
+    orig_w, orig_h = img.get_size()
+    target_height = int(target_width * orig_h / orig_w)
+    return pygame.transform.smoothscale(img, (target_width, target_height))
 
-#image array
+def remove_white_background(img, threshold=240):
+    img = img.convert_alpha()
+    pixels = pygame.surfarray.pixels3d(img)
+    alpha = pygame.surfarray.pixels_alpha(img)
+    mask = (pixels[:,:,0] > threshold) & \
+           (pixels[:,:,1] > threshold) & \
+           (pixels[:,:,2] > threshold)
+    alpha[mask] = 0
+    del pixels, alpha
+    return img
+
+# ── load & process images ─────────────────────────────────────────
+hulk_img          = scale_img(remove_white_background(pygame.image.load("logos/hulk_logo.png").convert_alpha()))
+stormForce_img    = scale_img(remove_white_background(pygame.image.load("logos/stormForce_logo.png").convert_alpha()))
+doctorDoom_img    = scale_img(remove_white_background(pygame.image.load("logos/Doctor-dooms-fearfall-ride-logo-b.png").convert_alpha()))
+spiderMan_img     = scale_img(remove_white_background(pygame.image.load("logos/Amazing-adventures-spider-man-ride-logo-b.png").convert_alpha()))
+ripsawFalls_img   = scale_img(remove_white_background(pygame.image.load("logos/Dudley-do-rights-ripsaw-falls-water-ride-logo-b.png").convert_alpha()))
+riverAdventure_img= scale_img(remove_white_background(pygame.image.load("logos/jurrasicPark.png").convert_alpha()))
+bilgeRat_img      = scale_img(remove_white_background(pygame.image.load("logos/bilge_rat.png").convert_alpha()))
+skullIsland_img   = scale_img(remove_white_background(pygame.image.load("logos/Skull_Island-_Reign_of_Kong_Logo.png").convert_alpha()))
+velociCoaster_img = scale_img(remove_white_background(pygame.image.load("logos/velocicoaster.png").convert_alpha()))
+hogwartsTrain_img = scale_img(remove_white_background(pygame.image.load("logos/express.png").convert_alpha()))
+hippogriff_img    = scale_img(remove_white_background(pygame.image.load("logos/hippogriph.png").convert_alpha()))
+hagrid_img        = scale_img(remove_white_background(pygame.image.load("logos/Hagrid27s_Magical_Creatures_Motorbike_Adventure.png").convert_alpha()))
+harryPotter_img   = scale_img(remove_white_background(pygame.image.load("logos/hogwarts.png").convert_alpha()))
+catInTheHat_img   = scale_img(remove_white_background(pygame.image.load("logos/cat.png").convert_alpha()))
+oneFishtwoFish_img= scale_img(remove_white_background(pygame.image.load("logos/blue.png").convert_alpha()))
+drSeussAirRide_img= scale_img(remove_white_background(pygame.image.load("logos/seuss.png").convert_alpha()))
+caroSeussel_img   = scale_img(remove_white_background(pygame.image.load("logos/caro.png").convert_alpha()))
+
+# ── ride image dict ───────────────────────────────────────────────
 ride_images = {
-    "hulk": hulk_img,
+    "hulk":           hulk_img,
+    "stormForce":     stormForce_img,
+    "doctorDoom":     doctorDoom_img,
+    "spiderMan":      spiderMan_img,
+    "bilgeRat":       bilgeRat_img,
+    "ripsawFalls":    ripsawFalls_img,
+    "skullIsland":    skullIsland_img,
+    "velociCoaster":  velociCoaster_img,
+    "riverAdventure": riverAdventure_img,
+    "hogwartsTrain":  hogwartsTrain_img,
+    "hippogriff":     hippogriff_img,
+    "hagrid":         hagrid_img,
+    "drSeussAirRide": drSeussAirRide_img,
+    "caroSeussel":    caroSeussel_img,
+    "oneFishtwoFish": oneFishtwoFish_img,
+    "catInTheHat":    catInTheHat_img,
+    "harryPotter":    harryPotter_img,
 }
 
-
-
-# button positions
-buttons = [
+# ── buttons: [x, y, clicked, ride_id, rect] ──────────────────────
+raw_buttons = [
     [490, 620, False, "hulk"],
     [457, 622, False, "stormForce"],
     [404, 574, False, "doctorDoom"],
@@ -43,110 +89,86 @@ buttons = [
     [745, 204, False, "hogwartsTrain"],
     [635, 186, False, "hippogriff"],
     [717, 248, False, "hagrid"],
-    [715, 495, False, "drSuessAirRide"],
-    [715, 495, False, "caroSuessel"],
+    [715, 495, False, "drSeussAirRide"],
+    [715, 495, False, "caroSeussel"],
     [714, 572, False, "oneFishtwoFish"],
     [695, 597, False, "catInTheHat"],
-    [605, 192, False, "harryPotter"]
+    [605, 192, False, "harryPotter"],
 ]
 
-##wait times connection
-ride_waits = {}
-popup = None  # will store (x, y, text)
+# attach a rect to each button
+buttons = []
+for b in raw_buttons:
+    x, y, clicked, ride_id = b
+    if ride_id in ride_images:
+        rect = ride_images[ride_id].get_rect(center=(x, y))
+    else:
+        rect = pygame.Rect(x - 10, y - 10, 20, 20)
+    buttons.append([x, y, clicked, ride_id, rect])
 
+popup = None
 
+# ── main loop ─────────────────────────────────────────────────────
 running = True
 
 while running:
 
-    # check events
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
-        
-        if event.type==pygame.MOUSEBUTTONDOWN:
-            mx, my=pygame.mouse.get_pos()
-            
-            popup= None #resets popup at every click
-            
+
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            mx, my = pygame.mouse.get_pos()
+            popup = None
+
             for button in buttons:
-                x, y = button[0], button[1]
+                x, y, clicked, ride_id, rect = button[0], button[1], button[2], button[3], button[4]
 
-                distance_squared = (mx - x)**2 + (my - y)**2
-
-                if distance_squared <= 400:
-
-                    # turn ALL buttons off first
+                if rect.collidepoint(mx, my):
+                    # deselect all
                     for b in buttons:
                         b[2] = False
 
-                    # turn clicked one ON
+                    # select clicked
                     button[2] = True
 
-                    # popup
-                    ride_id = button[3]
                     wait = Data.ride_waits.get(ride_id, None)
-
                     if wait is None:
                         text = f"{ride_id}\nLoading..."
                     else:
                         text = f"{ride_id} - {wait} min"
 
-                        popup = (x + 15, y - 15, text)
+                    popup = (x + 15, y - 15, text)
+                    break  # stop checking once one is hit
 
-                    
-
-    # fill screen
-    screen.fill((255,255,255))   
-
-    #displaying the image
+    # ── draw ──────────────────────────────────────────────────────
+    screen.fill((255, 255, 255))
     screen.blit(mapImage, (0, 0))
-    
-    # draw buttons
- # draw buttons
-    for button in buttons:
-        x = button[0]
-        y = button[1]
-        clicked = button[2]
-        ride_id = button[3]
 
-        # ============================================================
-        # CHANGE 3: Blit the image if one exists, otherwise draw circle
-        # ============================================================
+    for button in buttons:
+        x, y, clicked, ride_id, rect = button[0], button[1], button[2], button[3], button[4]
+
         if ride_id in ride_images:
             img = ride_images[ride_id]
-            img_rect = img.get_rect(center=(x, y))
             if clicked:
-                pygame.draw.circle(screen, (0, 255, 0), (x, y), 18)  # green highlight behind image
-            screen.blit(img, img_rect)
+                pygame.draw.rect(screen, (0, 255, 0), rect.inflate(6, 6), 3)  # green outline
+            screen.blit(img, rect)
         else:
             color = (0, 255, 0) if clicked else (255, 0, 0)
             pygame.draw.circle(screen, color, (x, y), 10)
 
-            
     if popup is not None:
-
         px, py, text = popup
-
-        pygame.draw.rect(screen, (30, 30, 30), (px, py, 120, 50))  # box
-        pygame.draw.rect(screen, (255, 255, 255), (px, py, 120, 50), 2)  # border
-
-        font = pygame.font.SysFont("Arial", 14)
-        
-        
-
-
         lines = text.split("\n")
-        
+        box_w, box_h = 150, 20 + len(lines) * 18
+        pygame.draw.rect(screen, (30, 30, 30), (px, py, box_w, box_h))
+        pygame.draw.rect(screen, (255, 255, 255), (px, py, box_w, box_h), 2)
+        font = pygame.font.SysFont("Arial", 14)
         for i, line in enumerate(lines):
-                label = font.render(line, True, (255, 255, 255))
-                screen.blit(label, (px + 10, py + 10 + i * 18))
-            
-            
-    # update window
-    pygame.display.update()
+            label = font.render(line, True, (255, 255, 255))
+            screen.blit(label, (px + 10, py + 10 + i * 18))
 
-    # FPS
+    pygame.display.update()
     clock.tick(60)
 
 pygame.quit()
