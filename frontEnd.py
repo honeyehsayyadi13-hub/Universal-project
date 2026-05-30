@@ -161,7 +161,7 @@ while running:
                     if wait is None:
                         text = f"{display_name}\nLoading..."
                     else:
-                        text = f"{display_name}\n{wait} min"
+                        text = f"{display_name}\n{wait} mins"
 
                     popup = (x + 15, y - 15, text)
                     break
@@ -183,12 +183,13 @@ while running:
     if popup is not None:
         px, py, text = popup
         lines = text.split("\n")
+        font = pygame.font.SysFont("Arial", 14)
         box_w, box_h = 150, 20 + len(lines) * 18
         pygame.draw.rect(screen, (30, 30, 30), (px, py, box_w, box_h))
         pygame.draw.rect(screen, (255, 255, 255), (px, py, box_w, box_h), 2)
-        font = pygame.font.SysFont("Arial", 14)
         for i, line in enumerate(lines):
             label = font.render(line, True, (255, 255, 255))
+            label_rect = label.get_rect(centerx=px + box_w // 2, top=py + 10 + i * 18)
             screen.blit(label, (px + 10, py + 10 + i * 18))
 
     pygame.display.update()
