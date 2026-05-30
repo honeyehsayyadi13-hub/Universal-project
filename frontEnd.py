@@ -75,6 +75,26 @@ ride_images = {
     "harryPotter":    harryPotter_img,
 }
 
+ride_names = {
+    "hulk": "The Incredible Hulk Coaster",
+    "stormForce": "Storm Force Accelatron",
+    "doctorDoom": "Doctor Doom's Fearfall",
+    "spiderMan": "The Amazing Adventures of Spider-Man",
+    "bilgeRat": "Popeye & Bluto's Bilge-Rat Barges",
+    "ripsawFalls": "Dudley Do-Right's Ripsaw Falls",
+    "skullIsland": "Skull Island: Reign of Kong",
+    "velociCoaster": "Jurassic World VelociCoaster",
+    "riverAdventure": "Jurassic Park River Adventure",
+    "hogwartsTrain": "Hogwarts Express",
+    "hippogriff": "Flight of the Hippogriff",
+    "hagrid": "Hagrid's Magical Creatures Motorbike Adventure",
+    "drSeussAirRide": "High in the Sky Seuss Trolley Train Ride",
+    "caroSeussel": "Caro-Seuss-el",
+    "oneFishtwoFish": "One Fish, Two Fish, Red Fish, Blue Fish",
+    "catInTheHat": "The Cat in the Hat",
+    "harryPotter": "Harry Potter and the Forbidden Journey"
+}
+
 # ── buttons: [x, y, clicked, ride_id, rect] ──────────────────────
 raw_buttons = [
     [490, 620, False, "hulk"],
@@ -132,14 +152,14 @@ while running:
                     # select clicked
                     button[2] = True
 
-                    wait = Data.ride_waits.get(ride_id, None)
-                    if wait is None:
-                        text = f"{ride_id}\nLoading..."
-                    else:
-                        text = f"{ride_id} - {wait} min"
+                    display_name = ride_names.get(ride_id, ride_id)
 
-                    popup = (x + 15, y - 15, text)
-                    break  # stop checking once one is hit
+                    wait = Data.ride_waits.get(ride_id, None)
+
+                    if wait is None:
+                        text = f"{display_name}\nLoading..."
+                    else:
+                        text = f"{display_name} - {wait} min"
 
     # ── draw ──────────────────────────────────────────────────────
     screen.fill((255, 255, 255))
@@ -150,8 +170,6 @@ while running:
 
         if ride_id in ride_images:
             img = ride_images[ride_id]
-            if clicked:
-                pygame.draw.rect(screen, (0, 255, 0), rect.inflate(6, 6), 3)  # green outline
             screen.blit(img, rect)
         else:
             color = (0, 255, 0) if clicked else (255, 0, 0)
