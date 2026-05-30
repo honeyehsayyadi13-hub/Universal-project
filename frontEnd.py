@@ -145,6 +145,7 @@ while running:
                 x, y, clicked, ride_id, rect = button[0], button[1], button[2], button[3], button[4]
 
                 if rect.collidepoint(mx, my):
+
                     # deselect all
                     for b in buttons:
                         b[2] = False
@@ -160,6 +161,9 @@ while running:
                         text = f"{display_name}\nLoading..."
                     else:
                         text = f"{display_name} - {wait} min"
+
+                    popup = (x + 15, y - 15, text)
+                    break
 
     # ── draw ──────────────────────────────────────────────────────
     screen.fill((255, 255, 255))
