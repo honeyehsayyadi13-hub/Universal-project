@@ -54,8 +54,11 @@ oneFishtwoFish_img= scale_img(remove_white_background(pygame.image.load("logos/b
 drSeussAirRide_img= scale_img(remove_white_background(pygame.image.load("logos/seuss.png").convert_alpha()))
 caroSeussel_img   = scale_img(remove_white_background(pygame.image.load("logos/caro.png").convert_alpha()))
 
+# popup_bg = pygame.image.load("text_bubble.png").convert_alpha()
+# scaled_bg = pygame.transform.scale(popup_bg, (200, 200))
+
 popup_bg = pygame.image.load("text_bubble.png").convert_alpha()
-scaled_bg = pygame.transform.scale(popup_bg, (200, 200))
+popup_bg = pygame.transform.smoothscale(popup_bg, (220, 120))
 
 
 # ── ride image dict ───────────────────────────────────────────────
@@ -184,17 +187,35 @@ while running:
             color = (0, 255, 0) if clicked else (255, 0, 0)
             pygame.draw.circle(screen, color, (x, y), 10)
 
-    if popup is not None:          # ← indented inside the while loop
+    # if popup is not None:          # ← indented inside the while loop
+    #     px, py, text = popup
+    #     lines = text.split("\n")
+    #     font = pygame.font.SysFont("Arial", 10)
+    #     box_w, box_h = 150, 20 + len(lines) * 18
+
+    #     screen.blit(scaled_bg, (px, py))
+
+    #     for i, line in enumerate(lines):
+    #         label = font.render(line, True, (0, 0, 0))
+    #         label_rect = label.get_rect(centerx=px + box_w // 2, top=py + 10 + i * 18)
+    #         screen.blit(label, label_rect)
+
+    if popup is not None:
         px, py, text = popup
         lines = text.split("\n")
-        font = pygame.font.SysFont("Arial", 14)
-        box_w, box_h = 150, 20 + len(lines) * 18
 
-        screen.blit(scaled_bg, (px, py))
+        font = pygame.font.SysFont("Arial", 14)
+
+        screen.blit(popup_bg, (px, py))
 
         for i, line in enumerate(lines):
             label = font.render(line, True, (0, 0, 0))
-            label_rect = label.get_rect(centerx=px + box_w // 2, top=py + 10 + i * 18)
+
+            label_rect = label.get_rect(
+                centerx=px + 110,  # half of 220
+                top=py + 15 + i * 18
+            )
+
             screen.blit(label, label_rect)
 
     pygame.display.update()        # ← also inside the while loop
