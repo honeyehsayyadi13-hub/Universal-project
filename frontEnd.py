@@ -54,6 +54,8 @@ oneFishtwoFish_img= scale_img(remove_white_background(pygame.image.load("logos/b
 drSeussAirRide_img= scale_img(remove_white_background(pygame.image.load("logos/seuss.png").convert_alpha()))
 caroSeussel_img   = scale_img(remove_white_background(pygame.image.load("logos/caro.png").convert_alpha()))
 
+popup_bg = pygame.image.load("text_bubble.png").convert_alpha()
+
 # ── ride image dict ───────────────────────────────────────────────
 ride_images = {
     "hulk":           hulk_img,
@@ -80,41 +82,41 @@ ride_names = {
     "hulk": "The Incredible Hulk Coaster",
     "stormForce": "Storm Force Accelatron",
     "doctorDoom": "Doctor Doom's Fearfall",
-    "spiderMan": "The Amazing Adventures of Spider-Man",
-    "bilgeRat": "Popeye & Bluto's Bilge-Rat Barges",
-    "ripsawFalls": "Dudley Do-Right's Ripsaw Falls",
+    "spiderMan": "The Amazing Adventures of\nSpider-Man",
+    "bilgeRat": "Popeye & Bluto's\nBilge-Rat Barges",
+    "ripsawFalls": "Dudley Do-Right's\nRipsaw Falls",
     "skullIsland": "Skull Island: Reign of Kong",
-    "velociCoaster": "Jurassic World VelociCoaster",
-    "riverAdventure": "Jurassic Park River Adventure",
+    "velociCoaster": "Jurassic World\nVelociCoaster",
+    "riverAdventure": "Jurassic Park\nRiver Adventure",
     "hogwartsTrain": "Hogwarts Express",
     "hippogriff": "Flight of the Hippogriff",
-    "hagrid": "Hagrid's Magical Creatures Motorbike Adventure",
-    "drSeussAirRide": "High in the Sky Seuss Trolley Train Ride",
+    "hagrid": "Hagrid's Magical Creatures\nMotorbike Adventure",
+    "drSeussAirRide": "High in the Sky\nSeuss Trolley Train Ride",
     "caroSeussel": "Caro-Seuss-el",
-    "oneFishtwoFish": "One Fish, Two Fish, Red Fish, Blue Fish",
+    "oneFishtwoFish": "One Fish, Two Fish,\nRed Fish, Blue Fish",
     "catInTheHat": "The Cat in the Hat",
-    "harryPotter": "Harry Potter and the Forbidden Journey"
+    "harryPotter": "Harry Potter and the\nForbidden Journey"
 }
 
 # ── buttons: [x, y, clicked, ride_id, rect] ──────────────────────
 raw_buttons = [
-    [490, 620, False, "hulk"],
-    [457, 622, False, "stormForce"],
-    [404, 574, False, "doctorDoom"],
-    [410, 530, False, "spiderMan"],
+    [488, 620, False, "hulk"],
+    [469, 654, False, "stormForce"],
+    [411, 572, False, "doctorDoom"],
+    [418, 527, False, "spiderMan"],
     [394, 380, False, "bilgeRat"],
     [276, 379, False, "ripsawFalls"],
     [271, 246, False, "skullIsland"],
     [514, 308, False, "velociCoaster"],
     [412, 217, False, "riverAdventure"],
-    [745, 204, False, "hogwartsTrain"],
-    [635, 186, False, "hippogriff"],
-    [717, 248, False, "hagrid"],
+    [832, 262, False, "hogwartsTrain"],
+    [668, 165, False, "hippogriff"],
+    [742, 218, False, "hagrid"],
     [715, 495, False, "drSeussAirRide"],
     [715, 495, False, "caroSeussel"],
-    [714, 572, False, "oneFishtwoFish"],
-    [695, 597, False, "catInTheHat"],
-    [605, 192, False, "harryPotter"],
+    [741, 562, False, "oneFishtwoFish"],
+    [683, 631, False, "catInTheHat"],
+    [595, 182, False, "harryPotter"],
 ]
 
 # attach a rect to each button
@@ -163,7 +165,7 @@ while running:
                     else:
                         text = f"{display_name}\n{wait} mins"
 
-                    popup = (x + 15, y - 15, text)
+                    popup = (x- 75, y - 100, text)
                     break
 
     # ── draw ──────────────────────────────────────────────────────
@@ -180,17 +182,21 @@ while running:
             color = (0, 255, 0) if clicked else (255, 0, 0)
             pygame.draw.circle(screen, color, (x, y), 10)
 
-    if popup is not None:
-        px, py, text = popup
-        lines = text.split("\n")
-        font = pygame.font.SysFont("Arial", 14)
-        box_w, box_h = 150, 20 + len(lines) * 18
-        pygame.draw.rect(screen, (30, 30, 30), (px, py, box_w, box_h))
-        pygame.draw.rect(screen, (255, 255, 255), (px, py, box_w, box_h), 2)
-        for i, line in enumerate(lines):
-            label = font.render(line, True, (255, 255, 255))
-            label_rect = label.get_rect(centerx=px + box_w // 2, top=py + 10 + i * 18)
-            screen.blit(label, (px + 10, py + 10 + i * 18))
+if popup is not None:
+    px, py, text = popup
+    lines = text.split("\n")
+    font = pygame.font.SysFont("Arial", 14)
+    box_w, box_h = 150, 20 + len(lines) * 18
+
+    # draw background image instead of rectangle
+    scaled_bg = pygame.transform.scale(popup_bg, (box_w, box_h))
+    screen.blit(scaled_bg, (px, py))
+
+    # text overlaid on top
+    for i, line in enumerate(lines):
+        label = font.render(line, True, (255, 255, 255))
+        label_rect = label.get_rect(centerx=px + box_w // 2, top=py + 10 + i * 18)
+        screen.blit(label, label_rect)
 
     pygame.display.update()
     clock.tick(60)
