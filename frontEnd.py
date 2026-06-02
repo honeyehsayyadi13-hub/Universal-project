@@ -55,6 +55,8 @@ drSeussAirRide_img= scale_img(remove_white_background(pygame.image.load("logos/s
 caroSeussel_img   = scale_img(remove_white_background(pygame.image.load("logos/caro.png").convert_alpha()))
 
 popup_bg = pygame.image.load("text_bubble.png").convert_alpha()
+scaled_bg = pygame.transform.scale(popup_bg, (200, 200))
+
 
 # ── ride image dict ───────────────────────────────────────────────
 ride_images = {
@@ -168,7 +170,7 @@ while running:
                     popup = (x- 75, y - 100, text)
                     break
 
-    # ── draw ──────────────────────────────────────────────────────
+# ── draw ──────────────────────────────────────────────────────
     screen.fill((255, 255, 255))
     screen.blit(mapImage, (0, 0))
 
@@ -182,23 +184,20 @@ while running:
             color = (0, 255, 0) if clicked else (255, 0, 0)
             pygame.draw.circle(screen, color, (x, y), 10)
 
-if popup is not None:
-    px, py, text = popup
-    lines = text.split("\n")
-    font = pygame.font.SysFont("Arial", 14)
-    box_w, box_h = 150, 20 + len(lines) * 18
+    if popup is not None:          # ← indented inside the while loop
+        px, py, text = popup
+        lines = text.split("\n")
+        font = pygame.font.SysFont("Arial", 14)
+        box_w, box_h = 150, 20 + len(lines) * 18
 
-    # draw background image instead of rectangle
-    scaled_bg = pygame.transform.scale(popup_bg, (box_w, box_h))
-    screen.blit(scaled_bg, (px, py))
+        screen.blit(scaled_bg, (px, py))
 
-    # text overlaid on top
-    for i, line in enumerate(lines):
-        label = font.render(line, True, (255, 255, 255))
-        label_rect = label.get_rect(centerx=px + box_w // 2, top=py + 10 + i * 18)
-        screen.blit(label, label_rect)
+        for i, line in enumerate(lines):
+            label = font.render(line, True, (0, 0, 0))
+            label_rect = label.get_rect(centerx=px + box_w // 2, top=py + 10 + i * 18)
+            screen.blit(label, label_rect)
 
-    pygame.display.update()
-    clock.tick(60)
+    pygame.display.update()        # ← also inside the while loop
+    clock.tick(60)                 # ← also inside the while loop
 
 pygame.quit()
