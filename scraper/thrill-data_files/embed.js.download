@@ -1,0 +1,32 @@
+
+  $(document).ready(function(){
+
+  $('#graph-copy').click(function() {
+
+    var info = document.getElementById('graph1');
+    info.select();
+    info.setSelectionRange(0, 99999);
+    document.execCommand("copy");
+  });
+
+
+  $('#embed').toggle();
+
+  $('#embedbtn').click(function()
+  {
+      $('#embed').toggle();
+  });
+
+  $('#download').click(function()
+  {
+      $('#dl-section').toggle();
+  });
+
+  $('#reportwait').toggle();
+
+  $('#reportarea').click(function()
+  {
+      $('#reportwait').toggle();
+  });
+
+});
