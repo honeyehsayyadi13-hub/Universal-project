@@ -2,33 +2,31 @@ from supabase import create_client
 import json
 
 
-# Supabase info
 url = "https://azbjjemtcpaeqfqauzod.supabase.co"
-
-key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF6YmpqZW10Y3BhZXFmcWF1em9kIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA0Mzc3NDIsImV4cCI6MjA5NjAxMzc0Mn0.VQ84Z1DDokGWDaW11y_n0rXRKFfN6T7pcC-h4PsAT34"
-
+key = "YOUR_KEY"
 
 supabase = create_client(url, key)
 
 
-# Load scraped data
 with open("wait_times.json", "r") as file:
     waits = json.load(file)
 
 
-# Upload each wait time
-for wait in waits:
+BATCH_SIZE = 500
 
-    data = {
-        "timestamp": wait["timestamp"],
-        "waittime": wait["waittime"],
-        "issue_with_ride": wait["issue_with_ride"],
-        "ride_id": wait["ride_id"]
-    }
 
-    response = supabase.table("wait_times").insert(data).execute()
+for i in range(0, len(waits), BATCH_SIZE):
 
-    print(response)
+    batch = waits[i:i+BATCH_SIZE]
+
+    response = (
+        supabase
+        .table("wait_times")
+        .insert(batch)
+        .execute()
+    )
+
+    print(f"Uploaded {len(batch)} records")
 
 
 print("Upload complete!")
