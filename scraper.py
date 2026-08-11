@@ -4,6 +4,7 @@ import json
 import time
 import random
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
  
 import requests
 from bs4 import BeautifulSoup
@@ -22,6 +23,8 @@ from supabase import create_client, Client
 #
 # Use the SERVICE ROLE key (not the anon key) since this script writes data
 # and should bypass row-level-security policies meant for end users.
+
+
  
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
@@ -35,6 +38,7 @@ if not SUPABASE_URL or not SUPABASE_KEY:
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
  
 TABLE_NAME = "ride_waits"
+PARK_TZ = ZoneInfo("America/New_York")
  
  
 PARK_WAITS_URL = "https://www.thrill-data.com/wa/park-waits/islands-of-adventure"
@@ -430,7 +434,7 @@ def run_live_scrape(park="islands-of-adventure"):
  
     results = get_current_waits_for_park(park)
  
-    now = datetime.now()
+    now = datetime.now(PARK_TZ)
     rows = [
         {
             "ride_id": r["ride_id"],
