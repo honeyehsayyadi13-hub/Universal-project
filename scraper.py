@@ -1,19 +1,40 @@
-import requests
+import os
 import re
 import json
-import psycopg2
-from datetime import datetime, timedelta
-from bs4 import BeautifulSoup
 import time
 import random
+from datetime import datetime, timedelta
+ 
+import requests
+from bs4 import BeautifulSoup
+from supabase import create_client, Client
  
  
-DB = {
-    "host": "localhost",
-    "database": "thrill",
-    "user": "postgres",
-    "password": "password"
-}
+# ---------------------------------------------------------------------------
+# Supabase setup
+# ---------------------------------------------------------------------------
+# Reads credentials from environment variables so nothing sensitive is
+# committed to the repo. In GitHub Actions these come from repo secrets
+# (see .github/workflows/scrape.yml). Locally, export them yourself:
+#
+#   export SUPABASE_URL="https://xxxxx.supabase.co"
+#   export SUPABASE_KEY="your-service-role-key"
+#
+# Use the SERVICE ROLE key (not the anon key) since this script writes data
+# and should bypass row-level-security policies meant for end users.
+ 
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+ 
+if not SUPABASE_URL or not SUPABASE_KEY:
+    raise RuntimeError(
+        "Missing SUPABASE_URL or SUPABASE_KEY environment variables. "
+        "Set them locally with `export`, or as GitHub Actions secrets."
+    )
+ 
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+ 
+TABLE_NAME = "ride_waits"
  
  
 PARK_WAITS_URL = "https://www.thrill-data.com/wa/park-waits/islands-of-adventure"
@@ -82,7 +103,7 @@ def match_ride_id(thrilldata_name):
  
 # kept for the historical/per-ride endpoints (rideavg etc.) - fill in
 # "title" slugs here only for rides you want day-by-day history for.
-# Not needed anymore for current wait times; see fetch_current_park_waits().
+# Not needed for current wait times; see fetch_current_park_waits().
 RIDES = {
     1:  {"park": "islands-of-adventure", "title": "the-incredible-hulk-coaster",              "tdid": None},
     2:  {"park": "islands-of-adventure", "title": "storm-force-accelatron",                    "tdid": None},
@@ -92,7 +113,7 @@ RIDES = {
     6:  {"park": "islands-of-adventure", "title": "dudley-do-rights-ripsaw-falls",               "tdid": None},
     7:  {"park": "islands-of-adventure", "title": "skull-island-reign-of-kong",                  "tdid": None},
     8:  {"park": "islands-of-adventure", "title": "jurassicworldvelocicoaster",                  "tdid": 2015},
-    9: {"park": "islands-of-adventure", "title": "jurassicparkriveradventure", "tdid": None},
+    9:  {"park": "islands-of-adventure", "title": "jurassicparkriveradventure",                  "tdid": None},
     10: {"park": "islands-of-adventure", "title": "hogwarts-express",                             "tdid": None},
     11: {"park": "islands-of-adventure", "title": "flight-of-the-hippogriff",                      "tdid": None},
     12: {"park": "islands-of-adventure", "title": "hagrids-magical-creatures-motorbike-adventure",  "tdid": None},
@@ -186,7 +207,7 @@ def traces_to_rows(traces, ride_id, wanted_names=("Posted Wait",)):
  
             rows.append({
                 "ride_id": ride_id,
-                "timestamp": timestamp,
+                "timestamp": timestamp.isoformat(),
                 "waittime": y,
                 "issue_with_ride": False
             })
@@ -194,37 +215,22 @@ def traces_to_rows(traces, ride_id, wanted_names=("Posted Wait",)):
     return rows
  
  
-def insert_rows(rows):
- 
+def insert_rows(rows, batch_size=500):
+    """
+    Inserts rows into the Supabase `ride_waits` table. Batches large
+    inserts since Supabase/PostgREST has a payload size limit.
+    """
     if not rows:
         return
  
-    conn = psycopg2.connect(**DB)
-    cur = conn.cursor()
+    for i in range(0, len(rows), batch_size):
+        batch = rows[i:i + batch_size]
+        response = supabase.table(TABLE_NAME).insert(batch).execute()
  
-    for r in rows:
-        cur.execute(
-            """
-            INSERT INTO ride_waits
-            (
-                ride_id,
-                timestamp,
-                waittime,
-                issue_with_ride
-            )
-            VALUES (%s,%s,%s,%s)
-            """,
-            (
-                r["ride_id"],
-                r["timestamp"],
-                r["waittime"],
-                r["issue_with_ride"]
-            )
-        )
- 
-    conn.commit()
-    cur.close()
-    conn.close()
+        # supabase-py raises on transport errors, but check for an
+        # empty/odd response shape just in case.
+        if not getattr(response, "data", None):
+            print(f"  WARNING: insert of {len(batch)} rows returned no data: {response}")
  
  
 def get_current_wait(ride_id, date=None):
@@ -277,50 +283,17 @@ def get_current_wait(ride_id, date=None):
     raise ValueError(f"No non-null wait values found for {info['title']}")
  
  
-def get_all_current_waits(ride_ids=None, delay_range=(1, 2.5)):
-    """
-    Fetches the current wait time for every ride in RIDES (or a subset
-    via ride_ids). Prints progress as it goes and returns two lists:
-    (successes, failures).
- 
-    successes: list of dicts from get_current_wait
-    failures:  list of {"ride_id", "title", "error"} - use this to spot
-               which slugs in RIDES are wrong and need fixing.
-    """
-    if ride_ids is None:
-        ride_ids = list(RIDES.keys())
- 
-    successes = []
-    failures = []
- 
-    for ride_id in ride_ids:
-        info = RIDES[ride_id]
- 
-        try:
-            result = get_current_wait(ride_id)
-            successes.append(result)
-            print(f"OK   {info['title']:<45} {result['waittime']:>3} min  ({result['timestamp']})")
- 
-        except Exception as e:
-            failures.append({
-                "ride_id": ride_id,
-                "title": info["title"],
-                "error": str(e)
-            })
-            print(f"FAIL {info['title']:<45} {e}")
- 
-        time.sleep(random.uniform(*delay_range))
- 
-    return successes, failures
- 
- 
 def fetch_current_park_waits(park="islands-of-adventure"):
     """
     Hits the /wa/park-waits/<park>?fmt=table endpoint - the same one
     the site's "Wait Times" modal uses - and returns the raw HTML table
     for every reporting ride in the park, in a single request.
     """
-    url = f"{PARK_WAITS_URL if park == 'islands-of-adventure' else 'https://www.thrill-data.com/wa/park-waits/' + park}"
+    url = (
+        PARK_WAITS_URL
+        if park == "islands-of-adventure"
+        else f"https://www.thrill-data.com/wa/park-waits/{park}"
+    )
     params = {"fmt": "table"}
  
     # the browser only got a real response when the request looked like
@@ -400,8 +373,9 @@ def get_current_waits_for_park(park="islands-of-adventure"):
  
 def scrape_date(ride_id, date):
     """
-    Scrapes a single ride for a single date and inserts the rows.
-    Returns the number of rows inserted.
+    Scrapes a single ride for a single date and inserts the rows into
+    Supabase. Returns the number of rows inserted. Useful for backfilling
+    history one day at a time - not used by the live/scheduled run.
     """
     info = RIDES[ride_id]
     date_str = date.strftime("%Y-%m-%d")
@@ -421,7 +395,7 @@ def scrape_date(ride_id, date):
  
  
 def scrape_range(start, end, ride_ids=None):
- 
+    """Backfill helper - not used by the scheduled live run."""
     if ride_ids is None:
         ride_ids = list(RIDES.keys())
  
@@ -446,24 +420,32 @@ def scrape_range(start, end, ride_ids=None):
         date += timedelta(days=1)
  
  
+def run_live_scrape(park="islands-of-adventure"):
+    """
+    The function the scheduled job calls: fetches current wait times
+    for the whole park in a single request, then inserts every matched
+    ride's reading into Supabase with 'now' as the timestamp.
+    """
+    print(f"[{datetime.now().isoformat()}] Fetching current wait times for {park}...\n")
+ 
+    results = get_current_waits_for_park(park)
+ 
+    now = datetime.now()
+    rows = [
+        {
+            "ride_id": r["ride_id"],
+            "timestamp": now.isoformat(),
+            "waittime": r["wait"],
+            "issue_with_ride": False
+        }
+        for r in results
+        if r["ride_id"] is not None and r["wait"] is not None
+    ]
+ 
+    insert_rows(rows)
+    print(f"\nInserted {len(rows)} rows into Supabase table '{TABLE_NAME}'.")
+ 
+ 
 if __name__ == "__main__":
- 
-    print("Fetching current wait times for the whole park (1 request)...\n")
- 
-    results = get_current_waits_for_park("islands-of-adventure")
- 
-    # to insert the matched rides into your database, uncomment:
-    #
-    # now = datetime.now()
-    # rows = [
-    #     {
-    #         "ride_id": r["ride_id"],
-    #         "timestamp": now,
-    #         "waittime": r["wait"],
-    #         "issue_with_ride": False
-    #     }
-    #     for r in results
-    #     if r["ride_id"] is not None and r["wait"] is not None
-    # ]
-    # insert_rows(rows)
+    run_live_scrape()
  
