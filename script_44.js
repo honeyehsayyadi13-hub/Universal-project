@@ -1,0 +1,44 @@
+(function(win,doc,G,env,undef){try{/*SUP-3560 & 4025 & 4046
+var roadcc_adhesion = document.querySelector("#roadcc_adhesion");
+*/
+/*SUP-4257
+var stickyFooter_Div = document.querySelector("#fs-sticky-footer");
+win.ggevents = win.ggevents || [];
+win.ggevents.push({
+    'inscreen.load': function (data) {
+        if(stickyFooter_Div) stickyFooter_Div.setAttribute('style', 'visibility: hidden !important;');
+        document.body.dispatchEvent(new Event('gumgum-inscreen-load'));
+    },
+    'inscreen.close': function (data) {
+        if(data.userRequested) {
+            document.body.dispatchEvent(new Event('gumgum-inscreen-close'));
+        }
+    }
+});
+*/
+var pub_adhesion = document.querySelector("#fs-sticky-footer");
+
+win.ggevents = win.ggevents || [];
+win.ggevents.push({
+
+    'inscreen.load': function (data) {
+
+        if(pub_adhesion){
+          pub_adhesion.setAttribute('style', 'visibility: hidden !important;');  
+        } 
+    },   
+   
+    'inscreen.close': function (data) {
+		if(pub_adhesion){
+          pub_adhesion.setAttribute('style', 'visibility: visible !important;');
+		}
+    }
+});
+
+googletag.pubads().addEventListener('slotRequested', function(event) {
+        if(event.slot.getSlotElementId().includes('adhesion')) {
+                if(GUMGUM && GUMGUM.isad) {
+                        GUMGUM.removeISAd();
+                }
+        }
+});}catch(err){GUMGUM.log("Custom JS", err)}}(window,window.document,window.GUMGUM,"desktop"))

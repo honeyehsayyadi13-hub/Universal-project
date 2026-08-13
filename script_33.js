@@ -1,0 +1,1 @@
+(function(){var el=document.currentScript.previousElementSibling,id='fs-ic-'+Math.random().toString(36).slice(2);el.id=id;window.freestar=window.freestar||{};freestar.queue=freestar.queue||[];freestar.queue.push(function(){freestar.newAdSlots([{placementName:"thrill-data-com_incontent_reusable",slotId:id,publisher:"thrill-data-com"}]);});})();
