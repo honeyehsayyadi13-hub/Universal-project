@@ -1,11 +1,12 @@
-import requests 
-from datetime import datetime 
+#data.py
+import requests
+from datetime import datetime
 import threading
 import time
 
 ride_waits = {}
 
-now = datetime(2026, 8, 12, 8, 0)
+now = datetime.now()
 
 ##check current day
 current_day = now.strftime("%A")
