@@ -5,15 +5,15 @@ import threading
 import Data
 import routeOptimizer
 
-
 pygame.init()
 
 # ── layout constants ───────────────────────────────────────────────
 SIDEBAR_WIDTH = 260
 MAP_WIDTH = 1000
 MAP_HEIGHT = 800
+TOP_BAR_HEIGHT = 90   # new route bar above the map; pushes the map down
 SCREEN_WIDTH = SIDEBAR_WIDTH + MAP_WIDTH
-SCREEN_HEIGHT = MAP_HEIGHT
+SCREEN_HEIGHT = MAP_HEIGHT + TOP_BAR_HEIGHT
 
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 pygame.display.set_caption("front_end")
@@ -207,9 +207,15 @@ ride_locked = {ride_id: False for ride_id in ride_names}
 # manually beforehand, independent of the count).
 ride_lock_before_bump = {ride_id: False for ride_id in ride_names}
 
+# ── the most recently generated route (list of ride_id strings, in visit
+# order) -- drawn in the new top bar. Updated by _run_route_computation()
+# once the background thread finishes. Empty until the first successful run.
+current_route = []
+
 # ── buttons: [x, y, clicked, ride_id, rect] ───────────────────────
-# NOTE: x/y below are in "map-local" coordinates (0-1000). We shift them by
-# SIDEBAR_WIDTH so they land in the right place on the wider screen.
+# NOTE: x/y below are in "map-local" coordinates (0-1000 / 0-800). We shift
+# x by SIDEBAR_WIDTH and y by TOP_BAR_HEIGHT so they land in the right place
+# on the wider/taller screen (sidebar on the left, route bar on top).
 raw_buttons = [
     [488, 620, False, "hulk"],
     [469, 654, False, "stormForce"],
@@ -233,12 +239,13 @@ raw_buttons = [
 buttons = []
 for b in raw_buttons:
     x, y, clicked, ride_id = b
-    sx = x + SIDEBAR_WIDTH  # shifted x, since map now starts after the sidebar
+    sx = x + SIDEBAR_WIDTH   # shifted x, since map now starts after the sidebar
+    sy = y + TOP_BAR_HEIGHT  # shifted y, since map now starts below the top bar
     if ride_id in ride_images:
-        rect = ride_images[ride_id].get_rect(center=(sx, y))
+        rect = ride_images[ride_id].get_rect(center=(sx, sy))
     else:
-        rect = pygame.Rect(sx - 10, y - 10, 20, 20)
-    buttons.append([sx, y, clicked, ride_id, rect])
+        rect = pygame.Rect(sx - 10, sy - 10, 20, 20)
+    buttons.append([sx, sy, clicked, ride_id, rect])
 
 # popup is either None or (ride_id, anchor_x, anchor_y, lines_list).
 # Storing ride_id lets us auto-hide the bubble the moment its ride gets
@@ -762,6 +769,67 @@ def draw_sidebar(surface, route_button_hover):
     _draw_dropdown_list(surface)
 
 
+def trigger_route_computation():
+    """Shared by both the sidebar's 'Get Optimal Route' button and the top
+    bar's 'Generate Route' button -- snapshots the current selection/live
+    data and kicks off the optimizer on a background thread."""
+    # only checked rides with a count > 0 are candidates
+    selected_counts = {
+        ride_id: ride_counts[ride_id]
+        for ride_id in ride_names
+        if ride_visible[ride_id] and ride_counts[ride_id] > RIDE_COUNT_MIN
+    }
+    # locked rides among those -- the optimizer force-includes these
+    selected_locked = {
+        ride_id: True
+        for ride_id in ride_names
+        if ride_locked[ride_id]
+    }
+
+    # Take one consistent snapshot of the live data right now, instead
+    # of handing the optimizer thread a live reference into dicts that
+    # Data.update_backend() keeps mutating every 5 seconds in the
+    # background. Without this, the wait times the optimizer reads
+    # while it's mid-calculation could shift out from under it.
+    live_waits_snapshot = dict(Data.ride_waits)
+    live_open_snapshot = dict(Data.ride_open)
+
+    # A ride is closed if the API's own is_open flag says so -- NOT if
+    # its live wait happens to read 0. A 0-min wait is a legitimate
+    # walk-on and shouldn't be treated as a closure; conversely a
+    # closed ride can still be reporting a stale nonzero wait from
+    # before it went down, so wait==0 was both a false-positive and a
+    # false-negative detector.
+    closed_ride_keys = [
+        ride_id for ride_id in ride_names
+        if live_open_snapshot.get(ride_id) is False
+    ]
+    break_windows = [(b["start_min"], b["end_min"]) for b in breaks]
+
+    print(f"\nComputing optimal route for: {selected_counts} "
+          f"(locked: {list(selected_locked)}, closed: {closed_ride_keys}, "
+          f"starting from: {selected_start})")
+    threading.Thread(
+        target=_run_route_computation,
+        args=(selected_counts, selected_locked, closed_ride_keys, break_windows),
+        kwargs={"start_key": selected_start, "live_waits": live_waits_snapshot},
+        daemon=True,
+    ).start()
+
+
+def _run_route_computation(counts, locked, closed_keys, break_windows, start_key="entrance", live_waits=None):
+    """Runs on a background thread. Calls the optimizer (which still prints
+    its usual terminal output) and, if it returned a real result, updates
+    `current_route` so the top bar picks it up on the next frame."""
+    global current_route
+    result = routeOptimizer.compute_and_print_route(
+        counts, locked, closed_keys, break_windows,
+        start_key=start_key, live_waits=live_waits,
+    )
+    if result is not None:
+        current_route = result
+
+
 def handle_sidebar_click(mx, my):
     """Returns True if the click was consumed by the sidebar."""
     global dropdown_open, selected_start, active_time_input, time1_text, time2_text, _break_id_counter, popup
@@ -827,34 +895,7 @@ def handle_sidebar_click(mx, my):
     active_time_input = None  # any other sidebar click defocuses the time inputs
 
     if route_button_rect.collidepoint(mx, my):
-        # only checked rides with a count > 0 are candidates
-        selected_counts = {
-            ride_id: ride_counts[ride_id]
-            for ride_id in ride_names
-            if ride_visible[ride_id] and ride_counts[ride_id] > RIDE_COUNT_MIN
-        }
-        # locked rides among those -- the optimizer force-includes these
-        selected_locked = {
-            ride_id: True
-            for ride_id in ride_names
-            if ride_locked[ride_id]
-        }
-        # a ride reporting a 0-min live wait is treated as closed and is
-        # dropped entirely by the optimizer, regardless of lock/count
-        closed_ride_keys = [
-            ride_id for ride_id, wait in Data.ride_waits.items() if wait == 0
-        ]
-        break_windows = [(b["start_min"], b["end_min"]) for b in breaks]
-
-        print(f"\nComputing optimal route for: {selected_counts} "
-              f"(locked: {list(selected_locked)}, closed: {closed_ride_keys}, "
-              f"starting from: {selected_start})")
-        threading.Thread(
-            target=routeOptimizer.compute_and_print_route,
-            args=(selected_counts, selected_locked, closed_ride_keys, break_windows),
-            kwargs={"start_key": selected_start},
-            daemon=True,
-        ).start()
+        trigger_route_computation()
         return True
 
     for row in sidebar_rows:
@@ -924,6 +965,142 @@ def handle_sidebar_click(mx, my):
     return False
 
 
+# ── top route bar (shows the generated route, pushes the map down) ──
+TOP_BAR_BG_COLOR = (235, 240, 246)
+TOP_BAR_PLACEHOLDER_COLOR = (130, 130, 130)
+ROUTE_ITEM_BG = (255, 255, 255)
+ROUTE_ITEM_BORDER = SIDEBAR_BORDER_COLOR
+ROUTE_ARROW_COLOR = (90, 90, 90)
+
+ROUTE_ITEM_H = 32
+ROUTE_ITEM_PAD_X = 10
+ROUTE_ITEM_MAX_LABEL_W = 130
+ROUTE_ARROW_GAP = 22   # horizontal space reserved for the arrow between items
+ROUTE_ITEM_GAP = 10    # extra breathing room on either side of the arrow
+ROUTE_X_BTN_SIZE = 14
+ROUTE_X_GAP = 6        # gap between the item box and its delete-X
+
+topbar_font = pygame.font.SysFont("Arial", 13, bold=True)
+topbar_placeholder_font = pygame.font.SysFont("Arial", 13)
+topbar_arrow_font = pygame.font.SysFont("Arial", 16, bold=True)
+topbar_btn_font = pygame.font.SysFont("Arial", 14, bold=True)
+
+top_bar_rect = pygame.Rect(SIDEBAR_WIDTH, 0, MAP_WIDTH, TOP_BAR_HEIGHT)
+
+TOPBAR_BTN_W = 150
+TOPBAR_BTN_H = 42
+topbar_route_button_rect = pygame.Rect(
+    SCREEN_WIDTH - TOPBAR_BTN_W - 16,
+    (TOP_BAR_HEIGHT - TOPBAR_BTN_H) // 2,
+    TOPBAR_BTN_W,
+    TOPBAR_BTN_H,
+)
+
+# rebuilt every draw call: list of {"ride_id": str, "x_rect": pygame.Rect}
+# for hit-testing each route item's delete-X button.
+topbar_item_rects = []
+
+
+def draw_top_bar(surface, generate_hover):
+    """Draws the route bar across the top of the map area: the generated
+    route (ride -> ride -> ride, each with a red X below it to remove),
+    and a 'Generate Route' button on the right."""
+    global topbar_item_rects
+    topbar_item_rects = []
+
+    pygame.draw.rect(surface, TOP_BAR_BG_COLOR, top_bar_rect)
+    pygame.draw.line(surface, SIDEBAR_BORDER_COLOR,
+                      (SIDEBAR_WIDTH, TOP_BAR_HEIGHT), (SCREEN_WIDTH, TOP_BAR_HEIGHT), 2)
+
+    # ── "Generate Route" button (right side of the bar) ──
+    btn_color = ROUTE_BUTTON_HOVER_COLOR if generate_hover else ROUTE_BUTTON_COLOR
+    pygame.draw.rect(surface, btn_color, topbar_route_button_rect, border_radius=8)
+    btn_label = topbar_btn_font.render("Generate Route", True, ROUTE_BUTTON_TEXT_COLOR)
+    surface.blit(btn_label, btn_label.get_rect(center=topbar_route_button_rect.center))
+
+    items_left = top_bar_rect.left + 16
+    items_right = topbar_route_button_rect.left - 16
+
+    if not current_route:
+        placeholder = topbar_placeholder_font.render(
+            "No route generated yet -- check some rides and hit Generate Route",
+            True, TOP_BAR_PLACEHOLDER_COLOR,
+        )
+        surface.blit(placeholder, (items_left, top_bar_rect.centery - placeholder.get_height() // 2))
+        return
+
+    # pre-render each item's label
+    labels = []
+    for ride_id in current_route:
+        name = ride_names.get(ride_id, ride_id).replace("\n", " ")
+        short = _truncate_label(name, topbar_font, ROUTE_ITEM_MAX_LABEL_W)
+        labels.append((ride_id, topbar_font.render(short, True, LABEL_COLOR)))
+
+    item_top = top_bar_rect.centery - ROUTE_ITEM_H // 2 - 6
+    x = items_left
+
+    for i, (ride_id, label_surface) in enumerate(labels):
+        box_w = label_surface.get_width() + ROUTE_ITEM_PAD_X * 2
+        box_rect = pygame.Rect(x, item_top, box_w, ROUTE_ITEM_H)
+
+        if box_rect.right > items_right:
+            break  # ran out of horizontal room -- stop drawing further stops
+
+        pygame.draw.rect(surface, ROUTE_ITEM_BG, box_rect, border_radius=6)
+        pygame.draw.rect(surface, ROUTE_ITEM_BORDER, box_rect, width=1, border_radius=6)
+        surface.blit(
+            label_surface,
+            (box_rect.left + ROUTE_ITEM_PAD_X, box_rect.centery - label_surface.get_height() // 2),
+        )
+
+        # red-X delete button, under this ride
+        x_rect = pygame.Rect(
+            box_rect.centerx - ROUTE_X_BTN_SIZE // 2,
+            box_rect.bottom + ROUTE_X_GAP,
+            ROUTE_X_BTN_SIZE,
+            ROUTE_X_BTN_SIZE,
+        )
+        _draw_delete_x(surface, x_rect)
+        topbar_item_rects.append({"ride_id": ride_id, "x_rect": x_rect})
+
+        x = box_rect.right
+
+        # arrow separating this item from the next
+        if i != len(labels) - 1:
+            arrow_x = x + (ROUTE_ARROW_GAP - topbar_arrow_font.size("->")[0]) // 2 + ROUTE_ITEM_GAP // 2
+            arrow_surface = topbar_arrow_font.render("->", True, ROUTE_ARROW_COLOR)
+            surface.blit(arrow_surface, (arrow_x, box_rect.centery - arrow_surface.get_height() // 2))
+            x += ROUTE_ARROW_GAP + ROUTE_ITEM_GAP
+
+
+def handle_top_bar_click(mx, my):
+    """Returns True if the click was consumed by the top bar."""
+    global current_route, popup
+
+    if topbar_route_button_rect.collidepoint(mx, my):
+        trigger_route_computation()
+        return True
+
+    for item in topbar_item_rects:
+        if item["x_rect"].collidepoint(mx, my):
+            ride_id = item["ride_id"]
+
+            # remove this stop from the displayed route
+            current_route = [r for r in current_route if r != ride_id]
+
+            # ...and uncheck the ride itself, same as the sidebar checkbox
+            if ride_visible[ride_id]:
+                ride_last_count[ride_id] = ride_counts[ride_id]
+            ride_counts[ride_id] = RIDE_COUNT_MIN
+            ride_visible[ride_id] = False
+            ride_locked[ride_id] = False
+            if popup is not None and popup[0] == ride_id:
+                popup = None
+            return True
+
+    return top_bar_rect.collidepoint(mx, my)  # swallow any other click inside the bar
+
+
 # ── main loop ──────────────────────────────────────────────────────
 running = True
 
@@ -942,6 +1119,13 @@ while running:
                 handle_sidebar_click(mx, my)
                 continue
 
+            # top route bar (above the map) is checked next
+            if my < TOP_BAR_HEIGHT:
+                active_time_input = None
+                popup = None
+                handle_top_bar_click(mx, my)
+                continue
+
             active_time_input = None  # clicking the map defocuses any time input
             popup = None
 
@@ -958,7 +1142,10 @@ while running:
 
                     display_name = ride_names.get(ride_id, ride_id)
                     wait = Data.ride_waits.get(ride_id, None)
-                    wait_str = "Loading..." if wait is None else "Ride is currently closed" if wait == 0 else f"Wait: {wait} min"
+                    is_open = Data.ride_open.get(ride_id, None)
+                    # is_open is the source of truth for "closed" now -- a
+                    # 0-min wait is a legitimate walk-on, not a closure.
+                    wait_str = "Loading..." if wait is None else "Ride is currently closed" if is_open is False else f"Wait: {wait} min"
 
                     # Split name lines + wait line
                     name_lines = display_name.split("\n")
@@ -996,7 +1183,7 @@ while running:
 
     # ── draw ───────────────────────────────────────────────────────
     screen.fill((255, 255, 255))
-    screen.blit(mapImage, (SIDEBAR_WIDTH, 0))
+    screen.blit(mapImage, (SIDEBAR_WIDTH, TOP_BAR_HEIGHT))
 
     for button in buttons:
         x, y, clicked, ride_id, rect = button
@@ -1007,6 +1194,9 @@ while running:
         else:
             color = (0, 200, 0) if clicked else (200, 0, 0)
             pygame.draw.circle(screen, color, (x, y), 10)
+
+    mx, my = pygame.mouse.get_pos()
+    draw_top_bar(screen, topbar_route_button_rect.collidepoint(mx, my))
 
     if popup is not None:
         _popup_ride_id, anchor_x, anchor_y, lines = popup
@@ -1026,7 +1216,6 @@ while running:
             border_width=2,
         )
 
-    mx, my = pygame.mouse.get_pos()
     draw_sidebar(screen, route_button_rect.collidepoint(mx, my))
 
     pygame.display.update()
