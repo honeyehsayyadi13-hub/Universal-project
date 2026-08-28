@@ -55,6 +55,7 @@ SUPABASE_URL = os.getenv("SUPABASE_URL") or "https://lxwpjknljuiaivpwixzj.supaba
 SUPABASE_KEY = os.getenv("SUPABASE_KEY") or "sb_secret_qVf_tCgTEbeCszpAHRDiVQ_q-SVZr0W"
 
 HHN_URL = "https://www.thrill-data.com/hhn/orlando/2026"
+PARK_URL = "https://www.thrill-data.com/waits/park/unit/universal-studios/"
 
 HEADERS = {
     "User-Agent": (
@@ -156,22 +157,31 @@ TRAILING_MINUTES_RE = re.compile(r"(\d+)\s*m\b", re.IGNORECASE)
 TAG_RE = re.compile(r"<[^>]+>")
 
 
-def _get_live_waits_from_link_list(html):
-    """Parse the "Live HHN Orlando Waits" section of the HHN page, which
-    lists each currently-reporting attraction as a link ending in its wait
-    time, e.g. "Cybergoria \u2193 5m". Returns {ride_name: wait_minutes}."""
-    start = html.find(LIVE_WAITS_SECTION_START)
-    if start == -1:
-        return {}
+def _get_live_waits_from_link_list(html, section_start=None, section_end_markers=()):
+    """Parses out every `<a href=".../waits/attraction/...">Name ... 5m</a>`
+    style link on the page and returns {ride_name: wait_minutes}.
 
-    end_candidates = [
-        html.find(marker, start + len(LIVE_WAITS_SECTION_START))
-        for marker in LIVE_WAITS_SECTION_END_MARKERS
-    ]
-    end_candidates = [i for i in end_candidates if i != -1]
-    end = min(end_candidates) if end_candidates else start + 8000
-
-    section = html[start:end]
+    If `section_start` is given, only looks within the text between that
+    marker and the first of `section_end_markers` that appears after it
+    (this is how the HHN page's "Live HHN Orlando Waits" list is scoped, so
+    we don't also pick up the unrelated House Rankings section further down
+    the same page). If `section_start` is omitted, scans the whole page --
+    useful on pages where we don't know exactly what the live-waits section
+    is called, since stray links elsewhere on the page won't match this
+    pattern anyway (they don't end in "<number>m").
+    """
+    if section_start is not None:
+        start = html.find(section_start)
+        if start == -1:
+            return {}
+        end_candidates = [
+            html.find(marker, start + len(section_start)) for marker in section_end_markers
+        ]
+        end_candidates = [i for i in end_candidates if i != -1]
+        end = min(end_candidates) if end_candidates else start + 8000
+        section = html[start:end]
+    else:
+        section = html
 
     results = {}
     for match in ATTRACTION_LINK_RE.finditer(section):
@@ -280,6 +290,24 @@ def _get_live_waits(html, known_ride_names):
 # Main
 # ---------------------------------------------------------------------------
 
+def _scrape_live_waits(url, known_ride_names, section_start=None, section_end_markers=()):
+    """Fetches `url` and returns {ride_name: wait_minutes}, trying (in
+    order): the anchored link-list section if `section_start` is given, an
+    unanchored whole-page link scan, then the Plotly-chart fallback."""
+    resp = requests.get(url, headers=HEADERS, timeout=30)
+    resp.raise_for_status()
+    html = resp.text
+
+    waits = {}
+    if section_start is not None:
+        waits = _get_live_waits_from_link_list(html, section_start, section_end_markers)
+    if not waits:
+        waits = _get_live_waits_from_link_list(html)
+    if not waits:
+        waits = _get_live_waits(html, known_ride_names)
+    return waits
+
+
 def main():
     if not SUPABASE_URL or not SUPABASE_KEY:
         raise SystemExit("SUPABASE_URL / SUPABASE_KEY are not set.")
@@ -295,15 +323,25 @@ def main():
     for r in rides:
         print(f"  id={r['id']!r} name={r['name']!r}")
 
-    resp = requests.get(HHN_URL, headers=HEADERS, timeout=30)
-    resp.raise_for_status()
+    known_names = [r["name"] for r in rides]
 
-    waits_by_name = _get_live_waits_from_link_list(resp.text)
-    if not waits_by_name:
-        waits_by_name = _get_live_waits(resp.text, known_ride_names=[r["name"] for r in rides])
+    waits_by_name = {}
+
+    hhn_waits = _scrape_live_waits(
+        HHN_URL,
+        known_names,
+        section_start=LIVE_WAITS_SECTION_START,
+        section_end_markers=LIVE_WAITS_SECTION_END_MARKERS,
+    )
+    print(f"HHN page: found {len(hhn_waits)} live wait(s): {hhn_waits}")
+    waits_by_name.update(hhn_waits)
+
+    park_waits = _scrape_live_waits(PARK_URL, known_names)
+    print(f"Park page: found {len(park_waits)} live wait(s): {park_waits}")
+    waits_by_name.update(park_waits)
 
     if not waits_by_name:
-        print("No live wait data on the page right now (HHN may not be running). Exiting.")
+        print("No live wait data found on either page right now. Exiting.")
         return
 
     match_ride = _build_ride_matcher(rides)
