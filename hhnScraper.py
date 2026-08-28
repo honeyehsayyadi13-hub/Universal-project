@@ -1,48 +1,65 @@
 """
-Pulls live Halloween Horror Nights Orlando wait times from Thrill Data and
-uploads them to the `ride_waits` table in Supabase.
+Pulls live Halloween Horror Nights Orlando + regular Universal Studios wait
+times from Thrill Data and uploads them to the `ride_waits` table in
+Supabase.
 
 How it works
 ------------
-The HHN page has a "Live HHN Orlando Waits" section near the top that's just
-a list of links, one per attraction, each shaped like:
+Two different page formats:
 
-    <a href="https://www.thrill-data.com/waits/attraction/universal-studios/
-              cybergoria/" title="Cybergoria">Cybergoria <svg>...</svg> 5m</a>
+1. HHN page (https://www.thrill-data.com/hhn/orlando/2026) has a
+   "Live HHN Orlando Waits" section near the top that's a list of links,
+   one per house, each shaped like:
 
-(NOT a Plotly chart -- that format is only used on Thrill Data's regular,
-non-event park pages, e.g. Islands of Adventure.) We:
+       <a href="https://www.thrill-data.com/waits/attraction/universal-studios/
+                 cybergoria/" title="Cybergoria">Cybergoria <svg>...</svg> 5m</a>
 
-  1. Download the HHN page HTML.
-  2. Grab the block of text between "Live HHN Orlando Waits" and the next
-     section, and pull every attraction link + wait time out of it.
-  3. Match each scraped ride name to a `rides.id` (names on the site are
+2. Regular park page (https://www.thrill-data.com/waits/park/unit/
+   universal-studios/) has a small "Longest Waits Right Now" widget with
+   just the top 3 current waits, in that *same* link shape -- but the full
+   ride list for that page is rendered as an embedded Plotly bar chart, not
+   a link list. IMPORTANT: we must not let the top-3 widget's links stand
+   in for the full ride list, or we silently lose most of the park's rides
+   and pick up bogus non-standby entries like "Sinners Accessibility Return
+   Time" (see `_filter_bad_names`).
+
+For each page we:
+  1. Download the page HTML.
+  2. Extract {ride_name: wait_minutes} using whichever method fits that
+     page (see `_scrape_hhn_waits` / `_scrape_park_waits` below).
+  3. Drop any entries that aren't real standby waits (accessibility /
+     return-time estimates etc).
+  4. Match each scraped ride name to a `rides.id` (names on the site are
      often longer/slightly different than what's in our table, e.g.
      "Ozzy Osbourne: Prince of Darkness" vs. "Ozzy Osbourne", so we match on
      overlapping words rather than requiring an exact string match).
-  4. Insert one row per matched ride into `ride_waits`.
-
-As a fallback (in case Thrill Data changes this layout, or this script gets
-reused against a regular park page instead), it also knows how to pull wait
-times out of an embedded Plotly bar chart, which is the format those pages
-use instead.
+  5. Insert one row per matched ride into `ride_waits`.
 
 If HHN isn't currently running (no event tonight, or it's the off-season),
-there's no live-waits section on the page at all -- the script just prints a
-message and exits cleanly (exit code 0) so a GitHub Actions cron job doesn't
-get marked as failed for running outside event hours.
+there's no live-waits section on the HHN page at all -- that's fine, the
+park page will still get scraped normally.
 
 Environment variables (set as GitHub Actions secrets, or in a local .env):
   SUPABASE_URL
   SUPABASE_KEY
+
+Usage
+-----
+  python scrape_waits.py            # loops forever, scraping every 5 min
+  python scrape_waits.py --once     # single scrape, then exits (for cron)
+  python scrape_waits.py --interval 120   # custom loop interval, in seconds
 """
 
+import argparse
 import array
 import base64
 import html as html_lib
 import json
 import os
 import re
+import sys
+import time
+import traceback
 from datetime import datetime, timezone
 
 import requests
@@ -72,6 +89,13 @@ PLOTLY_DTYPE_MAP = {
 }
 
 STOPWORDS = {"a", "an", "and", "the", "of", "in", "on", "at", "presents"}
+
+# Entries that show up as "/waits/attraction/..." links but are NOT real
+# standby wait times -- e.g. accessibility/DAS return-time estimates. These
+# would otherwise fuzzy-match onto the ride they're named after (e.g.
+# "Sinners Accessibility Return Time" -> "Sinners") and clobber its real
+# wait with a meaningless number.
+BAD_NAME_RE = re.compile(r"accessibility|return\s*time", re.IGNORECASE)
 
 
 # ---------------------------------------------------------------------------
@@ -143,7 +167,7 @@ def _find_all_plotly_traces(html):
 
 
 # ---------------------------------------------------------------------------
-# Parsing the "Live HHN Orlando Waits" link list (the HHN page's actual format)
+# Parsing "<a href='.../waits/attraction/...'>Name ... 5m</a>" style links
 # ---------------------------------------------------------------------------
 
 LIVE_WAITS_SECTION_START = "Live HHN Orlando Waits"
@@ -162,13 +186,12 @@ def _get_live_waits_from_link_list(html, section_start=None, section_end_markers
     style link on the page and returns {ride_name: wait_minutes}.
 
     If `section_start` is given, only looks within the text between that
-    marker and the first of `section_end_markers` that appears after it
-    (this is how the HHN page's "Live HHN Orlando Waits" list is scoped, so
-    we don't also pick up the unrelated House Rankings section further down
-    the same page). If `section_start` is omitted, scans the whole page --
-    useful on pages where we don't know exactly what the live-waits section
-    is called, since stray links elsewhere on the page won't match this
-    pattern anyway (they don't end in "<number>m").
+    marker and the first of `section_end_markers` that appears after it. If
+    `section_start` is omitted, scans the whole page -- useful as a last
+    resort, but note that stray "/waits/attraction/" links elsewhere on a
+    page (e.g. a "Longest Waits Right Now" top-3 widget) will match too, so
+    this should never be treated as authoritative for a page's *full* ride
+    list -- only use it when nothing more specific is available.
     """
     if section_start is not None:
         start = html.find(section_start)
@@ -205,6 +228,12 @@ def _get_live_waits_from_link_list(html, section_start=None, section_end_markers
         results[name] = int(minutes_match.group(1))
 
     return results
+
+
+def _filter_bad_names(waits_by_name):
+    """Drop scraped entries that aren't real standby wait times (see
+    BAD_NAME_RE) before they ever get a chance to fuzzy-match onto a ride."""
+    return {name: wait for name, wait in waits_by_name.items() if not BAD_NAME_RE.search(name)}
 
 
 # ---------------------------------------------------------------------------
@@ -246,11 +275,10 @@ def _build_ride_matcher(rides):
 
 
 # ---------------------------------------------------------------------------
-# Fallback: picking the right Plotly chart out of everything on the page
-# (used for regular, non-HHN park pages, which don't use the link-list format)
+# Plotly chart extraction (used for the regular, non-HHN park page)
 # ---------------------------------------------------------------------------
 
-def _get_live_waits(html, known_ride_names):
+def _get_live_waits_from_plotly(html, known_ride_names):
     """Returns {scraped_ride_name: wait_minutes} for whichever bar chart on
     the page overlaps best with the ride names we actually track -- that's
     almost certainly the live wait times chart, regardless of exactly where
@@ -287,28 +315,48 @@ def _get_live_waits(html, known_ride_names):
 
 
 # ---------------------------------------------------------------------------
+# Per-page scraping strategies
+# ---------------------------------------------------------------------------
+
+def _fetch_html(url):
+    resp = requests.get(url, headers=HEADERS, timeout=30)
+    resp.raise_for_status()
+    return resp.text
+
+
+def _scrape_hhn_waits(url):
+    """HHN page: the "Live HHN Orlando Waits" section is a proper anchored
+    link list -- use it directly."""
+    html = _fetch_html(url)
+    waits = _get_live_waits_from_link_list(
+        html, LIVE_WAITS_SECTION_START, LIVE_WAITS_SECTION_END_MARKERS
+    )
+    if not waits:
+        # HHN isn't running right now (off night / off-season) -- fine.
+        return {}
+    return _filter_bad_names(waits)
+
+
+def _scrape_park_waits(url, known_ride_names):
+    """Regular park page: the full ride list lives in an embedded Plotly bar
+    chart, NOT a link list. There IS a small "Longest Waits Right Now" (top
+    3) widget on this page that uses the same link shape as HHN's list, but
+    treating that as the full ride list would silently drop everything else
+    on the page -- so we go straight for the chart, and only fall back to
+    the (partial) link list if the chart can't be found at all.
+    """
+    html = _fetch_html(url)
+    waits = _get_live_waits_from_plotly(html, known_ride_names)
+    if not waits:
+        waits = _get_live_waits_from_link_list(html)
+    return _filter_bad_names(waits)
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
-def _scrape_live_waits(url, known_ride_names, section_start=None, section_end_markers=()):
-    """Fetches `url` and returns {ride_name: wait_minutes}, trying (in
-    order): the anchored link-list section if `section_start` is given, an
-    unanchored whole-page link scan, then the Plotly-chart fallback."""
-    resp = requests.get(url, headers=HEADERS, timeout=30)
-    resp.raise_for_status()
-    html = resp.text
-
-    waits = {}
-    if section_start is not None:
-        waits = _get_live_waits_from_link_list(html, section_start, section_end_markers)
-    if not waits:
-        waits = _get_live_waits_from_link_list(html)
-    if not waits:
-        waits = _get_live_waits(html, known_ride_names)
-    return waits
-
-
-def main():
+def run_once():
     if not SUPABASE_URL or not SUPABASE_KEY:
         raise SystemExit("SUPABASE_URL / SUPABASE_KEY are not set.")
 
@@ -319,26 +367,22 @@ def main():
     if not rides:
         raise SystemExit("The `rides` table is empty -- nothing to match against.")
 
-    print(f"Fetched {len(rides)} ride(s) from Supabase:")
-    for r in rides:
-        print(f"  id={r['id']!r} name={r['name']!r}")
-
+    print(f"Fetched {len(rides)} ride(s) from Supabase.")
     known_names = [r["name"] for r in rides]
 
-    waits_by_name = {}
-
-    hhn_waits = _scrape_live_waits(
-        HHN_URL,
-        known_names,
-        section_start=LIVE_WAITS_SECTION_START,
-        section_end_markers=LIVE_WAITS_SECTION_END_MARKERS,
-    )
-    print(f"HHN page: found {len(hhn_waits)} live wait(s): {hhn_waits}")
-    waits_by_name.update(hhn_waits)
-
-    park_waits = _scrape_live_waits(PARK_URL, known_names)
+    park_waits = _scrape_park_waits(PARK_URL, known_names)
     print(f"Park page: found {len(park_waits)} live wait(s): {park_waits}")
+
+    hhn_waits = _scrape_hhn_waits(HHN_URL)
+    print(f"HHN page: found {len(hhn_waits)} live wait(s): {hhn_waits}")
+
+    # Merge park first, then HHN -- if a name ever appeared on both (it
+    # shouldn't, HHN houses aren't normal daytime attractions), the
+    # HHN-specific figure wins since it's the more relevant one for an
+    # event-only house.
+    waits_by_name = {}
     waits_by_name.update(park_waits)
+    waits_by_name.update(hhn_waits)
 
     if not waits_by_name:
         print("No live wait data found on either page right now. Exiting.")
@@ -374,6 +418,45 @@ def main():
 
     supabase.table("ride_waits").insert(rows).execute()
     print(f"Uploaded {len(rows)} wait time record(s) at {now}.")
+
+
+def run_forever(interval_seconds=300):
+    print(
+        f"Starting scrape loop -- running every {interval_seconds} second(s) "
+        f"({interval_seconds / 60:.1f} min). Press Ctrl+C to stop.\n"
+    )
+    while True:
+        started = time.monotonic()
+        print(f"--- Run started at {datetime.now(timezone.utc).isoformat()} ---")
+        try:
+            run_once()
+        except Exception:
+            # Never let one bad cycle (a network blip, a page-layout change,
+            # etc) kill the whole loop -- log it and try again next cycle.
+            print("Scrape cycle failed:")
+            traceback.print_exc()
+        elapsed = time.monotonic() - started
+        sleep_for = max(0.0, interval_seconds - elapsed)
+        print(f"--- Run finished, sleeping {sleep_for:.0f}s until next run ---\n")
+        time.sleep(sleep_for)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--once", action="store_true",
+        help="Run a single scrape cycle and exit (useful for a cron / GitHub Actions job).",
+    )
+    parser.add_argument(
+        "--interval", type=int, default=300,
+        help="Seconds between scrapes when looping (default: 300 = 5 minutes).",
+    )
+    args = parser.parse_args()
+
+    if args.once:
+        run_once()
+    else:
+        run_forever(args.interval)
 
 
 if __name__ == "__main__":
