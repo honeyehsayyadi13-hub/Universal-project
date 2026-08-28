@@ -4,21 +4,31 @@ uploads them to the `ride_waits` table in Supabase.
 
 How it works
 ------------
-Thrill Data server-renders each ride's *current* wait time straight into the
-page as part of an embedded Plotly chart (no separate API call needed). We:
+The HHN page has a "Live HHN Orlando Waits" section near the top that's just
+a list of links, one per attraction, each shaped like:
+
+    <a href="https://www.thrill-data.com/waits/attraction/universal-studios/
+              cybergoria/" title="Cybergoria">Cybergoria <svg>...</svg> 5m</a>
+
+(NOT a Plotly chart -- that format is only used on Thrill Data's regular,
+non-event park pages, e.g. Islands of Adventure.) We:
 
   1. Download the HHN page HTML.
-  2. Find every embedded Plotly chart on the page and decode its data.
-  3. Pick the bar chart whose ride names best match the rides we track in
-     Supabase -- that's the "Live Waits" chart.
-  4. Match each scraped ride name to a `rides.id` (names on the site are
+  2. Grab the block of text between "Live HHN Orlando Waits" and the next
+     section, and pull every attraction link + wait time out of it.
+  3. Match each scraped ride name to a `rides.id` (names on the site are
      often longer/slightly different than what's in our table, e.g.
      "Ozzy Osbourne: Prince of Darkness" vs. "Ozzy Osbourne", so we match on
      overlapping words rather than requiring an exact string match).
-  5. Insert one row per matched ride into `ride_waits`.
+  4. Insert one row per matched ride into `ride_waits`.
+
+As a fallback (in case Thrill Data changes this layout, or this script gets
+reused against a regular park page instead), it also knows how to pull wait
+times out of an embedded Plotly bar chart, which is the format those pages
+use instead.
 
 If HHN isn't currently running (no event tonight, or it's the off-season),
-Thrill Data won't have a live-waits chart at all -- the script just prints a
+there's no live-waits section on the page at all -- the script just prints a
 message and exits cleanly (exit code 0) so a GitHub Actions cron job doesn't
 get marked as failed for running outside event hours.
 
@@ -29,6 +39,7 @@ Environment variables (set as GitHub Actions secrets, or in a local .env):
 
 import array
 import base64
+import html as html_lib
 import json
 import os
 import re
@@ -40,8 +51,8 @@ from supabase import create_client
 
 load_dotenv()
 
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+SUPABASE_URL = os.getenv("SUPABASE_URL") or "https://lxwpjknljuiaivpwixzj.supabase.co"
+SUPABASE_KEY = os.getenv("SUPABASE_KEY") or "sb_secret_qVf_tCgTEbeCszpAHRDiVQ_q-SVZr0W"
 
 HHN_URL = "https://www.thrill-data.com/hhn/orlando/2026"
 
@@ -131,6 +142,62 @@ def _find_all_plotly_traces(html):
 
 
 # ---------------------------------------------------------------------------
+# Parsing the "Live HHN Orlando Waits" link list (the HHN page's actual format)
+# ---------------------------------------------------------------------------
+
+LIVE_WAITS_SECTION_START = "Live HHN Orlando Waits"
+LIVE_WAITS_SECTION_END_MARKERS = ("Low wait", "Event Years", "Wait Stats")
+
+ATTRACTION_LINK_RE = re.compile(
+    r"<a\b(?P<attrs>[^>]*)>(?P<inner>.*?)</a>", re.IGNORECASE | re.DOTALL
+)
+ATTR_RE = re.compile(r'(\w[\w-]*)\s*=\s*"([^"]*)"')
+TRAILING_MINUTES_RE = re.compile(r"(\d+)\s*m\b", re.IGNORECASE)
+TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _get_live_waits_from_link_list(html):
+    """Parse the "Live HHN Orlando Waits" section of the HHN page, which
+    lists each currently-reporting attraction as a link ending in its wait
+    time, e.g. "Cybergoria \u2193 5m". Returns {ride_name: wait_minutes}."""
+    start = html.find(LIVE_WAITS_SECTION_START)
+    if start == -1:
+        return {}
+
+    end_candidates = [
+        html.find(marker, start + len(LIVE_WAITS_SECTION_START))
+        for marker in LIVE_WAITS_SECTION_END_MARKERS
+    ]
+    end_candidates = [i for i in end_candidates if i != -1]
+    end = min(end_candidates) if end_candidates else start + 8000
+
+    section = html[start:end]
+
+    results = {}
+    for match in ATTRACTION_LINK_RE.finditer(section):
+        attrs = dict((k.lower(), v) for k, v in ATTR_RE.findall(match.group("attrs")))
+        href = attrs.get("href", "")
+        if "/waits/attraction/" not in href:
+            continue
+
+        inner_text = TAG_RE.sub(" ", match.group("inner"))
+        inner_text = re.sub(r"\s+", " ", inner_text).strip()
+
+        minutes_match = TRAILING_MINUTES_RE.search(inner_text)
+        if not minutes_match:
+            continue
+
+        name = attrs.get("title") or inner_text[: minutes_match.start()].strip(" \u2193\u2191\u2192-")
+        name = html_lib.unescape(name).strip()
+        if not name:
+            continue
+
+        results[name] = int(minutes_match.group(1))
+
+    return results
+
+
+# ---------------------------------------------------------------------------
 # Matching Thrill Data's ride names to our `rides` table
 # ---------------------------------------------------------------------------
 
@@ -147,26 +214,30 @@ def _build_ride_matcher(rides):
     "H.R. Bloodengutz Presents: A Halloween Fright-Tacular" (site) vs.
     "H.R. Bloodengutz" (our table).
     """
-    parsed = [(r["id"], set(_normalize(r["name"]))) for r in rides]
+    parsed = [(r["id"], r["name"], set(_normalize(r["name"]))) for r in rides]
 
     def match(scraped_name):
+        """Returns (ride_id_or_None, closest_ride_name, score) so callers
+        can see *why* something didn't match, not just that it didn't."""
         scraped_words = set(_normalize(scraped_name))
         if not scraped_words:
-            return None
-        best_id, best_score = None, 0.0
-        for ride_id, ride_words in parsed:
+            return None, None, 0.0
+        best_id, best_name, best_score = None, None, 0.0
+        for ride_id, ride_name, ride_words in parsed:
             if not ride_words:
                 continue
             overlap = len(ride_words & scraped_words) / len(ride_words)
             if overlap > best_score:
-                best_id, best_score = ride_id, overlap
-        return best_id if best_score >= 0.9 else None
+                best_id, best_name, best_score = ride_id, ride_name, overlap
+        matched_id = best_id if best_score >= 0.9 else None
+        return matched_id, best_name, best_score
 
     return match
 
 
 # ---------------------------------------------------------------------------
-# Picking the right chart out of everything on the page
+# Fallback: picking the right Plotly chart out of everything on the page
+# (used for regular, non-HHN park pages, which don't use the link-list format)
 # ---------------------------------------------------------------------------
 
 def _get_live_waits(html, known_ride_names):
@@ -213,16 +284,23 @@ def main():
     if not SUPABASE_URL or not SUPABASE_KEY:
         raise SystemExit("SUPABASE_URL / SUPABASE_KEY are not set.")
 
+    print(f"Connecting to Supabase project: {SUPABASE_URL}")
     supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
     rides = supabase.table("rides").select("id, name").execute().data
     if not rides:
         raise SystemExit("The `rides` table is empty -- nothing to match against.")
 
+    print(f"Fetched {len(rides)} ride(s) from Supabase:")
+    for r in rides:
+        print(f"  id={r['id']!r} name={r['name']!r}")
+
     resp = requests.get(HHN_URL, headers=HEADERS, timeout=30)
     resp.raise_for_status()
 
-    waits_by_name = _get_live_waits(resp.text, known_ride_names=[r["name"] for r in rides])
+    waits_by_name = _get_live_waits_from_link_list(resp.text)
+    if not waits_by_name:
+        waits_by_name = _get_live_waits(resp.text, known_ride_names=[r["name"] for r in rides])
 
     if not waits_by_name:
         print("No live wait data on the page right now (HHN may not be running). Exiting.")
@@ -234,9 +312,9 @@ def main():
     rows = []
     unmatched = []
     for name, wait in waits_by_name.items():
-        ride_id = match_ride(name)
+        ride_id, closest_name, score = match_ride(name)
         if ride_id is None:
-            unmatched.append(name)
+            unmatched.append((name, closest_name, score))
             continue
         rows.append(
             {
@@ -248,7 +326,9 @@ def main():
         )
 
     if unmatched:
-        print(f"Skipped {len(unmatched)} unmatched ride(s) from the page: {unmatched}")
+        print(f"Skipped {len(unmatched)} unmatched ride(s) from the page:")
+        for name, closest_name, score in unmatched:
+            print(f"  {name!r} -- closest match in `rides` table: {closest_name!r} (score {score:.2f})")
 
     if not rows:
         print("Nothing matched our rides table -- nothing to upload.")
