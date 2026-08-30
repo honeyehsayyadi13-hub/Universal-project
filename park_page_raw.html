@@ -1,0 +1,2330 @@
+
+
+<!doctype html>
+
+<html lang="en">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <meta name="description" content="Live wait times, crowd trends, graphs, and planning data for Universal Studios at Universal Orlando.">
+  <meta name="keywords" content="theme parks, amusement parks, disney, universal, wait times, magic kingdom, epcot, islands of adventure, six flags, cedar point, dollywood, queue times, line times">
+  <title>Universal Studios Wait Times, Crowd Data & Stats | Thrill Data</title>
+
+  
+  <link rel="canonical" href="https://www.thrill-data.com/waits/park/unit/universal-studios/">
+
+  
+  
+
+  
+  <meta property="og:site_name" content="Thrill Data">
+  <meta property="og:type" content="website">
+  
+  
+  <meta property="og:url" content="https://www.thrill-data.com/waits/park/unit/universal-studios/">
+  <meta property="og:image" content="https://www.thrill-data.com/media/logo_social.png">
+  
+  <meta name="twitter:card" content="summary_large_image">
+
+
+  <script>
+    // Resolve + set the theme before paint (always set data-theme so the toggle
+    // is never ambiguous on a fresh load).
+    (function () {
+      // Halloween is selectable all year. It used to be gated to Aug 15 - Oct 31
+      // like Christmas, but the Halloween content here is not seasonal: the HHN
+      // and MNSSHP pages run year-round and force this theme on themselves, so
+      // people meet it in July, want to keep it, and find the toggle will not
+      // offer it. Being a stored pick that stays valid also means it no longer
+      // silently reverts to dark on November 1st.
+      //
+      // Christmas stays in-season. Adding it year-round would make the toggle a
+      // five-step cycle every day of the year to get back to where you started.
+      //
+      // Blood Moon is the second Halloween theme (deep crimson, off the HHN
+      // countdown strip) and is year-round for the same reason the first one is:
+      // the events it belongs to run year-round. It sits directly after
+      // halloween so the two Halloween looks are adjacent in the cycle rather
+      // than separated by an unrelated theme. This does make the everyday cycle
+      // four steps, which the note above was written to avoid — if that starts
+      // to grate, the fix is a picker rather than dropping a theme, because the
+      // cost is the blind cycle, not the number of themes.
+      var now = new Date(), m = now.getMonth(), d = now.getDate();   // m: 0=Jan .. 11=Dec
+      var order = ['light', 'dark', 'halloween', 'bloodmoon'];
+      if (m === 10 || m === 11) order.push('christmas');
+      window.TD_THEME_ORDER = order;
+      var valid = {}; order.forEach(function(x){ valid[x] = 1; });
+      var t = localStorage.getItem('theme');
+      // Dark is the default; a stored pick (set by the toggle) always wins.
+      if (!valid[t]) { t = 'dark'; }
+      document.documentElement.setAttribute('data-theme', t);
+    })();
+    // Auth flag + CSRF token for logged-in features (e.g. favorites).
+    window.TD_AUTH = false;
+    window.TD_CSRF = "gdZfRi5l2iThmCnv4ZnSVPBps8g3SVbkbP1FDrX339QdBDR1LWE19XEzQTmf0hQV";
+    // Language prefix for same-site navigation done from JavaScript: '' in
+    // English, '/fr' otherwise. A script cannot always reach the template
+    // context -- create_alert_wa.html wraps 1,400 lines of app in a verbatim
+    // block, where template variables are emitted literally rather than
+    // rendered -- so the prefix is published here once, on the page every _wa
+    // template extends, and read from JS as window.TD_LANG.
+    // (Do not name Django tags literally in this comment: the template lexer
+    // does not know it is inside a JS comment and would open a real block.)
+    window.TD_LANG = "";
+    // Prefer the LIVE csrftoken cookie over the value baked into this HTML: a
+    // cached/stale page otherwise submits an outdated token and Django rejects
+    // the POST with 403 "CSRF Failed".
+    window.tdCsrf = function(){
+      try {
+        var m = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
+        if (m && m[1]) return decodeURIComponent(m[1]);
+      } catch (e) {}
+      return window.TD_CSRF || '';
+    };
+    if (window.TD_AUTH) document.documentElement.classList.add('is-auth');
+  </script>
+
+  <meta name="google-site-verification" content="Ymcn31jrg4WfEyDC4rPBjOOQWUU2UWj_RyotuFrcb6E" />
+
+  <!-- Global site tag (gtag.js) - Google Analytics. Carried over from base.html so
+       the redesigned pages keep reporting. NOTE: UA- properties stopped collecting
+       in July 2023 — swap this id for a GA4 "G-..." id to get real data. -->
+  <link rel="preconnect" href="https://www.google-analytics.com">
+
+  
+  <script async src="//cdn.trackdesk.com/tracking.js"></script> <script> (function(t,d,k){(t[k]=t[k]||[]).push(d);t[d]=t[d]||t[k].f||function(){(t[d].q=t[d].q||[]).push(arguments)}})(window,"trackdesk","TrackdeskObject"); trackdesk("thrilldata", "click"); </script> <script async src="https://www.googletagmanager.com/gtag/js?id=UA-143003108-1"></script> <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag() { dataLayer.push(arguments); }
+    gtag('js', new Date());
+    gtag('config', 'UA-143003108-1');
+
+    /* ------------------------------------------------------------------
+       Conversion instrumentation.
+
+       Every Plus upsell points at the native /plus checkout (previously off-site),
+       so without this there is no way to tell which page earned a subscription
+       — or whether the graph tool's six upsells outperform a park page's one.
+       Tagged clicks make that comparable.
+
+       Reported dimensions:
+         source_page  which template the click came from (path)
+         source_area  nearest section heading, so "upsell in the hero" and
+                      "upsell beside a locked feature" are distinguishable
+         member_state logged_out | free | plus  (Plus should never fire an
+                      upsell click; if it does, a gate is showing wrongly)
+       ------------------------------------------------------------------ */
+    (function(){
+      var STATE = 'logged_out';
+
+      function area(el){
+        // Nearest preceding section label gives context without hand-tagging
+        // every link; falls back to the containing card's heading.
+        var card = el.closest && (el.closest('.card') || el.closest('section') || el.closest('.wm-panel'));
+        var h = card && card.querySelector('h1,h2,h3,.sec-head h2,.eyebrow');
+        var txt = (h && h.textContent) || (el.closest('header') ? 'header' : '') || 'page';
+        return txt.trim().replace(/\s+/g, ' ').slice(0, 60);
+      }
+
+      function send(name, el, extra){
+        var d = {
+          source_page: location.pathname,
+          source_area: area(el),
+          link_text: (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 60),
+          member_state: STATE
+        };
+        if (extra) for (var k in extra) d[k] = extra[k];
+        try { gtag('event', name, d); } catch (e) {}
+      }
+
+      document.addEventListener('click', function(e){
+        var a = e.target.closest && e.target.closest('a');
+        if (!a || !a.href) return;
+
+        // The money link — the native /plus checkout (legacy off-site
+        // /subscriptions links still count too, so old pages/emails keep tracking).
+        if (a.pathname === '/plus' || a.pathname === '/plus/' || a.href.indexOf('/subscriptions') > -1) { send('plus_upsell_click', a); return; }
+
+        // Free-account funnel: the step before Plus for logged-out visitors.
+        if (/\/users\/signup/.test(a.href)) { send('signup_click', a); return; }
+        if (/\/users\/login/.test(a.href))  { send('login_click', a);  return; }
+      }, true);
+
+      // Fires once per pageview so upsell clicks can be divided by the number
+      // of people who actually saw a gate, rather than by all traffic.
+      window.tdTrackGate = function(feature){
+        try { gtag('event', 'plus_gate_view', { feature: feature, source_page: location.pathname, member_state: STATE }); } catch (e) {}
+      };
+    })();
+  </script>
+
+  <link rel="stylesheet" href="https://use.typekit.net/qil7wlv.css">
+  <!-- Bungee (Google Fonts) — only for the "Thrill Data" wordmark, matching the app. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&display=swap">
+  <link rel="preconnect" href="https://kit.fontawesome.com">
+  <link rel="stylesheet" href="https://kit.fontawesome.com/259b3fa6e4.css" crossorigin="anonymous">
+
+  
+  
+  <link rel="preconnect" href="https://a.pub.network/" crossorigin>
+  <link rel="preconnect" href="https://b.pub.network/" crossorigin>
+  <link rel="preconnect" href="https://c.pub.network/" crossorigin>
+  <link rel="preconnect" href="https://d.pub.network/" crossorigin>
+  <link rel="preconnect" href="https://btloader.com/" crossorigin>
+  <link rel="preconnect" href="https://api.btloader.com/" crossorigin>
+  <link rel="stylesheet" href="https://a.pub.network/thrill-data-com/cls.css">
+  <script data-cfasync="false" type="text/javascript">
+    var freestar = freestar || {};
+    freestar.queue = freestar.queue || [];
+    freestar.config = freestar.config || {};
+    // disabledProducts has to be set HERE, before pubfig.min.js loads below —
+    // the engine reads it once at init, looks each key up in config.products
+    // and flips that product's `disabled` flag, so a key set afterwards is
+    // ignored. Verified key names from the live bundle: googleInterstitial,
+    // stickyFooter, pushdown.
+    //
+    // Per Freestar (2026-08-14): interstitials off on desktop, kept on mobile,
+    // split on their 768px clientWidth test. Their snippet declared `isMobile`
+    // as a top-level const; wrapped in an IIFE instead so it can't collide with
+    // another script's binding and take the whole inline block down with a
+    // SyntaxError. Merged into any existing disabledProducts rather than
+    // assigned over it, so switching off a second product later doesn't
+    // silently re-enable this one.
+    (function () {
+      var isMobile = document.documentElement.clientWidth < 768;
+      if (!isMobile) {
+        freestar.config.disabledProducts = freestar.config.disabledProducts || {};
+        freestar.config.disabledProducts.googleInterstitial = true;
+      }
+    })();
+    freestar.config.enabled_slots = [];
+    freestar.initCallback = function () {
+      (freestar.config.enabled_slots.length === 0)
+        ? freestar.initCallbackCalled = false
+        : freestar.newAdSlots(freestar.config.enabled_slots);
+    };
+  </script>
+  <script src="https://a.pub.network/thrill-data-com/pubfig.min.js" data-cfasync="false" async></script>
+
+  
+  <script>
+    (function (s, t, a, y, twenty, two) {
+      s.Stay22 = s.Stay22 || {};
+      s.Stay22.params = { lmaID: '68d2f02c885f28c38c17048f' };
+      twenty = t.createElement(a);
+      two = t.getElementsByTagName(a)[0];
+      twenty.async = 1;
+      twenty.src = y;
+      two.parentNode.insertBefore(twenty, two);
+    })(window, document, 'script', 'https://scripts.stay22.com/letmeallez.js');
+  </script>
+  
+
+  
+
+  
+<script src="https://cdn.plot.ly/plotly-3.0.1.min.js" charset="utf-8"></script>
+
+
+  
+  <link rel="stylesheet" href="/wa.css?v=fc45e43fb8">
+  
+  <script src="/wa-head.js?v=11380c5e2f"></script>
+
+  
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Organization",
+        "@id": "https://www.thrill-data.com/#organization",
+        "name": "Thrill Data",
+        "url": "https://www.thrill-data.com/",
+        "logo": {
+          "@type": "ImageObject",
+          "@id": "https://www.thrill-data.com/#logo",
+          "url": "https://www.thrill-data.com/media/logo_social.png"
+        },
+        "sameAs": [
+          "https://www.facebook.com/ThrillData/",
+          "https://www.instagram.com/thrilldata/",
+          "https://twitter.com/ThrillData"
+        ]
+      },
+      {
+        "@type": "WebSite",
+        "@id": "https://www.thrill-data.com/#website",
+        "name": "Thrill Data",
+        "url": "https://www.thrill-data.com/",
+        "publisher": { "@id": "https://www.thrill-data.com/#organization" },
+        "inLanguage": "en-US"
+      }
+    ]
+  }
+  </script>
+</head>
+
+<body class="ads-on">
+
+
+<div align="center" data-freestar-ad="__970x90" id="thrill-data-com_sticky_pushdown-pushdown-cls"></div>
+
+
+  <!-- Icon sprite (swapped for Font Awesome Pro later) -->
+  <svg style="display:none" aria-hidden="true">
+    <symbol id="ic-bars" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+    <symbol id="ic-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3-3"/></symbol>
+    <symbol id="ic-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M5 5l1.4 1.4M17.6 17.6 19 19M3 12h2M19 12h2M5 19l1.4-1.4M17.6 6.4 19 5"/></symbol>
+    <symbol id="ic-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></symbol>
+    <symbol id="ic-user" viewBox="0 0 24 24"><path d="M20 21a8 8 0 1 0-16 0"/><circle cx="12" cy="7" r="4"/></symbol>
+    <symbol id="ic-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.3l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2.2-1.3L14 2h-4l-.3 2.1a7 7 0 0 0-2.2 1.3l-2.4-1-2 3.4 2 1.6A7 7 0 0 0 5 12a7 7 0 0 0 .1 1.3l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2.2 1.3L10 22h4l.3-2.1a7 7 0 0 0 2.2-1.3l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.3z"/></symbol>
+    <symbol id="ic-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+    <symbol id="ic-house" viewBox="0 0 24 24"><path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10"/></symbol>
+    <symbol id="ic-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="ic-bolt" viewBox="0 0 24 24"><path d="M13 2 3 14h7l-1 8 10-12h-7z"/></symbol>
+    <symbol id="ic-calendar" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/></symbol>
+    <symbol id="ic-wand" viewBox="0 0 24 24"><path d="m4 20 12-12M14 4l1 3 3 1-3 1-1 3-1-3-3-1 3-1z"/></symbol>
+    <symbol id="ic-cloud" viewBox="0 0 24 24"><path d="M17 18a4 4 0 0 0 0-8 6 6 0 0 0-11.5-1.5A4.5 4.5 0 0 0 6 18z"/></symbol>
+    <symbol id="ic-book" viewBox="0 0 24 24"><path d="M4 5a2 2 0 0 1 2-2h12v18H6a2 2 0 0 1-2-2z"/><path d="M8 3v18"/></symbol>
+    <symbol id="ic-camera" viewBox="0 0 24 24"><path d="M4 8h3l2-2h6l2 2h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></symbol>
+    <symbol id="ic-pin" viewBox="0 0 24 24"><path d="M12 21s-7-5.6-7-11a7 7 0 0 1 14 0c0 5.4-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></symbol>
+    <symbol id="ic-list" viewBox="0 0 24 24"><path d="M8 6h11M8 12h11M8 18h11"/><path d="M3.5 6h.01M3.5 12h.01M3.5 18h.01"/></symbol>
+    <symbol id="ic-bell" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9z"/><path d="M10 21a2 2 0 0 0 4 0"/></symbol>
+    <symbol id="ic-trend" viewBox="0 0 24 24"><path d="m3 17 6-6 4 4 7-7"/><path d="M17 8h4v4"/></symbol>
+    <symbol id="ic-logout" viewBox="0 0 24 24"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/><path d="m10 17 5-5-5-5"/><path d="M15 12H3"/></symbol>
+  </svg>
+
+  <!-- ==== TOP BAR ==== -->
+  <header class="top">
+    <div class="wrap top-inner">
+      <button class="icon-btn" id="nav-open" aria-label="Open menu"><svg class="i" viewBox="0 0 24 24"><use href="#ic-bars"/></svg></button>
+      <a class="brand" href="/">Thrill&nbsp;Data</a>
+      <form class="search top-search" action="https://www.thrill-data.com/waits/" method="get">
+        <svg class="i sm" viewBox="0 0 24 24"><use href="#ic-search"/></svg>
+        <input name="q" placeholder="Search any park or ride…" aria-label="Search" autocomplete="off">
+      </form>
+      <div class="top-actions">
+        <button class="icon-btn show-mobile" id="search-open" aria-label="Search"><svg class="i sm" viewBox="0 0 24 24"><use href="#ic-search"/></svg></button>
+        <a class="icon-btn wm-link" href="/waitmagic" title="Wait Magic" aria-label="Wait Magic"><i class="fa-solid fa-wand-magic-sparkles" style="font-size:15px;"></i></a>
+        <a class="icon-btn graph-link" href="/graph" title="Custom Graph Tool" aria-label="Custom Graph Tool"><i class="fa-solid fa-chart-line" style="font-size:15px;"></i></a>
+        <a class="icon-btn alert-link" href="/alerts/" title="Alerts" aria-label="Alerts"><i class="fa-solid fa-bell" style="font-size:15px;"></i></a>
+        
+        <a class="icon-btn rides-link" href="/waits/" title="All Parks &amp; Rides" aria-label="All Parks and Rides"><i class="fa-solid fa-roller-coaster" style="font-size:15px;"></i></a>
+        <span class="top-div" aria-hidden="true"></span>
+        <button class="icon-btn theme-toggle" id="theme-toggle" aria-label="Change theme" title="Change theme"><i id="theme-icon" class="theme-icon fa-solid fa-moon"></i></button>
+        
+        <a class="icon-btn plus-link" href="/plus" title="Get Thrill Data Plus" aria-label="Get Thrill Data Plus"><i class="fa-solid fa-plus"></i></a>
+        
+          <a class="btn ghost auth-btn" href="/users/login?next=/waits/park/unit/universal-studios/" title="Log In"><svg class="i sm" viewBox="0 0 24 24"><use href="#ic-user"/></svg> <span class="btn-lbl">Log In</span></a>
+          <a class="btn primary auth-btn" href="/users/signup?next=/waits/park/unit/universal-studios/" title="Sign Up"><i class="fa-solid fa-user-plus" style="font-size:13px;"></i> <span class="btn-lbl">Sign Up</span></a>
+        
+      </div>
+    </div>
+  </header>
+
+  
+  <nav class="top-sub" aria-label="Quick links">
+    <a class="wm-link" href="/waitmagic" title="Wait Magic" aria-label="Wait Magic"><i class="fa-solid fa-wand-magic-sparkles"></i><span class="ts-lbl">Wait Magic</span></a>
+    <a class="graph-link" href="/graph" title="Custom Graph Tool" aria-label="Custom Graph Tool"><i class="fa-solid fa-chart-line"></i><span class="ts-lbl">Graphs</span></a>
+    <a class="alert-link" href="/alerts/" title="Alerts" aria-label="Alerts"><i class="fa-solid fa-bell"></i><span class="ts-lbl">Alerts</span></a>
+    <span class="ts-div" aria-hidden="true"></span>
+    
+    <a class="plus-link" href="/plus" title="Get Thrill Data Plus" aria-label="Get Thrill Data Plus"><i class="fa-solid fa-plus"></i><span class="ts-lbl">Plus</span></a>
+    <button type="button" class="theme-toggle" aria-label="Change theme"><i class="theme-icon fa-solid fa-moon"></i><span class="ts-lbl">Theme</span></button>
+  </nav>
+
+  <!-- Mobile search popup -->
+  <div class="search-scrim" id="search-scrim"></div>
+  <div class="search-modal" id="search-modal" role="dialog" aria-modal="true" aria-label="Search">
+    <form class="search" action="https://www.thrill-data.com/waits/" method="get">
+      <svg class="i sm" viewBox="0 0 24 24"><use href="#ic-search"/></svg>
+      <input name="q" id="search-modal-input" placeholder="Search any park or ride…" aria-label="Search">
+    </form>
+  </div>
+
+  <!-- Wait Times modal (park live waits) -->
+  <div class="wt-scrim" id="wt-scrim"></div>
+  <div class="wt-modal" id="wt-modal" role="dialog" aria-modal="true" aria-labelledby="wt-title">
+    <div class="wt-head">
+      <svg class="i" viewBox="0 0 24 24" style="color:var(--brand)"><use href="#ic-clock"/></svg>
+      <h3 id="wt-title">Wait Times</h3>
+      <button class="icon-btn close" id="wt-close" aria-label="Close"><svg class="i sm" viewBox="0 0 24 24"><use href="#ic-close"/></svg></button>
+    </div>
+    <div class="wt-body" id="wt-body"></div>
+  </div>
+
+  <!-- ==== MAIN ==== -->
+  <div class="wrap">
+    <main>
+      
+
+
+
+<nav class="crumbs" aria-label="Breadcrumb">
+  <a href="/" title="Thrill Data home">Home</a>
+  <span class="sep">&rsaquo;</span>
+  <a href="/waits/" title="All parks & wait times">Parks</a>
+  <span class="sep">&rsaquo;</span>
+  <a href="/waits/chain/uor/" title="Universal Orlando">Universal Orlando</a>
+  <span class="sep">&rsaquo;</span>
+  
+  
+  <span class="here">Universal Studios</span>
+</nav>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[
+{"@type":"ListItem","position":1,"name":"Home","item":"https://www.thrill-data.com/"}
+,{"@type":"ListItem","position":2,"name":"Parks","item":"https://www.thrill-data.com/waits/"}
+,{"@type":"ListItem","position":3,"name":"Universal Orlando","item":"https://www.thrill-data.com/waits/chain/uor/"}
+
+
+,{"@type":"ListItem","position":4,"name":"Universal Studios","item":"https://www.thrill-data.com/waits/park/unit/universal\u002Dstudios/"}
+]}
+</script>
+
+
+      
+      
+      <div id="freestar-ad-lb" class="freestar-ad-slot" data-slot-name="thrill-data-com_leaderboard_atf" data-slot-type="static"></div>
+      <script>freestar.queue.push(function(){ freestar.newAdSlots([{ placementName:"thrill-data-com_leaderboard_atf", slotId:"freestar-ad-lb", publisher:"thrill-data-com" }]); });</script>
+      
+      
+      
+
+
+
+<style>
+  .plus-strip { display:flex; align-items:center; gap:12px; padding:11px 14px; margin:0 0 14px;
+    border-radius:13px; background:color-mix(in srgb,var(--brand) 9%,var(--surface));
+    border:1px solid color-mix(in srgb,var(--brand) 32%,transparent); }
+  .plus-strip[hidden] { display:none !important; }
+  .ps-ic { flex:none; width:32px; height:32px; border-radius:10px; display:grid; place-items:center;
+    background:var(--grad); color:#fff; font-size:14px; }
+  .ps-copy { flex:1 1 auto; min-width:0; line-height:1.35; }
+  .ps-copy b { display:block; font-size:13.5px; font-weight:800; color:var(--text); }
+  .ps-sub { display:block; font-size:12.5px; font-weight:400; color:var(--muted); }
+  .ps-sub strong { color:var(--text); font-weight:700; }
+  /* Feature chips. A second line of short, scannable names — the sub-line
+     sells one moment, these show the breadth without turning the strip into a
+     paragraph. Dropped on narrow screens, where the strip already wraps to
+     three rows and this would be a fourth. */
+  .ps-feats { display:flex; flex-wrap:wrap; gap:5px; margin-top:6px; }
+  .ps-feats em { font-style:normal; font-size:10.5px; font-weight:700; letter-spacing:.01em;
+    padding:2px 8px; border-radius:999px; white-space:nowrap;
+    color:var(--brand); background:color-mix(in srgb,var(--brand) 12%,transparent);
+    border:1px solid color-mix(in srgb,var(--brand) 26%,transparent); }
+  @media (max-width:720px){ .ps-feats { display:none; } }
+  .ps-act { flex:none; display:flex; flex-direction:column; align-items:center; gap:4px; }
+  .ps-cta { position:relative; overflow:hidden; display:block; padding:8px 15px; border-radius:10px;
+    background:var(--grad); color:#fff; font-size:13px; font-weight:800; text-decoration:none;
+    white-space:nowrap; }
+  .ps-cta:hover { filter:brightness(1.07); }
+  .ps-cta i { font-size:11px; margin-left:3px; transition:transform .14s ease; }
+  .ps-cta:hover i { transform:translateX(2px); }
+  /* One slow sheen across the button. The /plus hero uses a pulsing ring on its
+     "+" badge, so the strip picking up a subtle animated highlight reads as the
+     same family rather than a novelty. Kept to a wide, low-opacity band on a
+     long cycle — a fast or bright sweep on a strip that sits above article
+     content is a distraction, not a draw. */
+  .ps-cta::after { content:''; position:absolute; inset:0 auto 0 -60%; width:45%; pointer-events:none;
+    background:linear-gradient(100deg,transparent,rgba(255,255,255,.34),transparent);
+    animation:psSheen 4.6s ease-in-out infinite; }
+  @keyframes psSheen { 0%,72% { transform:translateX(0); } 100% { transform:translateX(420%); } }
+  .ps-fine { font-size:10px; font-weight:600; color:var(--muted); white-space:nowrap; }
+  @media (prefers-reduced-motion: reduce) {
+    .ps-cta::after { animation:none; opacity:0; }
+    .ps-cta i { transition:none; }
+  }
+  .ps-x { flex:none; width:28px; height:28px; border-radius:8px; border:1px solid var(--border);
+    background:transparent; color:var(--muted); font-size:16px; line-height:1; cursor:pointer; }
+  .ps-x:hover { color:var(--text); border-color:var(--brand); }
+  @media (max-width:560px){
+    .plus-strip { flex-wrap:wrap; gap:10px; }
+    .ps-copy { flex:1 1 100%; order:2; }
+    .ps-act { order:3; flex:1 1 auto; }
+    .ps-cta { text-align:center; }
+    .ps-x { order:1; margin-left:auto; }
+  }
+</style>
+
+
+
+<div class="plus-strip" id="plus-strip" hidden>
+  <span class="ps-ic"><i class="fa-solid fa-bolt"></i></span>
+  
+  <div class="ps-copy">
+    <b>Ad-Free &plus; Instant Alerts &plus; Much More!</b>
+    <span class="ps-sub">Get a <strong>text the second</strong> a dining table frees up, a Lightning Lane opens, or a ride&rsquo;s wait crashes.</span>
+    <span class="ps-feats">
+      <em>No ads</em><em>Text &amp; push alerts</em><em>Priority dining searches</em><em>Big wait drops</em><em>Data downloads</em><em>App beta</em>
+    </span>
+  </div>
+  
+  <div class="ps-act">
+    <a class="ps-cta" href="/plus" target="_blank" rel="noopener">Get Plus <i class="fa-solid fa-arrow-right"></i></a>
+    <span class="ps-fine">No auto-renew &middot; from 2 days</span>
+  </div>
+  <button type="button" class="ps-x" id="plus-strip-x" aria-label="Dismiss">&times;</button>
+</div>
+
+
+<script>
+(function(){
+  var KEY = 'td.plusStrip.dismissed';
+  var el = document.getElementById('plus-strip');
+  if (!el) return;
+
+  var until = 0;
+  try { until = parseInt(localStorage.getItem(KEY) || '0', 10) || 0; } catch(e){}
+
+  // Dismissal lapses after 30 days rather than being permanent — someone who
+  // said "not now" in March is a fair ask again in April.
+  if (Date.now() < until) return;
+
+  el.hidden = false;
+  if (window.tdTrackGate) window.tdTrackGate('plus_strip');
+
+  document.getElementById('plus-strip-x').addEventListener('click', function(){
+    el.hidden = true;
+    try { localStorage.setItem(KEY, String(Date.now() + 30 * 24 * 60 * 60 * 1000)); } catch(e){}
+  });
+})();
+</script>
+
+
+
+      
+
+<link rel="stylesheet" href="/wa-park.css?v=0ada8ddd91">
+
+  <!-- HEADER -->
+  <section>
+    <div class="card pad pk-head">
+      <div class="pk-id">
+        <h1>Universal Studios
+          <button type="button" class="pt-fav" data-slug="universal-studios" data-name="Universal Studios" data-chain="uor" data-chain-name="Universal Orlando" aria-label="Favorite Universal Studios" title="Save Universal Studios to favorites"><i class="fa-regular fa-heart"></i></button>
+          
+        </h1>
+        <div class="pk-resort"><a href="/waits/chain/uor/" title="Universal Orlando">Universal Orlando</a> · Orlando, FL</div>
+        
+        <div class="pk-rate" id="pk-rate" data-park="universal-studios"
+             title="Park rating 75/100">
+          <div class="pt-rating pk-rate-bar" id="pk-rate-bar">
+            <span id="pk-rate-fill" style="width:75%"></span>
+            
+          </div>
+        </div>
+        
+        <div class="pk-meta">
+          <span title="Local park time"><i class="fa-regular fa-clock"></i> 04:11 PM</span>
+          <a href="/park-hours/universal-studios" title="Universal Studios park hours"><i class="fa-solid fa-door-open"></i> 09:00 AM – 05:00 PM</a>
+          
+          <a href="/trip-planning/crowd-calendar/universal-studios" title="Universal Studios crowd calendar"><svg class="i sm" viewBox="0 0 24 24"><use href="#ic-calendar"/></svg> Crowd Calendar</a>
+          <a href="/park-weather/universal-studios" title="Universal Studios weather forecast"><svg class="i sm" viewBox="0 0 24 24"><use href="#ic-cloud"/></svg> Weather</a>
+          <a href="/express-now" title="Live Universal Express Now return-time offers"><i class="fa-solid fa-forward"></i> Express Now</a>
+          
+        </div>
+      </div>
+      <div class="pk-side">
+        
+          
+          <div class="wait-tile lg up" title="42 min avg — above average, steady"><span class="n"><span class="ar">→</span>42</span><span class="u">min avg</span></div>
+        
+      </div>
+    </div>
+  </section>
+
+
+  <!-- TAB BUTTONS -->
+  <div class="ptabs" role="tablist" id="ptabs">
+    <button class="ptab" role="tab" aria-selected="true" data-tab="overview"><i class="fa-solid fa-gauge-high"></i> Overview</button>
+    <button class="ptab" role="tab" aria-selected="false" data-tab="waits"><svg class="i sm" viewBox="0 0 24 24"><use href="#ic-clock"/></svg> Live Waits</button>
+    
+    
+    
+    <button class="ptab" role="tab" aria-selected="false" data-tab="trends"><svg class="i sm" viewBox="0 0 24 24"><use href="#ic-trend"/></svg> Trends</button>
+    <button class="ptab" role="tab" aria-selected="false" data-tab="bestdays"><i class="fa-solid fa-calendar-week"></i> Best Days</button>
+    
+    
+    <button class="ptab" role="tab" aria-selected="false" data-tab="graphs"><i class="fa-solid fa-chart-area"></i> Graphs</button>
+    <button class="ptab" role="tab" aria-selected="false" data-tab="calendar"><svg class="i sm" viewBox="0 0 24 24"><use href="#ic-calendar"/></svg> Crowd Calendar</button>
+    <button class="ptab" role="tab" aria-selected="false" data-tab="tickets"><i class="fa-solid fa-ticket"></i> Ticket Prices</button>
+    
+    
+    <button class="ptab" role="tab" aria-selected="false" data-tab="downloads"><i class="fa-solid fa-download"></i> Downloads</button>
+    <button class="ptab" role="tab" aria-selected="false" data-tab="faq"><i class="fa-solid fa-circle-question"></i> FAQ</button>
+  </div>
+
+  <!-- DATE CONTROLS (top) -->
+  <div class="date-nav">
+    <a class="dn-btn" href="/waits/park/uor/universal-studios/2026/08/27" title="Previous day"><i class="fa-solid fa-chevron-left"></i><span>Previous Day</span></a>
+    <label class="dn-date" title="Viewing 08/28/2026 — click to pick a date">
+      <i class="fa-solid fa-calendar-day"></i> 08/28/2026
+      <input type="date" value="2026-08-28" data-park="uor/universal-studios" aria-label="Jump to date">
+    </label>
+    
+  </div>
+
+  <!-- OVERVIEW -->
+  <section class="ppanel on" data-panel="overview">
+
+    <!-- Hero: current wait + today's curve, with side stat cards -->
+    <div class="ov-grid">
+      <div class="card pad ov-hero">
+        <div class="ov-label"><span class="live-dot"></span> Live Park Average Wait</div>
+        
+        <div class="ov-big">
+          <span class="n">42</span><span class="u">min</span>
+          
+          <span class="chip up" title="42 min — above average, holding steady right now">→ Steady</span>
+        </div>
+        
+        
+        <div class="ov-sub">Today's average <strong>21 min</strong> · median <strong>19 min</strong></div>
+        
+        
+        
+        <div class="ov-chart">
+          <svg class="wa-curve ov-profile" viewBox="0 0 600 140" preserveAspectRatio="none"
+               data-spark="5,10,13,12,12,11,11,11,11,11,11,11,10,10,11,12,12,13,14,15,15,15,17,18,18,18,18,20,18,18,18,19,19,19,20,19,20,22,21,21,22,21,21,20,20,20,20,19,19,19,20,19,19,19,19,18,19,18,20,20,20,25,25,25,27,29,29,30,29,31,32,32,32,33,31,30,28,28,30,31,32,32,32,32,33,38,38" data-times="8:55 AM|9:00 AM|9:05 AM|9:10 AM|9:15 AM|9:20 AM|9:25 AM|9:30 AM|9:35 AM|9:40 AM|9:45 AM|9:50 AM|9:55 AM|10:00 AM|10:05 AM|10:10 AM|10:15 AM|10:20 AM|10:25 AM|10:30 AM|10:35 AM|10:40 AM|10:45 AM|10:50 AM|10:55 AM|11:00 AM|11:05 AM|11:10 AM|11:15 AM|11:20 AM|11:25 AM|11:30 AM|11:35 AM|11:40 AM|11:45 AM|11:50 AM|11:55 AM|12:00 PM|12:05 PM|12:10 PM|12:15 PM|12:20 PM|12:25 PM|12:30 PM|12:35 PM|12:40 PM|12:45 PM|12:50 PM|12:55 PM|1:00 PM|1:05 PM|1:10 PM|1:15 PM|1:20 PM|1:25 PM|1:30 PM|1:35 PM|1:40 PM|1:45 PM|1:50 PM|1:55 PM|2:00 PM|2:05 PM|2:10 PM|2:15 PM|2:20 PM|2:25 PM|2:30 PM|2:35 PM|2:40 PM|2:45 PM|2:50 PM|2:55 PM|3:00 PM|3:05 PM|3:10 PM|3:15 PM|3:20 PM|3:25 PM|3:30 PM|3:35 PM|3:40 PM|3:45 PM|3:50 PM|3:55 PM|4:00 PM|4:05 PM" data-avg="21" data-average="12,12,12,13,13,14,15,15,16,17,18,18,18,19,19,20,20,21,22,22,23,24,25,25,26,27,27,28,28,29,29,29,30,30,30,30,30,31,31,31,31,32,32,32,32,31,31,31,31,31,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33"></svg>
+          <div class="ov-tip" hidden></div>
+        </div>
+        
+        <div class="ov-axis">
+          <span>8:55 AM</span>
+          <span>Today's Wait Curve</span>
+          <span>4:05 PM</span>
+        </div>
+        
+        <div class="ov-scale" aria-hidden="true">
+          <div class="bar"></div>
+          <div class="lbls"><span>Low</span><span>Average</span><span>High</span></div>
+        </div>
+        
+      </div>
+
+      <div class="ov-side">
+        
+        <div id="ov-crowd"></div>
+        <script>
+        (function(){
+          var box = document.getElementById('ov-crowd');
+          if (!box) return;
+          function load(){
+            fetch('/wa/park-crowd/universal-studios')
+              .then(function(r){ return r.ok ? r.text() : ''; })
+              .then(function(html){ if (html && html.trim()) box.innerHTML = html; })
+              .catch(function(){ /* the overview stands without it */ });
+          }
+          if (window.requestIdleCallback) requestIdleCallback(load, {timeout: 2500});
+          else setTimeout(load, 400);
+        })();
+        </script>
+
+        
+        <div class="card pad ov-stat">
+          <div class="ov-stat-h"><svg class="i sm" viewBox="0 0 24 24"><use href="#ic-cloud"/></svg> Weather <a class="more" href="/park-weather/universal-studios" title="16-day forecast for Universal Studios">Forecast →</a></div>
+          <div class="ov-wx">
+            <img src="https://www.thrill-data.com/weather/partly-cloudy-day.png" title="Partially cloudy" alt="Partially cloudy">
+            <span class="t">89°F</span>
+            <span class="ov-stat-s">Partially cloudy</span>
+          </div>
+          <div class="ov-stat-s"><i class="fa-sharp fa-solid fa-wind"></i> 3 MPH WNW &nbsp; <i class="fa-solid fa-raindrops"></i> None &nbsp; <i class="fa-regular fa-clouds"></i> 50%</div>
+        </div>
+        
+
+        
+        <div class="card pad ov-stat">
+          <div class="ov-stat-h"><svg class="i sm" viewBox="0 0 24 24"><use href="#ic-clock"/></svg> Longest Waits Right Now <button type="button" class="ov-jumplink" data-tab="waits" title="See all wait times">All →</button></div>
+          <div class="ov-top-list">
+            
+            <a class="ov-top-row" href="/waits/attraction/universal-studios/hogwartsexpresskingscrossstation/" title="Hogwarts Express - King&#x27;s Cross Station wait times & data">
+              <span class="rank">1</span>
+              <span class="nm">Hogwarts Express - King&#x27;s Cross Station</span>
+              
+                <span class="chip up" title="65 min — above this ride's average, steady">→ 65m</span>
+              
+            </a>
+            
+            <a class="ov-top-row" href="/waits/attraction/universal-studios/revengeofthemummy/" title="Revenge of the Mummy wait times & data">
+              <span class="rank">2</span>
+              <span class="nm">Revenge of the Mummy</span>
+              
+                <span class="chip mid" title="35 min — around this ride's average, steady">→ 35m</span>
+              
+            </a>
+            
+            <a class="ov-top-row" href="/waits/attraction/universal-studios/etadventure/" title="E.T. Adventure wait times & data">
+              <span class="rank">3</span>
+              <span class="nm">E.T. Adventure</span>
+              
+                <span class="chip mid" title="25 min — around this ride's average, steady">→ 25m</span>
+              
+            </a>
+            
+          </div>
+        </div>
+        
+      </div>
+    </div>
+
+    <!-- Today's numbers -->
+    
+    <div class="ov-mini-grid">
+      
+      
+      <div class="card pad ov-mini">
+        
+        <div class="tr-badge up" title="Waits today are 15.8% above an average day">↑ 15.8%</div>
+        <div class="l">Higher Than Average</div>
+        
+      </div>
+      
+      
+      
+      <div class="card pad ov-mini">
+        <div class="n"><i class="fa-solid fa-arrow-trend-up" style="color:var(--mag5)"></i> 38 min</div>
+        <div class="l">Peak Wait · 4:00 PM</div>
+      </div>
+      
+      
+      <div class="card pad ov-mini">
+        <div class="n"><i class="fa-solid fa-leaf" style="color:var(--mag1)"></i> 5 min</div>
+        <div class="l">Lowest Wait · 8:55 AM</div>
+      </div>
+      
+      
+      
+    </div>
+    
+
+    
+    
+    
+<div class="freestar-ad-slot" data-slot-name="thrill-data-com_incontent_reusable" data-slot-type="static"></div>
+<script>(function(){var el=document.currentScript.previousElementSibling,id='fs-ic-'+Math.random().toString(36).slice(2);el.id=id;window.freestar=window.freestar||{};freestar.queue=freestar.queue||[];freestar.queue.push(function(){freestar.newAdSlots([{placementName:"thrill-data-com_incontent_reusable",slotId:id,publisher:"thrill-data-com"}]);});})();</script>
+
+
+    <div id="ov-research" class="ov-research" data-date="08-28"></div>
+    <script>
+    (function(){
+      var box = document.getElementById('ov-research');
+      if (!box) return;
+      function load(){
+        fetch('/wa/park-research/universal-studios?d=' + encodeURIComponent(box.dataset.date))
+          .then(function(r){ return r.ok ? r.text() : ''; })
+          .then(function(html){ if (html && html.trim()) box.innerHTML = html; })
+          .catch(function(){ /* the overview is complete without it */ });
+      }
+      if (window.requestIdleCallback) requestIdleCallback(load, {timeout: 2500});
+      else setTimeout(load, 600);
+    })();
+    </script>
+
+    
+    
+    <div class="card pad ov-photos">
+      <div class="ov-stat-h">
+        <i class="fa-solid fa-camera-retro"></i> Universal Studios Photos
+        <a class="more" href="/photos/park/universal-studios" title="Every Universal Studios photo album">All Photos →</a>
+      </div>
+      <div class="ov-ph-grid">
+        
+        <a class="ov-ph" href="/photos/universal-studios-florida-holiday-2024" title="Universal Studios Florida Holiday 2024">
+          <img src="https://talk.thrill-data.com/uploads/monthly_2024_12/small.IMG_3425.jpeg.945d43797db28013972cd30bd2662ff7.jpeg" alt="Universal Studios Florida Holiday 2024" loading="lazy" decoding="async">
+        </a>
+        
+        <a class="ov-ph" href="/photos/universal-studios-florida-holiday-2024" title="Universal Studios Florida Holiday 2024">
+          <img src="https://talk.thrill-data.com/uploads/monthly_2024_12/small.IMG_3439.jpeg.116d3915f2b97c060e50ac770b2268fc.jpeg" alt="Universal Studios Florida Holiday 2024" loading="lazy" decoding="async">
+        </a>
+        
+        <a class="ov-ph" href="/photos/universal-studios-florida" title="Universal Studios Florida">
+          <img src="https://talk.thrill-data.com/uploads/monthly_2025_01/small.IMG_3125.jpg.702a958bf2d44c0a97c2000200ae8604.jpg" alt="Universal Studios Florida" loading="lazy" decoding="async">
+        </a>
+        
+        <a class="ov-ph" href="/photos/universal-studios-florida-holiday-2024" title="Universal Studios Florida Holiday 2024">
+          <img src="https://talk.thrill-data.com/uploads/monthly_2024_12/small.IMG_3411.jpeg.7b804d251c065ac6b54a2ebd88bce533.jpeg" alt="Universal Studios Florida Holiday 2024" loading="lazy" decoding="async">
+        </a>
+        
+        <a class="ov-ph" href="/photos/universal-studios-florida-holiday-2024" title="Universal Studios Florida Holiday 2024">
+          <img src="https://talk.thrill-data.com/uploads/monthly_2024_12/small.IMG_3471.jpeg.89a853348a1491a9ae1dcd8b28f1ae80.jpeg" alt="Universal Studios Florida Holiday 2024" loading="lazy" decoding="async">
+        </a>
+        
+        <a class="ov-ph" href="/photos/universal-studios-florida" title="Universal Studios Florida">
+          <img src="https://talk.thrill-data.com/uploads/monthly_2025_01/small.P1000593.jpg.9c8022e906f4f5d9335dc1c9f2c6d8df.jpg" alt="Universal Studios Florida" loading="lazy" decoding="async">
+        </a>
+        
+        <a class="ov-ph" href="/photos/universal-studios-florida" title="Universal Studios Florida">
+          <img src="https://talk.thrill-data.com/uploads/monthly_2025_01/small.IMG_3135.jpg.3910c922b33a27eef6f66fb4f2a3010d.jpg" alt="Universal Studios Florida" loading="lazy" decoding="async">
+        </a>
+        
+        <a class="ov-ph" href="/photos/universal-studios-florida" title="Universal Studios Florida">
+          <img src="https://talk.thrill-data.com/uploads/monthly_2025_01/small.P1000568.jpg.bb18e50359e420324bc77d6103c92c00.jpg" alt="Universal Studios Florida" loading="lazy" decoding="async">
+        </a>
+        
+        <a class="ov-ph" href="/photos/universal-studios-florida-holiday-2024" title="Universal Studios Florida Holiday 2024">
+          <img src="https://talk.thrill-data.com/uploads/monthly_2024_12/small.IMG_3422.jpeg.41b23dfebf195fa924afb28f9bbd6921.jpeg" alt="Universal Studios Florida Holiday 2024" loading="lazy" decoding="async">
+        </a>
+        
+        <a class="ov-ph" href="/photos/universal-studios-florida-holiday-2024" title="Universal Studios Florida Holiday 2024">
+          <img src="https://talk.thrill-data.com/uploads/monthly_2024_12/small.IMG_3427.jpeg.594871b0e0528433b7a1bd7bf5bf872e.jpeg" alt="Universal Studios Florida Holiday 2024" loading="lazy" decoding="async">
+        </a>
+        
+        <a class="ov-ph" href="/photos/universal-studios-florida-holiday-2024" title="Universal Studios Florida Holiday 2024">
+          <img src="https://talk.thrill-data.com/uploads/monthly_2024_12/small.IMG_3440.jpeg.ff295d612705723c8e7719117a6ae136.jpeg" alt="Universal Studios Florida Holiday 2024" loading="lazy" decoding="async">
+        </a>
+        
+        <a class="ov-ph" href="/photos/universal-studios-florida" title="Universal Studios Florida">
+          <img src="https://talk.thrill-data.com/uploads/monthly_2025_01/small.P1000576.jpg.3ad186a54a89d6be3645253aead79c4d.jpg" alt="Universal Studios Florida" loading="lazy" decoding="async">
+        </a>
+        
+        <a class="ov-ph" href="/photos/universal-studios-florida-holiday-2024" title="Universal Studios Florida Holiday 2024">
+          <img src="https://talk.thrill-data.com/uploads/monthly_2024_12/small.IMG_3419.jpeg.8dc801c0376859bf892711b50a250cde.jpeg" alt="Universal Studios Florida Holiday 2024" loading="lazy" decoding="async">
+        </a>
+        
+        <a class="ov-ph" href="/photos/universal-studios-florida" title="Universal Studios Florida">
+          <img src="https://talk.thrill-data.com/uploads/monthly_2025_01/small.IMG_3124.jpg.ed315e9f95929a484aac1a0acd561851.jpg" alt="Universal Studios Florida" loading="lazy" decoding="async">
+        </a>
+        
+        <a class="ov-ph" href="/photos/universal-studios-florida-holiday-2024" title="Universal Studios Florida Holiday 2024">
+          <img src="https://talk.thrill-data.com/uploads/monthly_2024_12/small.IMG_3378.jpeg.c31deb90781b2b4d3520c4d9456276e9.jpeg" alt="Universal Studios Florida Holiday 2024" loading="lazy" decoding="async">
+        </a>
+        
+        <a class="ov-ph" href="/photos/universal-studios-florida" title="Universal Studios Florida">
+          <img src="https://talk.thrill-data.com/uploads/monthly_2025_01/small.P1000566.jpg.d73374f17272da2ca8796f04e8534c99.jpg" alt="Universal Studios Florida" loading="lazy" decoding="async">
+        </a>
+        
+        <a class="ov-ph" href="/photos/universal-studios-florida-holiday-2024" title="Universal Studios Florida Holiday 2024">
+          <img src="https://talk.thrill-data.com/uploads/monthly_2024_12/small.IMG_3470.jpeg.3e9b504ec1f6a07df9f5876ee2424799.jpeg" alt="Universal Studios Florida Holiday 2024" loading="lazy" decoding="async">
+        </a>
+        
+        <a class="ov-ph" href="/photos/universal-studios-florida-holiday-2024" title="Universal Studios Florida Holiday 2024">
+          <img src="https://talk.thrill-data.com/uploads/monthly_2024_12/small.IMG_3424.jpeg.912812c1e129d6eac58ab20e4fe420f8.jpeg" alt="Universal Studios Florida Holiday 2024" loading="lazy" decoding="async">
+        </a>
+        
+        <a class="ov-ph" href="/photos/universal-studios-florida" title="Universal Studios Florida">
+          <img src="https://talk.thrill-data.com/uploads/monthly_2025_01/small.IMG_3117.jpg.c2a26600e73360419da05ff7e8be28da.jpg" alt="Universal Studios Florida" loading="lazy" decoding="async">
+        </a>
+        
+        <a class="ov-ph" href="/photos/universal-studios-florida-holiday-2024" title="Universal Studios Florida Holiday 2024">
+          <img src="https://talk.thrill-data.com/uploads/monthly_2024_12/small.IMG_3417.jpeg.98165f3b4eb955bb89784712c4560a81.jpeg" alt="Universal Studios Florida Holiday 2024" loading="lazy" decoding="async">
+        </a>
+        
+      </div>
+    </div>
+    
+
+    
+    
+
+
+
+
+
+
+<div class="tickets-cta">
+  <h3 class="tk-head"><i class="fa-solid fa-ticket"></i> Planning a Visit?</h3>
+  <p class="tk-lead">Ticket prices and skip-the-line options for Universal Studios.</p>
+  <div class="tk-btns">
+    <a class="tk-btn" href="https://tp.media/r?marker=675199&amp;trs=461886&amp;p=1922&amp;campaign_id=47&amp;sub_id=overview_universal_studios&amp;u=https%3A%2F%2Fwww.viator.com%2FOrlando-attractions%2FUniversal-Orlando-Resort%2Fd663-a1126" target="_blank" rel="sponsored nofollow noopener">Check Prices on Viator</a>
+    <a class="tk-btn alt" href="https://tp.media/r?marker=675199&amp;trs=461886&amp;p=3965&amp;campaign_id=108&amp;sub_id=overview_universal_studios&amp;u=https%3A%2F%2Fwww.getyourguide.com%2Forlando-l191%2Funiversal-orlando-resort-park-tickets-with-epic-universe-t851305%2F" target="_blank" rel="sponsored nofollow noopener">Compare on GetYourGuide</a>
+  </div>
+  <p class="tk-disc">These are affiliate links &mdash; if you book through them we earn a commission at no extra cost to you. It helps keep Thrill Data free.</p>
+</div>
+<style>
+  .tickets-cta { margin:18px 0; padding:16px 18px; border-radius:14px;
+                 background:var(--surface, #ffffff); border:1px solid var(--border, #e3e3ea); }
+  .tickets-cta .tk-head { margin:0 0 6px; font-size:16px; font-weight:800; color:var(--text, #1c1b22); }
+  .tickets-cta .tk-head i { color:var(--brand, #7b5cf0); margin-right:6px; }
+  .tickets-cta .tk-lead { margin:0 0 14px; font-size:13.5px; font-weight:400; line-height:1.55; color:var(--muted, #63636e); }
+  .tickets-cta .tk-btns { display:flex; flex-wrap:wrap; gap:10px; }
+  .tickets-cta .tk-btn { display:inline-flex; align-items:center; justify-content:center;
+      padding:9px 16px; border-radius:10px; font-size:13.5px; font-weight:700; text-decoration:none;
+      background:var(--brand, #7b5cf0); color:#fff; border:1px solid var(--brand, #7b5cf0); }
+  .tickets-cta .tk-btn:hover { filter:brightness(1.08); text-decoration:none; }
+  .tickets-cta .tk-btn.alt { background:transparent; color:var(--brand, #7b5cf0); }
+  .tickets-cta .tk-disc { margin:14px 0 0; font-size:11.5px; font-weight:400; line-height:1.5; color:var(--muted, #63636e); }
+</style>
+
+
+
+    
+    
+
+<div class="freestar-ad-slot" data-slot-name="thrill-data-com_siderail_reusable" data-slot-type="static"></div>
+<script>(function(){var el=document.currentScript.previousElementSibling,id='fs-sr-'+Math.random().toString(36).slice(2);el.id=id;window.freestar=window.freestar||{};freestar.queue=freestar.queue||[];freestar.queue.push(function(){freestar.newAdSlots([{placementName:"thrill-data-com_siderail_reusable",slotId:id,publisher:"thrill-data-com"}]);});})();</script>
+
+
+
+  </section>
+
+                                                                          
+  
+  <section class="ppanel" data-panel="waits"><template>
+    <div class="card pad">
+      <div class="sec-head"><h2><svg class="i" viewBox="0 0 24 24"><use href="#ic-clock"/></svg> Universal Studios Wait Times</h2></div>
+      <div class="quick-graph" data-url="/wa/park-waits/universal-studios" data-params="fmt=table"><div class="td-load"><i class="fa-solid fa-ferris-wheel fw"></i><span class="msg">Loading some awesome data!</span></div></div>
+    </div>
+  </template></section>
+  
+
+  <!-- TRENDS: native stats & insights (today + recent) -->
+  <section class="ppanel" data-panel="trends"><template>
+    <!-- Recent trend badges. On a past date only the day-vs-average tile is meaningful; hide the whole card if that couldn't be computed. -->
+    
+    <div class="card pad">
+      <div class="sec-head"><h2><svg class="i" viewBox="0 0 24 24"><use href="#ic-trend"/></svg> Universal Studios Recent Trends</h2></div>
+      <div class="tr-grid">
+        
+        
+        <div class="tr-cell">
+          <div class="tr-badge up">↑ 15.8%</div>
+          <div class="l">Today vs Average</div>
+        </div>
+        
+        
+        <div class="tr-cell">
+          <div class="tr-badge down">↓ 4.5%</div>
+          <div class="l">This Week vs Average</div>
+        </div>
+        
+        
+        <div class="tr-cell">
+          <div class="tr-badge down">↓ 7.7%</div>
+          <div class="l">This Month vs Average</div>
+        </div>
+        
+        
+        <div class="tr-cell">
+          <div class="tr-badge down">↓ 4.5%</div>
+          <div class="l">vs Last Week</div>
+        </div>
+        
+        
+        <div class="tr-cell">
+          <div class="tr-badge down">↓ 7.7%</div>
+          <div class="l">vs Last Month</div>
+        </div>
+        
+        
+      </div>
+    </div>
+    
+
+    <div class="card pad">
+      <div class="sec-head"><h2><i class="fa-solid fa-lightbulb" style="color:var(--brand)"></i> Today's Insights</h2></div>
+      <div class="ins-list">
+        
+        <div class="ins-row">
+          <span class="ins-ic"><i class="fa-solid fa-arrow-right-long" style="color:var(--mag3)"></i></span>
+          <span>Waits are <strong>holding steady</strong> right now, with a park-wide average of <strong>42 min</strong>.</span>
+        </div>
+        
+        
+        
+        <div class="ins-row">
+          <span class="ins-ic"><i class="fa-solid fa-people-group" style="color:var(--mag5)"></i></span>
+          <span>Today is running <strong>15.8% higher</strong> than an average day at Universal Studios.</span>
+        </div>
+        
+        
+        
+        
+        <div class="ins-row">
+          <span class="ins-ic"><i class="fa-solid fa-ranking-star" style="color:var(--brand)"></i></span>
+          <span>08/28/2026 ranks <strong>#2172 busiest of 2679</strong> tracked days — a Wait Factor of <strong>2/10</strong>.</span>
+        </div>
+        
+        
+        
+        <div class="ins-row">
+          <span class="ins-ic"><i class="fa-solid fa-mountain" style="color:var(--brand)"></i></span>
+          <span>The day peaked at <strong>38 min</strong> (4:00 PM) and bottomed out at <strong>5 min</strong> (8:55 AM).</span>
+        </div>
+        
+        
+        
+        <div class="ins-row">
+          <span class="ins-ic"><i class="fa-solid fa-stopwatch" style="color:var(--mag1)"></i></span>
+          <span>Shortest lines typically hit around <strong>9:00 AM</strong>, <strong>12:05 PM</strong>, and <strong>6:40 PM</strong>.</span>
+        </div>
+        
+      </div>
+    </div>
+
+    <!-- Average day curve -->
+    
+    <div class="card pad">
+      <div class="sec-head"><h2><svg class="i" viewBox="0 0 24 24"><use href="#ic-clock"/></svg> An Average Day at Universal Studios</h2><button type="button" class="icon-btn ginfo-btn" title="About this chart" aria-label="About this chart"><i class="fa-solid fa-circle-info"></i></button></div>
+      <div class="ginfo" hidden>The expected wait-time shape for Universal Studios on a day like today — hover to see the average wait at each time.</div>
+      <div class="ov-chart">
+        <svg class="wa-curve ov-profile" viewBox="0 0 600 140" preserveAspectRatio="none"
+             data-spark="14,14,13,13,13,13,16,16,16,14,12,11,12,12,12,12,12,12,13,12,13,12,12,12,12,12,13,13,14,15,15,16,17,18,18,18,19,19,20,20,21,22,22,23,24,25,25,26,27,27,28,28,29,29,29,30,30,30,30,30,31,31,31,31,32,32,32,32,31,31,31,31,31,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,32,32,32,31,31,31,31,31,31,30,30,29,29,28,27,27,27,26,26,26,27,27,27,27,26,26,26,27,27,27,27,27,26,26,26,26,26,26,25"
+             data-times="7:00 AM|7:05 AM|7:10 AM|7:15 AM|7:20 AM|7:25 AM|7:30 AM|7:35 AM|7:40 AM|7:45 AM|7:50 AM|7:55 AM|8:00 AM|8:05 AM|8:10 AM|8:15 AM|8:20 AM|8:25 AM|8:30 AM|8:35 AM|8:40 AM|8:45 AM|8:50 AM|8:55 AM|9:00 AM|9:05 AM|9:10 AM|9:15 AM|9:20 AM|9:25 AM|9:30 AM|9:35 AM|9:40 AM|9:45 AM|9:50 AM|9:55 AM|10:00 AM|10:05 AM|10:10 AM|10:15 AM|10:20 AM|10:25 AM|10:30 AM|10:35 AM|10:40 AM|10:45 AM|10:50 AM|10:55 AM|11:00 AM|11:05 AM|11:10 AM|11:15 AM|11:20 AM|11:25 AM|11:30 AM|11:35 AM|11:40 AM|11:45 AM|11:50 AM|11:55 AM|12:00 PM|12:05 PM|12:10 PM|12:15 PM|12:20 PM|12:25 PM|12:30 PM|12:35 PM|12:40 PM|12:45 PM|12:50 PM|12:55 PM|1:00 PM|1:05 PM|1:10 PM|1:15 PM|1:20 PM|1:25 PM|1:30 PM|1:35 PM|1:40 PM|1:45 PM|1:50 PM|1:55 PM|2:00 PM|2:05 PM|2:10 PM|2:15 PM|2:20 PM|2:25 PM|2:30 PM|2:35 PM|2:40 PM|2:45 PM|2:50 PM|2:55 PM|3:00 PM|3:05 PM|3:10 PM|3:15 PM|3:20 PM|3:25 PM|3:30 PM|3:35 PM|3:40 PM|3:45 PM|3:50 PM|3:55 PM|4:00 PM|4:05 PM|4:10 PM|4:15 PM|4:20 PM|4:25 PM|4:30 PM|4:35 PM|4:40 PM|4:45 PM|4:50 PM|4:55 PM|5:00 PM|5:05 PM|5:10 PM|5:15 PM|5:20 PM|5:25 PM|5:30 PM|5:35 PM|5:40 PM|5:45 PM|5:50 PM|5:55 PM|6:00 PM|6:05 PM|6:10 PM|6:15 PM|6:20 PM|6:25 PM|6:30 PM|6:35 PM|6:40 PM|6:45 PM|6:50 PM|6:55 PM|7:00 PM|7:05 PM|7:10 PM|7:15 PM|7:20 PM|7:25 PM|7:30 PM|7:35 PM|7:40 PM|7:45 PM|7:50 PM|7:55 PM|8:00 PM"></svg>
+        <div class="ov-tip" hidden></div>
+      </div>
+    </div>
+    
+
+    <!-- Per-ride comparison table -->
+    <div class="card pad">
+      <div class="sec-head"><h2><i class="fa-solid fa-table-list" style="color:var(--brand)"></i> Universal Studios Ride Averages &mdash; Today vs Recent</h2><button type="button" class="icon-btn ginfo-btn" title="About this table" aria-label="About this table"><i class="fa-solid fa-circle-info"></i></button></div>
+      <div class="ginfo" hidden>Each ride's average wait today compared against its average (all-time) average, this week's average, and this month's average. Click a column to sort.</div>
+      <div class="quick-graph" data-url="/wa/park-trends/universal-studios" data-params="fmt=table"><div class="td-load"><i class="fa-solid fa-ferris-wheel fw"></i><span class="msg">Loading some awesome data!</span></div></div>
+    </div>
+  </template></section>
+
+  <!-- BEST DAYS: average wait by day of the week over a chosen window -->
+  <section class="ppanel" data-panel="bestdays"><template>
+    <div class="card pad">
+      <div class="sec-head"><h2><i class="fa-solid fa-calendar-week" style="color:var(--brand)"></i> Best Days to Visit Universal Studios</h2><button type="button" class="icon-btn ginfo-btn" title="About this graph" aria-label="About this graph"><i class="fa-solid fa-circle-info"></i></button></div>
+      <div class="ginfo" hidden>Average wait time for each day of the week. Shorter bars are lower-wait days; taller bars are the highest. Change the window to see how the best days shift over time.</div>
+      <div class="graph-wrap legacy quick-graph" id="wa-bestdays" data-url="/waits/graph/quick/parkbestdays" data-params="id=6&tag=month" data-key="plot1,plot2"><div class="td-load"><i class="fa-solid fa-ferris-wheel fw"></i><span class="msg">Loading some awesome data!</span></div></div>
+      <div class="gbtns" data-for="wa-bestdays">
+        <button type="button" class="gbtn on" data-tag="month">Past Month</button>
+        <button type="button" class="gbtn" data-tag="ninety">Past 90 Days</button>
+        <button type="button" class="gbtn" data-tag="year">Past Year</button>
+      </div>
+    </div>
+
+    
+    <div class="card pad">
+      <div class="sec-head"><h2><i class="fa-solid fa-chart-simple" style="color:var(--brand)"></i> Every Day at Universal Studios, Plotted — Spread Around Each Average</h2><button type="button" class="icon-btn ginfo-btn" title="About this graph" aria-label="About this graph"><i class="fa-solid fa-circle-info"></i></button></div>
+      <div class="ginfo" hidden>Each dot is one date in the selected window, placed in its day-of-week column at that day's average wait. Stars are US federal holidays (US parks only), which are often the reason a column looks wide. The diamond marks the weekday average and the whisker spans one standard deviation. A tight column means that weekday is dependable; a tall spread means it swings, so the ranking above matters less than the date you pick. Shorter windows compare more alike dates, so less of the spread is just seasonal.</div>
+      <div class="graph-wrap legacy quick-graph" id="wa-dayspread" data-url="/waits/graph/quick/parkdayspread" data-params="id=6&tag=year&out=all" data-key="plot1,plot2"><div class="td-load"><i class="fa-solid fa-ferris-wheel fw"></i><span class="msg">Loading some awesome data!</span></div></div>
+      
+      <div class="gbtns" data-for="wa-dayspread">
+        <button type="button" class="gbtn" data-tag="ninety">Past 90 Days</button>
+        <button type="button" class="gbtn" data-tag="half">Past 6 Months</button>
+        <button type="button" class="gbtn on" data-tag="year">Past Year</button>
+      </div>
+      <div class="gbtns" data-for="wa-dayspread">
+        <button type="button" class="gbtn on" data-out="all">All Days</button>
+        <button type="button" class="gbtn" data-out="clean">Exclude Unusual Days</button>
+      </div>
+    </div>
+  </template></section>
+
+  
+  
+
+  <!-- GRAPHS: every graph series as a sub-tab -->
+  
+  <section class="ppanel" data-panel="graphs"><template>
+    <div class="gsubtabs" role="tablist">
+      <button type="button" class="gsub-btn on" data-sub="profile"><svg class="i sm" viewBox="0 0 24 24"><use href="#ic-trend"/></svg> Profile</button>
+      <button type="button" class="gsub-btn" data-sub="history"><i class="fa-solid fa-chart-line"></i> History</button>
+      <button type="button" class="gsub-btn" data-sub="buildup"><i class="fa-solid fa-chart-area"></i> Buildup</button>
+      <button type="button" class="gsub-btn" data-sub="heat"><i class="fa-solid fa-fire"></i> Heat Map</button>
+      <button type="button" class="gsub-btn" data-sub="operating"><i class="fa-solid fa-signal"></i> Rides Operating</button>
+      <button type="button" class="gsub-btn" data-sub="monthheat"><i class="fa-solid fa-fire-flame-simple"></i> 30 Day Heat Map</button>
+      <button type="button" class="gsub-btn" data-sub="box"><i class="fa-solid fa-chart-candlestick"></i> Box Plot</button>
+      <button type="button" class="gsub-btn" data-sub="flow"><i class="fa-solid fa-map-location-dot"></i> Flow Map</button>
+      <button type="button" class="gsub-btn" data-sub="waitcal"><svg class="i sm" viewBox="0 0 24 24"><use href="#ic-calendar"/></svg> Wait Calendar</button>
+    </div>
+
+    
+    <div class="gsub on" data-sub="profile">
+      <div class="card pad">
+        <div class="sec-head"><h2><svg class="i" viewBox="0 0 24 24"><use href="#ic-trend"/></svg> Universal Studios Wait Time Profile</h2><button type="button" class="icon-btn ginfo-btn" title="About this graph" aria-label="About this graph"><i class="fa-solid fa-circle-info"></i></button></div>
+        <div class="ginfo" hidden>Posted average wait times throughout the day, compared against an average day at Universal Studios. Use the buttons to overlay a different comparison — averages, history, or weather.</div>
+        <div class="graph-wrap legacy quick-graph" id="wa-profile" data-url="/waits/graph/quick/parkavg" data-params="title=universal-studios&dateStart=2026-08-28&dateCompare=&tag=daily&bCompare=False" data-key="plot1" data-loaded="1"><div>                            <div id="72a5fb11-c7d8-435f-ad35-3c8b00ab952e" class="plotly-graph-div" style="height:100%; width:100%;"></div>            <script type="text/javascript">                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("72a5fb11-c7d8-435f-ad35-3c8b00ab952e")) {                    Plotly.newPlot(                        "72a5fb11-c7d8-435f-ad35-3c8b00ab952e",                        [{"connectgaps":false,"hovertemplate":"Time : %{x}\u003cbr\u003eWait (minutes) : %{y}\u003cextra\u003e\u003c\u002fextra\u003e","line":{"color":"rgba(89, 89, 89, 0.7)","dash":"dash","width":2},"marker":{"color":"rgba(89, 89, 89, 0.7)","size":12},"mode":"lines","name":"Typical Wait","opacity":1,"x":["2026-08-28T07:00:00","2026-08-28T07:05:00","2026-08-28T07:10:00","2026-08-28T07:15:00","2026-08-28T07:20:00","2026-08-28T07:25:00","2026-08-28T07:30:00","2026-08-28T07:35:00","2026-08-28T07:40:00","2026-08-28T07:45:00","2026-08-28T07:50:00","2026-08-28T07:55:00","2026-08-28T08:00:00","2026-08-28T08:05:00","2026-08-28T08:10:00","2026-08-28T08:15:00","2026-08-28T08:20:00","2026-08-28T08:25:00","2026-08-28T08:30:00","2026-08-28T08:35:00","2026-08-28T08:40:00","2026-08-28T08:45:00","2026-08-28T08:50:00","2026-08-28T08:55:00","2026-08-28T09:00:00","2026-08-28T09:05:00","2026-08-28T09:10:00","2026-08-28T09:15:00","2026-08-28T09:20:00","2026-08-28T09:25:00","2026-08-28T09:30:00","2026-08-28T09:35:00","2026-08-28T09:40:00","2026-08-28T09:45:00","2026-08-28T09:50:00","2026-08-28T09:55:00","2026-08-28T10:00:00","2026-08-28T10:05:00","2026-08-28T10:10:00","2026-08-28T10:15:00","2026-08-28T10:20:00","2026-08-28T10:25:00","2026-08-28T10:30:00","2026-08-28T10:35:00","2026-08-28T10:40:00","2026-08-28T10:45:00","2026-08-28T10:50:00","2026-08-28T10:55:00","2026-08-28T11:00:00","2026-08-28T11:05:00","2026-08-28T11:10:00","2026-08-28T11:15:00","2026-08-28T11:20:00","2026-08-28T11:25:00","2026-08-28T11:30:00","2026-08-28T11:35:00","2026-08-28T11:40:00","2026-08-28T11:45:00","2026-08-28T11:50:00","2026-08-28T11:55:00","2026-08-28T12:00:00","2026-08-28T12:05:00","2026-08-28T12:10:00","2026-08-28T12:15:00","2026-08-28T12:20:00","2026-08-28T12:25:00","2026-08-28T12:30:00","2026-08-28T12:35:00","2026-08-28T12:40:00","2026-08-28T12:45:00","2026-08-28T12:50:00","2026-08-28T12:55:00","2026-08-28T13:00:00","2026-08-28T13:05:00","2026-08-28T13:10:00","2026-08-28T13:15:00","2026-08-28T13:20:00","2026-08-28T13:25:00","2026-08-28T13:30:00","2026-08-28T13:35:00","2026-08-28T13:40:00","2026-08-28T13:45:00","2026-08-28T13:50:00","2026-08-28T13:55:00","2026-08-28T14:00:00","2026-08-28T14:05:00","2026-08-28T14:10:00","2026-08-28T14:15:00","2026-08-28T14:20:00","2026-08-28T14:25:00","2026-08-28T14:30:00","2026-08-28T14:35:00","2026-08-28T14:40:00","2026-08-28T14:45:00","2026-08-28T14:50:00","2026-08-28T14:55:00","2026-08-28T15:00:00","2026-08-28T15:05:00","2026-08-28T15:10:00","2026-08-28T15:15:00","2026-08-28T15:20:00","2026-08-28T15:25:00","2026-08-28T15:30:00","2026-08-28T15:35:00","2026-08-28T15:40:00","2026-08-28T15:45:00","2026-08-28T15:50:00","2026-08-28T15:55:00","2026-08-28T16:00:00","2026-08-28T16:05:00","2026-08-28T16:10:00","2026-08-28T16:15:00","2026-08-28T16:20:00","2026-08-28T16:25:00","2026-08-28T16:30:00","2026-08-28T16:35:00","2026-08-28T16:40:00","2026-08-28T16:45:00","2026-08-28T16:50:00","2026-08-28T16:55:00","2026-08-28T17:00:00","2026-08-28T17:05:00","2026-08-28T17:10:00","2026-08-28T17:15:00","2026-08-28T17:20:00","2026-08-28T17:25:00","2026-08-28T17:30:00","2026-08-28T17:35:00","2026-08-28T17:40:00","2026-08-28T17:45:00","2026-08-28T17:50:00","2026-08-28T17:55:00","2026-08-28T18:00:00","2026-08-28T18:05:00","2026-08-28T18:10:00","2026-08-28T18:15:00","2026-08-28T18:20:00","2026-08-28T18:25:00","2026-08-28T18:30:00","2026-08-28T18:35:00","2026-08-28T18:40:00","2026-08-28T18:45:00","2026-08-28T18:50:00","2026-08-28T18:55:00","2026-08-28T19:00:00","2026-08-28T19:05:00","2026-08-28T19:10:00","2026-08-28T19:15:00","2026-08-28T19:20:00","2026-08-28T19:25:00","2026-08-28T19:30:00","2026-08-28T19:35:00","2026-08-28T19:40:00","2026-08-28T19:45:00","2026-08-28T19:50:00","2026-08-28T19:55:00","2026-08-28T20:00:00"],"y":[14,14,13,13,13,13,16,16,16,14,12,11,12,12,12,12,12,12,13,12,13,12,12,12,12,12,13,13,14,15,15,16,17,18,18,18,19,19,20,20,21,22,22,23,24,25,25,26,27,27,28,28,29,29,29,30,30,30,30,30,31,31,31,31,32,32,32,32,31,31,31,31,31,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,32,32,32,31,31,31,31,31,31,30,30,29,29,28,27,27,27,26,26,26,27,27,27,27,26,26,26,27,27,27,27,27,26,26,26,26,26,26,25],"type":"scatter"},{"connectgaps":false,"hovertemplate":"Time : %{x}\u003cbr\u003eWait (minutes) : %{y}\u003cextra\u003e\u003c\u002fextra\u003e","line":{"color":"rgba(0,123,255, 0.7)","dash":"dash","width":1},"marker":{"color":"rgba(0,123,255, 0.7)","size":12},"mode":"markers+lines","name":"Posted Wait","opacity":1,"x":["2026-08-28T08:55:00","2026-08-28T09:00:00","2026-08-28T09:05:00","2026-08-28T09:10:00","2026-08-28T09:15:00","2026-08-28T09:20:00","2026-08-28T09:25:00","2026-08-28T09:30:00","2026-08-28T09:35:00","2026-08-28T09:40:00","2026-08-28T09:45:00","2026-08-28T09:50:00","2026-08-28T09:55:00","2026-08-28T10:00:00","2026-08-28T10:05:00","2026-08-28T10:10:00","2026-08-28T10:15:00","2026-08-28T10:20:00","2026-08-28T10:25:00","2026-08-28T10:30:00","2026-08-28T10:35:00","2026-08-28T10:40:00","2026-08-28T10:45:00","2026-08-28T10:50:00","2026-08-28T10:55:00","2026-08-28T11:00:00","2026-08-28T11:05:00","2026-08-28T11:10:00","2026-08-28T11:15:00","2026-08-28T11:20:00","2026-08-28T11:25:00","2026-08-28T11:30:00","2026-08-28T11:35:00","2026-08-28T11:40:00","2026-08-28T11:45:00","2026-08-28T11:50:00","2026-08-28T11:55:00","2026-08-28T12:00:00","2026-08-28T12:05:00","2026-08-28T12:10:00","2026-08-28T12:15:00","2026-08-28T12:20:00","2026-08-28T12:25:00","2026-08-28T12:30:00","2026-08-28T12:35:00","2026-08-28T12:40:00","2026-08-28T12:45:00","2026-08-28T12:50:00","2026-08-28T12:55:00","2026-08-28T13:00:00","2026-08-28T13:05:00","2026-08-28T13:10:00","2026-08-28T13:15:00","2026-08-28T13:20:00","2026-08-28T13:25:00","2026-08-28T13:30:00","2026-08-28T13:35:00","2026-08-28T13:40:00","2026-08-28T13:45:00","2026-08-28T13:50:00","2026-08-28T13:55:00","2026-08-28T14:00:00","2026-08-28T14:05:00","2026-08-28T14:10:00","2026-08-28T14:15:00","2026-08-28T14:20:00","2026-08-28T14:25:00","2026-08-28T14:30:00","2026-08-28T14:35:00","2026-08-28T14:40:00","2026-08-28T14:45:00","2026-08-28T14:50:00","2026-08-28T14:55:00","2026-08-28T15:00:00","2026-08-28T15:05:00","2026-08-28T15:10:00","2026-08-28T15:15:00","2026-08-28T15:20:00","2026-08-28T15:25:00","2026-08-28T15:30:00","2026-08-28T15:35:00","2026-08-28T15:40:00","2026-08-28T15:45:00","2026-08-28T15:50:00","2026-08-28T15:55:00","2026-08-28T16:00:00","2026-08-28T16:05:00"],"y":[5,10,13,12,12,11,11,11,11,11,11,11,10,10,11,12,12,13,14,15,15,15,17,18,18,18,18,20,18,18,18,19,19,19,20,19,20,22,21,21,22,21,21,20,20,20,20,19,19,19,20,19,19,19,19,18,19,18,20,20,20,25,25,25,27,29,29,30,29,31,32,32,32,33,31,30,28,28,30,31,32,32,32,32,33,38,38],"type":"scatter"}],                        {"autosize":true,"font":{"color":"black","family":"Arial","size":10},"legend":{"orientation":"h","x":1,"xanchor":"right","y":1.02,"yanchor":"bottom"},"margin":{"b":58,"l":10,"r":20,"t":10},"paper_bgcolor":"rgba(0,0,0,0)","plot_bgcolor":"rgb(255,255,255)","template":{"data":{"barpolar":[{"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"barpolar"}],"bar":[{"error_x":{"color":"#2a3f5f"},"error_y":{"color":"#2a3f5f"},"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"bar"}],"carpet":[{"aaxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"baxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"type":"carpet"}],"choropleth":[{"colorbar":{"outlinewidth":0,"ticks":""},"type":"choropleth"}],"contourcarpet":[{"colorbar":{"outlinewidth":0,"ticks":""},"type":"contourcarpet"}],"contour":[{"colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"type":"contour"}],"heatmap":[{"colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"type":"heatmap"}],"histogram2dcontour":[{"colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"type":"histogram2dcontour"}],"histogram2d":[{"colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"type":"histogram2d"}],"histogram":[{"marker":{"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"histogram"}],"mesh3d":[{"colorbar":{"outlinewidth":0,"ticks":""},"type":"mesh3d"}],"parcoords":[{"line":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"parcoords"}],"pie":[{"automargin":true,"type":"pie"}],"scatter3d":[{"line":{"colorbar":{"outlinewidth":0,"ticks":""}},"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scatter3d"}],"scattercarpet":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scattercarpet"}],"scattergeo":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scattergeo"}],"scattergl":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scattergl"}],"scattermapbox":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scattermapbox"}],"scattermap":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scattermap"}],"scatterpolargl":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scatterpolargl"}],"scatterpolar":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scatterpolar"}],"scatter":[{"fillpattern":{"fillmode":"overlay","size":10,"solidity":0.2},"type":"scatter"}],"scatterternary":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scatterternary"}],"surface":[{"colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"type":"surface"}],"table":[{"cells":{"fill":{"color":"#EBF0F8"},"line":{"color":"white"}},"header":{"fill":{"color":"#C8D4E3"},"line":{"color":"white"}},"type":"table"}]},"layout":{"annotationdefaults":{"arrowcolor":"#2a3f5f","arrowhead":0,"arrowwidth":1},"autotypenumbers":"strict","coloraxis":{"colorbar":{"outlinewidth":0,"ticks":""}},"colorscale":{"diverging":[[0,"#8e0152"],[0.1,"#c51b7d"],[0.2,"#de77ae"],[0.3,"#f1b6da"],[0.4,"#fde0ef"],[0.5,"#f7f7f7"],[0.6,"#e6f5d0"],[0.7,"#b8e186"],[0.8,"#7fbc41"],[0.9,"#4d9221"],[1,"#276419"]],"sequential":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"sequentialminus":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]},"colorway":["#636efa","#EF553B","#00cc96","#ab63fa","#FFA15A","#19d3f3","#FF6692","#B6E880","#FF97FF","#FECB52"],"font":{"color":"#2a3f5f"},"geo":{"bgcolor":"white","lakecolor":"white","landcolor":"#E5ECF6","showlakes":true,"showland":true,"subunitcolor":"white"},"hoverlabel":{"align":"left"},"hovermode":"closest","mapbox":{"style":"light"},"paper_bgcolor":"white","plot_bgcolor":"#E5ECF6","polar":{"angularaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"bgcolor":"#E5ECF6","radialaxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"scene":{"xaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","gridwidth":2,"linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white"},"yaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","gridwidth":2,"linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white"},"zaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","gridwidth":2,"linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white"}},"shapedefaults":{"line":{"color":"#2a3f5f"}},"ternary":{"aaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"baxis":{"gridcolor":"white","linecolor":"white","ticks":""},"bgcolor":"#E5ECF6","caxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"title":{"x":0.05},"xaxis":{"automargin":true,"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","zerolinewidth":2},"yaxis":{"automargin":true,"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","zerolinewidth":2}}},"xaxis":{"automargin":true,"gridcolor":"rgba(0,0,0,0.2)","linecolor":"black","linewidth":1,"mirror":true,"showline":true,"tickangle":-45,"tickformat":"%I:%M %p","title":{"text":"Time of Day"},"zeroline":true,"zerolinecolor":"rgba(0,0,0,0.2)","zerolinewidth":1},"yaxis":{"automargin":true,"gridcolor":"rgba(0,0,0,0.2)","linecolor":"black","linewidth":1,"mirror":true,"showline":true,"title":{"text":"Wait Time (minutes)"},"zeroline":true,"zerolinecolor":"rgba(0,0,0,0.2)","zerolinewidth":1}},                        {"displayModeBar": false, "responsive": true}                    )                };            </script>        </div></div>
+        <div class="gbtns" data-for="wa-profile">
+          <button type="button" class="gbtn" data-tag="daily" data-desc="Today's posted average wait through the day, compared against an average day at Universal Studios.">Daily Average</button>
+          <button type="button" class="gbtn" data-tag="week" data-desc="The past week of daily wait profiles overlaid, so you can spot day-to-day patterns. The legend lists each date.">Past Week</button>
+          <button type="button" class="gbtn" data-tag="month" data-desc="The past month of daily wait profiles. Lighter grey lines are older days; the black line is the most recent.">Past Month</button>
+          <button type="button" class="gbtn" data-tag="hist" data-desc="This same calendar day in previous years, to compare year-over-year on the same date.">This Day in History</button>
+          <button type="button" class="gbtn" data-tag="dow" data-desc="Average wait for Universal Studios broken out by day of the week.">Day of the Week</button>
+          <button type="button" class="gbtn" data-tag="temp" data-desc="Today's wait profile overlaid with the temperature in °F, to see how heat tracks with crowds.">Temperature °F</button>
+          <button type="button" class="gbtn" data-tag="tempC" data-desc="Today's wait profile overlaid with the temperature in °C.">Temperature °C</button>
+          <button type="button" class="gbtn" data-tag="app_temp" data-desc="Today's wait profile overlaid with the 'feels like' temperature.">Feels Like</button>
+          <button type="button" class="gbtn" data-tag="rain" data-desc="Today's wait profile overlaid with rainfall, to see how weather affected the day.">Rain</button>
+          <button type="button" class="gbtn" data-tag="clouds" data-desc="Today's wait profile overlaid with cloud cover.">Cloud Cover</button>
+        </div>
+      </div>
+      
+    </div>
+    <div class="gsub" data-sub="history">
+      <div class="card pad">
+        <div class="sec-head"><h2><i class="fa-solid fa-chart-line" style="color:var(--brand)"></i> Universal Studios Wait Time History</h2><button type="button" class="icon-btn ginfo-btn" title="About this graph" aria-label="About this graph"><i class="fa-solid fa-circle-info"></i></button></div>
+        <div class="ginfo" hidden>Daily average wait times over time. "Continuous" plots every date on one timeline; "By Year" overlays each year on the same axis to compare seasons.</div>
+        <div class="gbtns hl-view">
+          <button type="button" class="gbtn on" data-view="cont">Continuous</button>
+          <button type="button" class="gbtn" data-view="year">By Year</button>
+        </div>
+        <div class="graph-wrap legacy quick-graph" data-url="/waits/graph/quick/parklong" data-url-cont="/waits/graph/quick/parklong" data-url-year="/waits/graph/quick/parklongyear" data-params="id=6&dateStart=2026-08-28&dateCompare=&bCompare=False&bNoHolidays="><div class="td-load"><i class="fa-solid fa-ferris-wheel fw"></i><span class="msg">Loading some awesome data!</span></div></div>
+      </div>
+    </div>
+    
+
+    
+    <div class="gsub" data-sub="buildup">
+      <div class="card pad">
+        <div class="sec-head"><h2><i class="fa-solid fa-chart-area" style="color:var(--brand)"></i> Universal Studios Wait Time Buildup</h2><button type="button" class="icon-btn ginfo-btn" title="About this graph" aria-label="About this graph"><i class="fa-solid fa-circle-info"></i></button></div>
+        <div class="ginfo" hidden>Current wait times at Universal Studios, or the average wait times for the selected day, week, month, or year. Use the buttons to switch the time interval.</div>
+        <div class="graph-wrap legacy quick-graph" id="wa-avgbld" data-url="/waits/graph/quick/parkbar" data-params="title=universal-studios&dateStart=2026-08-28&dateCompare=&tag=live&bCompare=False" data-key="plot1"><div class="td-load"><i class="fa-solid fa-ferris-wheel fw"></i><span class="msg">Loading some awesome data!</span></div></div>
+        <div class="gbtns" data-for="wa-avgbld">
+          <button type="button" class="gbtn on" data-tag="live">Live</button>
+          <button type="button" class="gbtn" data-tag="daily">Daily</button>
+          <button type="button" class="gbtn" data-tag="weekly">Weekly</button>
+          <button type="button" class="gbtn" data-tag="monthly">Monthly</button>
+          <button type="button" class="gbtn" data-tag="yearly">Yearly</button>
+        </div>
+      </div>
+    </div>
+    
+
+    
+    <div class="gsub" data-sub="heat">
+      <div class="card pad">
+        <div class="sec-head"><h2><i class="fa-solid fa-fire" style="color:var(--brand)"></i> Universal Studios Wait Time Heat Map</h2><button type="button" class="icon-btn ginfo-btn" title="About this graph" aria-label="About this graph"><i class="fa-solid fa-circle-info"></i></button></div>
+        <div class="ginfo" hidden>Posted wait times for each attraction across the day. Greener colors mean shorter waits; redder colors mean longer waits. Use the buttons to change the time interval.</div>
+        <div class="graph-wrap legacy quick-graph" id="wa-heat" data-url="/waits/graph/quick/parkheat" data-params="id=6&dateStart=2026-08-28&tag=hour" data-key="plot1"><div class="td-load"><i class="fa-solid fa-ferris-wheel fw"></i><span class="msg">Loading some awesome data!</span></div></div>
+        <div class="gbtns" data-for="wa-heat">
+          <button type="button" class="gbtn on" data-tag="hour">Hour</button>
+          <button type="button" class="gbtn" data-tag="half">30 Min</button>
+          <button type="button" class="gbtn" data-tag="min">15 Min</button>
+          <button type="button" class="gbtn" data-tag="five">5 Min</button>
+          <button type="button" class="gbtn" data-tag="late">Late Night</button>
+        </div>
+      </div>
+    </div>
+    <div class="gsub" data-sub="operating">
+      <div class="card pad">
+        <div class="sec-head"><h2><i class="fa-solid fa-signal" style="color:var(--brand)"></i> Universal Studios Rides Operating vs Average Wait</h2><button type="button" class="icon-btn ginfo-btn" title="About this graph" aria-label="About this graph"><i class="fa-solid fa-circle-info"></i></button></div>
+        <div class="ginfo" hidden>How many attractions are actively posting a wait through the day (left axis) against the park's average wait, then against rainfall (right axes). Waits usually climb as more rides open and lines build; heavy rain can pull rides offline.</div>
+        <div class="graph-wrap legacy quick-graph" data-url="/waits/graph/quick/parkoperating" data-params="id=6&dateStart=2026-08-28" data-key="plot1,plot2"><div class="td-load"><i class="fa-solid fa-ferris-wheel fw"></i><span class="msg">Loading some awesome data!</span></div></div>
+      </div>
+    </div>
+    
+
+    
+    <div class="gsub" data-sub="monthheat">
+      <div class="card pad">
+        <div class="sec-head"><h2><i class="fa-solid fa-fire-flame-simple" style="color:var(--brand)"></i> Universal Studios 30 Day Wait Heat Map</h2><button type="button" class="icon-btn ginfo-btn" title="About this graph" aria-label="About this graph"><i class="fa-solid fa-circle-info"></i></button></div>
+        <div class="ginfo" hidden>Average wait times for each attraction by day. Greener colors mean shorter waits; redder colors mean longer waits. Use the buttons to change the time interval.</div>
+        <div class="graph-wrap legacy quick-graph" id="wa-hmmonth" data-url="/waits/graph/quick/parkheatdaily" data-params="id=6&dateStart=2026-08-28&tag=hour" data-key="plot1"><div class="td-load"><i class="fa-solid fa-ferris-wheel fw"></i><span class="msg">Loading some awesome data!</span></div></div>
+        <div class="gbtns" data-for="wa-hmmonth">
+          <button type="button" class="gbtn on" data-tag="hour">Hour</button>
+          <button type="button" class="gbtn" data-tag="half">30 Min</button>
+          <button type="button" class="gbtn" data-tag="min">15 Min</button>
+          <button type="button" class="gbtn" data-tag="five">5 Min</button>
+        </div>
+      </div>
+    </div>
+    
+
+    
+    <div class="gsub" data-sub="box">
+      <div class="card pad">
+        <div class="sec-head"><h2><i class="fa-solid fa-chart-candlestick" style="color:var(--brand)"></i> Universal Studios Wait Time Box Plot</h2><button type="button" class="icon-btn ginfo-btn" title="About this graph" aria-label="About this graph"><i class="fa-solid fa-circle-info"></i></button></div>
+        <div class="ginfo" hidden>The distribution of each attraction's wait times — the box covers the average range, the line is the median, and dots are unusual spikes.</div>
+        <div class="graph-wrap legacy quick-graph" data-url="/waits/graph/quick/parkbox" data-params="title=universal-studios&dateStart=2026-08-28" data-key="plot1"><div class="td-load"><i class="fa-solid fa-ferris-wheel fw"></i><span class="msg">Loading some awesome data!</span></div></div>
+      </div>
+    </div>
+    
+
+    
+    <div class="gsub" data-sub="flow">
+      <div class="card pad">
+        <div class="sec-head"><h2><i class="fa-solid fa-map-location-dot" style="color:var(--brand)"></i> Universal Studios Wait Time Flow Map</h2><button type="button" class="icon-btn ginfo-btn" title="About this graph" aria-label="About this graph"><i class="fa-solid fa-circle-info"></i></button></div>
+        <div class="ginfo" hidden>Wait times mapped onto Universal Studios's geography — each attraction sits at its real location, colored by how long the wait is through the day.</div>
+        <div class="graph-wrap legacy quick-graph" id="pk-flowmap" data-url="/waits/graph/quick/parkflowmap" data-params="id=6&dateStart=2026-08-28" data-key="plot1"><div class="td-load"><i class="fa-solid fa-ferris-wheel fw"></i><span class="msg">Loading some awesome data!</span></div></div>
+        <div class="flowgif" id="pk-flowgif" hidden>
+          <button type="button" class="btn ghost" id="pk-gifbtn"><i class="fa-solid fa-file-video"></i> Save as GIF</button>
+          <span class="flowgif-note" id="pk-gifnote">Animates the whole day into a shareable GIF. Takes a few seconds.</span>
+        </div>
+      </div>
+    </div>
+    
+
+    
+    <div class="gsub" data-sub="waitcal">
+      <div class="card pad">
+        <div class="sec-head"><h2><svg class="i" viewBox="0 0 24 24"><use href="#ic-calendar"/></svg> Universal Studios Wait Time Calendar</h2><button type="button" class="icon-btn ginfo-btn" title="About this graph" aria-label="About this graph"><i class="fa-solid fa-circle-info"></i></button></div>
+        <div class="ginfo" hidden>The average wait time for each day of the month — lighter days had lower waits, darker days had higher waits.</div>
+        <div class="graph-wrap legacy quick-graph" data-url="/waits/graph/quick/parkcal" data-params="id=6&dateStart=2026-08-28" data-key="plot1"><div class="td-load"><i class="fa-solid fa-ferris-wheel fw"></i><span class="msg">Loading some awesome data!</span></div></div>
+      </div>
+    </div>
+    
+  </template></section>
+  
+
+  <!-- CROWD CALENDAR (native, app-style: measured history + forecast) -->
+  <section class="ppanel" data-panel="calendar"><template>
+    <div class="card pad">
+      <div class="sec-head"><h2><svg class="i" viewBox="0 0 24 24"><use href="#ic-calendar"/></svg> Universal Studios Crowd Calendar</h2><a class="more" href="/trip-planning/crowd-calendar/universal-studios" title="Open the full crowd calendar page" target="_blank">Full Page ↗</a></div>
+      <div class="cc-stats" id="cc-stats"></div>
+      <div class="cc-nav">
+        <button type="button" class="dn-btn" id="cc-prev" title="Previous month"><i class="fa-solid fa-chevron-left"></i></button>
+        <span class="cc-title" id="cc-title">&nbsp;</span>
+        <button type="button" class="dn-btn" id="cc-next" title="Next month"><i class="fa-solid fa-chevron-right"></i></button>
+      </div>
+      <div class="cc-legend">
+        <span><i class="cc-swatch l1"></i> Lowest</span>
+        <span><i class="cc-swatch l2"></i> Low</span>
+        <span><i class="cc-swatch l3"></i> Average</span>
+        <span><i class="cc-swatch l4"></i> High</span>
+        <span><i class="cc-swatch l5"></i> Highest</span>
+        <span><span class="lvl-bars low"><i></i><i></i><i></i></span> Low
+          <span class="lvl-bars avg"><i></i><i></i><i></i></span> Avg
+          <span class="lvl-bars high"><i></i><i></i><i></i></span> High</span>
+        <span class="cc-fc-note">~ = forecast</span>
+      </div>
+      <div class="cc-grid" id="cc-grid"><div class="wt-empty"><div class="td-load"><i class="fa-solid fa-ferris-wheel fw"></i><span class="msg">Loading some awesome data!</span></div></div></div>
+    </div>
+    <script>
+    (function(){
+      var grid = document.getElementById('cc-grid'), title = document.getElementById('cc-title');
+      var today = new Date(); today.setHours(0,0,0,0);
+      var view = new Date(today.getFullYear(), today.getMonth(), 1);
+      var byDate = {}, byMD = {}, thresholds = null;
+
+      function pct(sorted, p){ if (!sorted.length) return 0; var i = (sorted.length - 1) * p; var lo = Math.floor(i), hi = Math.ceil(i); return sorted[lo] + (sorted[hi] - sorted[lo]) * (i - lo); }
+      function median(arr){ if (!arr.length) return null; var s = arr.slice().sort(function(a,b){return a-b;}); var m = Math.floor(s.length/2); return s.length % 2 ? s[m] : Math.round((s[m-1]+s[m])/2); }
+      function levelOf(w){ if (!thresholds) return 3; if (w <= thresholds[0]) return 1; if (w <= thresholds[1]) return 2; if (w <= thresholds[2]) return 3; if (w <= thresholds[3]) return 4; return 5; }
+      function iso(d){ return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); }
+      // Non-color low/avg/high cue (colorblind-safe): levels 1-2 low, 3 avg, 4-5 high.
+      function tierOf(lvl){ return lvl <= 2 ? 'low' : (lvl === 3 ? 'avg' : 'high'); }
+      function barsHTML(lvl){ return '<span class="cc-bars lvl-bars ' + tierOf(lvl) + '"><i></i><i></i><i></i></span>'; }
+
+      function render(){
+        var names = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+        title.textContent = names[view.getMonth()] + ' ' + view.getFullYear();
+        var out = '';
+        ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].forEach(function(d){ out += '<div class="cc-dow">' + d + '</div>'; });
+        var first = new Date(view.getFullYear(), view.getMonth(), 1);
+        var days = new Date(view.getFullYear(), view.getMonth() + 1, 0).getDate();
+        for (var b = 0; b < first.getDay(); b++) out += '<div class="cc-cell empty"></div>';
+        for (var day = 1; day <= days; day++){
+          var d = new Date(view.getFullYear(), view.getMonth(), day);
+          var key = iso(d), md = key.slice(5);
+          var measured = byDate[key], wait = measured, fc = false;
+          if (wait == null && d > today){ wait = median(byMD[md] || []); fc = true; }
+          var cls = 'cc-cell', body = '';
+          if (wait != null){
+            var lvl = levelOf(wait);
+            cls += ' l' + lvl + (fc ? ' fc' : '');
+            body = '<span class="w">' + (fc ? '~' : '') + Math.round(wait) + 'm</span>' + barsHTML(lvl);
+          } else { cls += ' nodata'; }
+          if (key === iso(today)) cls += ' today';
+          out += '<div class="' + cls + '" title="' + key + (wait != null ? ' — ' + (fc ? 'forecast ' : '') + Math.round(wait) + ' min average' : ' — no data') + '"><span class="d">' + day + '</span>' + body + '</div>';
+        }
+        grid.innerHTML = out;
+      }
+
+      // Summary stat cards computed from the loaded history (like the full page).
+      function computeStats(){
+        var el = document.getElementById('cc-stats'); if (!el) return;
+        var keys = Object.keys(byDate); if (keys.length < 5){ el.innerHTML = ''; return; }
+        var MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        var DOW = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+        var vals = keys.map(function(k){ return byDate[k]; });
+        var avg = Math.round(vals.reduce(function(a,b){ return a + b; }, 0) / vals.length);
+        var mS = {}, mC = {}, dS = {}, dC = {}, loD = null, hiD = null;
+        keys.forEach(function(k){
+          var w = byDate[k], p = k.split('-'), mo = +p[1] - 1, dw = new Date(+p[0], mo, +p[2]).getDay();
+          mS[mo] = (mS[mo]||0) + w; mC[mo] = (mC[mo]||0) + 1;
+          dS[dw] = (dS[dw]||0) + w; dC[dw] = (dC[dw]||0) + 1;
+          if (!loD || w < loD.w) loD = {k:k, w:w};
+          if (!hiD || w > hiD.w) hiD = {k:k, w:w};
+        });
+        function pick(S, C, hi){ var bk=null, bv=hi?-1:1e9; Object.keys(S).forEach(function(k){ var a=S[k]/C[k]; if(hi?a>bv:a<bv){bv=a;bk=k;} }); return bk===null?null:{k:+bk, avg:Math.round(bv)}; }
+        var loMo=pick(mS,mC,false), hiMo=pick(mS,mC,true), bestDow=pick(dS,dC,false);
+        function fmtD(k){ var p=k.split('-'); return MON[+p[1]-1]+' '+(+p[2]); }
+        function bars(t){ return '<span class="lvl-bars '+t+'"><i></i><i></i><i></i></span>'; }
+        function card(v,l){ return '<div class="cc-stat"><div class="v">'+v+'</div><div class="l">'+l+'</div></div>'; }
+        var out = card('<i class="fa-solid fa-chart-simple" style="color:var(--brand)"></i> '+avg+' min','Average Wait');
+        if (loMo) out += card(bars('low')+' '+MON[loMo.k],'Lowest-Wait Month · '+loMo.avg+'m');
+        if (hiMo) out += card(bars('high')+' '+MON[hiMo.k],'Highest-Wait Month · '+hiMo.avg+'m');
+        if (bestDow) out += card(bars('low')+' '+DOW[bestDow.k],'Best Day of Week · '+bestDow.avg+'m');
+        if (loD) out += card(bars('low')+' '+Math.round(loD.w)+' min','Lowest Waits · '+fmtD(loD.k));
+        if (hiD) out += card(bars('high')+' '+Math.round(hiD.w)+' min','Highest Waits · '+fmtD(hiD.k));
+        el.innerHTML = out;
+      }
+
+      fetch('/wa/park-crowdcal/universal-studios')
+        .then(function(r){ return r.json(); })
+        .then(function(data){
+          var pts = data.points || [];
+          if (!pts.length){ grid.innerHTML = '<div class="wt-empty">No crowd history available for this park yet.</div>'; return; }
+          var waits = [];
+          pts.forEach(function(p){
+            if (typeof p.wait !== 'number' || p.wait <= 0 || p.wait >= 500) return;
+            byDate[p.date] = p.wait;
+            var md = (p.date || '').slice(5);
+            (byMD[md] = byMD[md] || []).push(p.wait);
+            waits.push(p.wait);
+          });
+          waits.sort(function(a,b){ return a - b; });
+          thresholds = [pct(waits,0.2), pct(waits,0.4), pct(waits,0.6), pct(waits,0.8)];
+          render();
+          computeStats();
+        })
+        .catch(function(){ grid.innerHTML = '<div class="wt-empty">Could not load crowd data.</div>'; });
+
+      document.getElementById('cc-prev').addEventListener('click', function(){ view = new Date(view.getFullYear(), view.getMonth() - 1, 1); render(); });
+      document.getElementById('cc-next').addEventListener('click', function(){ view = new Date(view.getFullYear(), view.getMonth() + 1, 1); render(); });
+    })();
+    </script>
+  </template></section>
+
+  <!-- LIGHTNING LANE -->
+  
+
+  <!-- DOWNLOADS (Thrill Data Plus) -->
+  
+
+  
+  <!-- TICKET PRICES: per-date admission calendar, loaded on first open -->
+  <section class="ppanel" data-panel="tickets"><template>
+    <div class="card pad">
+      <div class="sec-head"><h2><i class="fa-solid fa-ticket" style="color:var(--brand)"></i> Universal Studios Ticket Prices</h2></div>
+      <div class="quick-graph" data-url="/wa/park-tickets/universal-studios"><div class="td-load"><i class="fa-solid fa-ferris-wheel fw"></i><span class="msg">Loading some awesome data!</span></div></div>
+    </div>
+  </template></section>
+  
+
+  <section class="ppanel" data-panel="downloads"><template>
+    <div class="card pad">
+      <div class="sec-head"><h2><i class="fa-solid fa-download" style="color:var(--brand)"></i> Download Universal Studios Data</h2></div>
+      
+      <div class="ph-lock" style="display:flex; flex-direction:column; align-items:center; gap:10px; text-align:center; padding:34px 20px;">
+        <div style="width:52px; height:52px; border-radius:16px; display:grid; place-items:center; font-size:22px; color:#fff; background:var(--grad);"><i class="fa-solid fa-lock"></i></div>
+        <h3 style="margin:0; font-size:18px;">Data Downloads are a Thrill Data Plus Feature</h3>
+        <p style="margin:0; color:var(--muted); font-weight:400; font-size:13.5px; max-width:44ch;">Download Universal Studios wait time data by day or month with a Thrill Data Plus membership.</p>
+        <a class="btn primary" href="/plus" target="_blank" title="Join Thrill Data Plus"><i class="fa-solid fa-bolt"></i> Join Thrill Data Plus</a>
+      </div>
+<script>if(window.tdTrackGate)window.tdTrackGate('park_downloads');</script>
+      
+    </div>
+  </template></section>
+
+  <!-- FAQ (data-driven, generated from real wait-time history) -->
+  <section class="ppanel" data-panel="faq"><template>
+    <div class="card pad">
+      <div class="sec-head"><h2><i class="fa-solid fa-circle-question" style="color:var(--brand)"></i> Frequently Asked Questions</h2></div>
+      <div class="quick-graph" data-url="/wa/park-faq/universal-studios" data-params=""><div class="td-load"><i class="fa-solid fa-ferris-wheel fw"></i><span class="msg">Loading some awesome data!</span></div></div>
+    </div>
+  </template></section>
+
+  <!-- DATE CONTROLS (bottom) -->
+  <div class="date-nav" style="margin-top:20px;">
+    <a class="dn-btn" href="/waits/park/uor/universal-studios/2026/08/27" title="Previous day"><i class="fa-solid fa-chevron-left"></i><span>Previous Day</span></a>
+    <label class="dn-date" title="Viewing 08/28/2026 — click to pick a date">
+      <i class="fa-solid fa-calendar-day"></i> 08/28/2026
+      <input type="date" value="2026-08-28" data-park="uor/universal-studios" aria-label="Jump to date">
+    </label>
+    
+  </div>
+
+  <!-- NEARBY PARKS -->
+  
+  <section style="margin-top:20px;">
+    <div class="card pad">
+      <div class="sec-head"><h2><i class="fa-solid fa-location-dot" style="color:var(--brand)"></i> Parks Near Universal Studios</h2></div>
+      <div class="np-grid">
+        
+        <a class="np-card" href="/waits/park/uor/islands-of-adventure/" title="Islands of Adventure wait times">
+          <div class="np-txt"><div class="np-nm">Islands of Adventure</div><div class="np-meta">Universal Orlando</div></div>
+          <span class="np-dist">0<small> mi</small></span>
+        </a>
+        
+        <a class="np-card" href="/waits/park/uor/volcano-bay/" title="Volcano Bay wait times">
+          <div class="np-txt"><div class="np-nm">Volcano Bay</div><div class="np-meta">Universal Orlando</div></div>
+          <span class="np-dist">1<small> mi</small></span>
+        </a>
+        
+        <a class="np-card" href="/waits/park/additional-parks-america/fun-spot-orlando/" title="Fun Spot Orlando wait times">
+          <div class="np-txt"><div class="np-nm">Fun Spot Orlando</div><div class="np-meta">Additional Parks - America</div></div>
+          <span class="np-dist">1<small> mi</small></span>
+        </a>
+        
+        <a class="np-card" href="/waits/park/uor/epic-universe/" title="Epic Universe wait times">
+          <div class="np-txt"><div class="np-nm">Epic Universe</div><div class="np-meta">Universal Orlando</div></div>
+          <span class="np-dist">3<small> mi</small></span>
+        </a>
+        
+        <a class="np-card" href="/waits/park/seaworld-parks/aquatica-orlando/" title="Aquatica Orlando wait times">
+          <div class="np-txt"><div class="np-nm">Aquatica Orlando</div><div class="np-meta">United Parks &amp; Resorts</div></div>
+          <span class="np-dist">4<small> mi</small></span>
+        </a>
+        
+        <a class="np-card" href="/waits/park/seaworld-parks/seaworld-orlando/" title="SeaWorld Orlando wait times">
+          <div class="np-txt"><div class="np-nm">SeaWorld Orlando</div><div class="np-meta">United Parks &amp; Resorts</div></div>
+          <span class="np-dist">5<small> mi</small></span>
+        </a>
+        
+      </div>
+    </div>
+  </section>
+  
+
+  <!-- NEARBY HOTELS (Stay22) — panel-styled card shown below every tab -->
+  
+  <section style="margin-top:20px;">
+    <div class="card pad">
+      <div class="sec-head"><h2><i class="fa-solid fa-bed" style="color:var(--brand)"></i> Universal Studios Nearby Hotels</h2></div>
+      <div style="border-radius:12px; overflow:hidden; margin-top:10px;">
+        <iframe class="stay22-map" data-s22src="https://www.stay22.com/embed/gm?aid=thrilldatallc&lat=28.4754&lng=-81.4677" id="stay22-widget" title="Nearby hotels map for Universal Studios" width="100%" height="460" frameborder="0" loading="lazy" style="display:block; border:0;"></iframe>
+      </div>
+    </div>
+  </section>
+  
+
+<script>
+  // App-style tabs. Deep-content panels keep their HTML inert inside a
+  // <template> (scripts don't run at page load), and it's injected + executed
+  // on FIRST activation — while the panel is visible, so Plotly graphs get a
+  // real width instead of rendering into a display:none (zero-size) box.
+  (function(){
+    var tabs = document.getElementById('ptabs');
+    function runScripts(panel){
+      // Scripts arriving via template/innerHTML are inert; recreate to execute.
+      panel.querySelectorAll('script').forEach(function(old){
+        var s = document.createElement('script');
+        if (old.src) { s.src = old.src; } else { s.textContent = old.textContent; }
+        old.parentNode.replaceChild(s, old);
+      });
+    }
+    function resizePlots(scope){
+      if (!window.Plotly) return;
+      (scope||document).querySelectorAll('.js-plotly-plot').forEach(function(g){ try { Plotly.Plots.resize(g); } catch(e){} });
+    }
+    // Restyle server-rendered (light) plotly figures to match the active theme:
+    // transparent backgrounds + theme text/grid colors, reapplied on theme change.
+    function themePlots(scope){
+      if (!window.Plotly) return;
+      var cs = getComputedStyle(document.documentElement);
+      var text = cs.getPropertyValue('--text').trim(), border = cs.getPropertyValue('--border').trim(),
+          surface = cs.getPropertyValue('--surface').trim(), surface2 = cs.getPropertyValue('--surface2').trim(),
+          muted = cs.getPropertyValue('--muted').trim(),
+          brand = cs.getPropertyValue('--brand').trim(), brand2 = cs.getPropertyValue('--brand2').trim(),
+          good = cs.getPropertyValue('--good').trim(), warn = cs.getPropertyValue('--warn').trim(),
+          bad = cs.getPropertyValue('--bad').trim();
+      // Concrete faint grid color (SVG stroke can't use color-mix()); dotted dash
+      // keeps it light. Theme border is already low-contrast.
+      var grid = border;
+      var fam = '"sofia-pro", "Segoe UI", system-ui, sans-serif';
+      (scope||document).querySelectorAll('.js-plotly-plot').forEach(function(gd){
+        if (!gd.layout) return;
+        var u = { paper_bgcolor:'rgba(0,0,0,0)', plot_bgcolor:'rgba(0,0,0,0)', 'font.color': text, 'font.family': fam,
+                  // Themed default color sequence — traces WITHOUT an explicit color
+                  // adopt these; intentional palettes (dow green→red, multi-year
+                  // history, heatmaps) set their own colors and are untouched.
+                  colorway: [brand, brand2, good, warn, bad, '#8b6cf0', '#22b8cf', '#e06f9c'],
+                  'hoverlabel.bgcolor': surface, 'hoverlabel.bordercolor': brand,
+                  'hoverlabel.font.color': text, 'hoverlabel.font.family': fam, 'hoverlabel.font.size': 13,
+                  'legend.font.color': text, 'legend.font.family': fam };
+        Object.keys(gd.layout).forEach(function(k){
+          if (/^[xy]axis\d*$/.test(k)){
+            // Cleaner axes: faint dotted grid, no zeroline, no axis spine, no ticks.
+            u[k + '.gridcolor'] = grid; u[k + '.griddash'] = 'dot';
+            u[k + '.zeroline'] = false; u[k + '.showline'] = false; u[k + '.ticks'] = '';
+            u[k + '.color'] = text;
+            u[k + '.tickfont.family'] = fam; u[k + '.tickfont.size'] = 11.5; u[k + '.tickfont.color'] = muted;
+            u[k + '.title.font.family'] = fam; u[k + '.title.font.color'] = muted; u[k + '.title.font.size'] = 12.5;
+            // Range-selector buttons (1 MONTH / YTD / ALL …) ship hardcoded light
+            if (k.charAt(0) === 'x' && gd.layout[k].rangeselector){
+              u[k + '.rangeselector.bgcolor'] = surface2;
+              u[k + '.rangeselector.activecolor'] = brand;
+              u[k + '.rangeselector.bordercolor'] = border;
+              u[k + '.rangeselector.font.color'] = text;
+            }
+          }
+        });
+        try { Plotly.relayout(gd, u); } catch(e){}
+        // Magnitude-ramped bars carry the light half of viridis from the
+        // server; swap to the half this theme can actually show. No-op for
+        // every other trace. See tdMagBars in wa-head.js.
+        if (window.tdMagBars) window.tdMagBars(gd);
+        // Rolling-average / trend overlays ship a fixed dark line (invisible on
+        // dark theme) — recolor to the theme blue so they read on both.
+        try {
+          var idx = [];
+          (gd.data || []).forEach(function(tr, i){ if (tr.name === 'Rolling Average') idx.push(i); });
+          if (idx.length) Plotly.restyle(gd, {'line.color': brand2}, idx);
+        } catch(e){}
+        // On dark theme, any trace shipping a black / near-black line (e.g. the
+        // emphasized newest-year line in the multi-year history) is invisible —
+        // recolor those to the bright text color so they read on the dark surface.
+        try {
+          if (isDark()){
+            var dk = [];
+            (gd.data || []).forEach(function(tr, i){
+              var lc = tr.line && tr.line.color;
+              if (typeof lc === 'string' && colorLum(lc) < 0.25) dk.push(i);
+            });
+            if (dk.length) Plotly.restyle(gd, {'line.color': text}, dk);
+          }
+        } catch(e){}
+      });
+    }
+    // Luminance (0=black,1=white) of an rgb()/rgba()/hex color string.
+    function colorLum(c){
+      var m = c.match(/\d+(\.\d+)?/g); if (!m || m.length < 3) return 1;
+      var r = +m[0]/255, g = +m[1]/255, b = +m[2]/255;
+      return 0.2126*r + 0.7152*g + 0.0722*b;
+    }
+    // Dark theme when the resolved --text ink is light.
+    function isDark(){
+      var t = getComputedStyle(document.documentElement).getPropertyValue('--text').trim();
+      return colorLum(t) > 0.5;
+    }
+    window.TDThemePlots = themePlots;
+    themePlots(document);   // gauge + anything already rendered
+    new MutationObserver(function(){ themePlots(document); })
+      .observe(document.documentElement, { attributes:true, attributeFilter:['data-theme'] });
+    // Graphs the classic page pulls via AJAX (/waits/graph/quick/*): fetch on
+    // first reveal, inject the pre-rendered plotly div, and execute its script.
+    function loadQuickGraphs(panel){
+      panel.querySelectorAll('.quick-graph:not([data-loaded])').forEach(function(el){
+        // Show the animated loader immediately, even for graphs in hidden
+        // sub-tabs (they still don't FETCH until their sub-tab is activated).
+        if (window.TDLoad && !el.querySelector('.js-plotly-plot')) el.innerHTML = window.TDLoad();
+        var sub = el.closest('.gsub');
+        if (sub && !sub.classList.contains('on')) return;
+        el.dataset.loaded = '1';
+        var keys = (el.dataset.key || '').split(',').filter(Boolean);
+        fetch(el.dataset.url + '?' + el.dataset.params)
+          .then(function(r){ return keys.length ? r.json() : r.text(); })
+          .then(function(code){
+            var html = keys.length ? keys.map(function(k){ return code[k] || ''; }).join('') : code;
+            if (!html || html === 'fail' || code === 'fail' || (keys.length && code[keys[0]] === 'fail')) { el.innerHTML = '<div style="text-align:center; color:var(--muted); font-weight:400; padding:12px;">No data available.</div>'; return; }
+            el.innerHTML = html;
+            runScripts(el);
+            if (window.TDMarkFavs) window.TDMarkFavs(el);
+            requestAnimationFrame(function(){ themePlots(el); resizePlots(el); el.style.minHeight = ''; });
+            // A freshly-revealed sub-tab often isn't laid out yet on the first frame,
+            // so plotly renders at its fallback height and the x-axis falls outside
+            // the fixed-height wrapper. Re-resize once layout settles so it fits.
+            setTimeout(function(){ resizePlots(el); }, 120);
+          })
+          .catch(function(){ el.innerHTML = '<div style="text-align:center; color:var(--muted); font-weight:400; padding:12px;">Could not load.</div>'; });
+      });
+    }
+    // Per-park view state (graph sub-tab + chosen graph types), so changing
+    // the date brings you back to the same graph you were looking at.
+    var stateKey = 'tdpark:universal-studios';
+    function loadState(){ try { return JSON.parse(sessionStorage.getItem(stateKey)) || {}; } catch(e){ return {}; } }
+    function saveState(fn){ var s = loadState(); fn(s); try { sessionStorage.setItem(stateKey, JSON.stringify(s)); } catch(e){} }
+    function restoreState(panel){
+      var s = loadState();
+      if (s.sub){
+        var btn = panel.querySelector('.gsub-btn[data-sub="' + s.sub + '"]');
+        if (btn){
+          panel.querySelectorAll('.gsub-btn').forEach(function(x){ x.classList.toggle('on', x === btn); });
+          panel.querySelectorAll('.gsub').forEach(function(x){ x.classList.toggle('on', x.dataset.sub === s.sub); });
+        }
+      }
+      Object.keys(s.tags || {}).forEach(function(id){
+        var target = panel.querySelector('#' + id); if (!target) return;
+        var tag = s.tags[id];
+        target.dataset.params = target.dataset.params.replace(/tag=[^&]*/, 'tag=' + encodeURIComponent(tag));
+        var wrap = panel.querySelector('.gbtns[data-for="' + id + '"]');
+        if (wrap) wrap.querySelectorAll('.gbtn').forEach(function(x){ x.classList.toggle('on', x.dataset.tag === tag); });
+        // Force a fetch even for graphs that ship with inline default content
+        if (target.dataset.loaded){
+          delete target.dataset.loaded;
+          if (target.offsetHeight > 60) target.style.minHeight = target.offsetHeight + 'px';
+          target.innerHTML = window.TDLoad ? window.TDLoad() : 'Loading…';
+        }
+      });
+    }
+    function activate(name){
+      tabs.querySelectorAll('.ptab').forEach(function(b){ b.setAttribute('aria-selected', b.dataset.tab === name); });
+      document.querySelectorAll('.ppanel').forEach(function(p){ p.classList.toggle('on', p.dataset.panel === name); });
+      var panel = document.querySelector('.ppanel.on'); if (!panel) return;
+      var tpl = panel.querySelector('template');
+      if (tpl && !panel.dataset.loaded){
+        panel.dataset.loaded = '1';
+        panel.appendChild(document.importNode(tpl.content, true));
+        tpl.remove();
+        runScripts(panel);
+        drawCurves(panel);
+        restoreState(panel);
+      }
+      loadQuickGraphs(panel);
+      requestAnimationFrame(function(){ themePlots(panel); resizePlots(panel); });
+    }
+
+    // Graph sub-tabs (inside the Graphs panel): swap sub-panels, lazy-load
+    // the newly revealed one's graphs.
+    document.addEventListener('click', function(e){
+      var b = e.target.closest('.gsub-btn'); if (!b) return;
+      var panel = b.closest('.ppanel');
+      panel.querySelectorAll('.gsub-btn').forEach(function(x){ x.classList.toggle('on', x === b); });
+      panel.querySelectorAll('.gsub').forEach(function(s){ s.classList.toggle('on', s.dataset.sub === b.dataset.sub); });
+      saveState(function(s){ s.sub = b.dataset.sub; });
+      loadQuickGraphs(panel);
+      var sub = panel.querySelector('.gsub.on');
+      if (sub) requestAnimationFrame(function(){ themePlots(sub); resizePlots(sub); });
+    });
+    tabs.addEventListener('click', function(e){
+      var b = e.target.closest('.ptab'); if (!b) return;
+      // Outbound links share the tab styling but have no panel to open. Without
+      // this they'd reach activate(undefined) and deselect every tab on the way
+      // out, leaving the page blank for as long as the navigation takes.
+      if (!b.dataset.tab) return;
+      activate(b.dataset.tab);
+      if (history.replaceState) history.replaceState(null, '', '#' + b.dataset.tab);
+    });
+    // Graph type buttons: re-fetch the target quick-graph with the chosen tag.
+    // Freeze the area's current height while loading so the page doesn't jump.
+    document.addEventListener('click', function(e){
+      var b = e.target.closest('.gbtn'); if (!b || b.classList.contains('dl-btn')) return;
+      // Only buttons that actually carry a tag. Other .gbtn rows exist now (the
+      // outlier toggle below), and without this they'd fall through here and
+      // write "tag=undefined" into the query string.
+      if (!b.dataset.tag) return;
+      var wrap = b.closest('.gbtns'), target = document.getElementById(wrap.dataset.for);
+      if (!target || b.classList.contains('on')) return;
+      wrap.querySelectorAll('.gbtn').forEach(function(x){ x.classList.toggle('on', x === b); });
+      target.dataset.params = target.dataset.params.replace(/tag=[^&]*/, 'tag=' + encodeURIComponent(b.dataset.tag));
+      if (b.dataset.desc){ var gi = b.closest('.card').querySelector('.ginfo'); if (gi) gi.textContent = b.dataset.desc; }
+      saveState(function(s){ s.tags = s.tags || {}; s.tags[wrap.dataset.for] = b.dataset.tag; });
+      delete target.dataset.loaded;
+      if (target.offsetHeight > 60) target.style.minHeight = target.offsetHeight + 'px';
+      target.innerHTML = window.TDLoad ? window.TDLoad() : 'Loading…';
+      loadQuickGraphs(target.parentElement);
+    });
+
+    // Outlier toggle on the weekday-spread graph: include or exclude the days
+    // that sit far from their weekday median. Its own handler rather than the
+    // generic tag one above, because it drives a SECOND parameter and the tag
+    // buttons must keep working independently of it.
+    document.addEventListener('click', function(e){
+      var b = e.target.closest('.gbtn[data-out]'); if (!b || b.classList.contains('on')) return;
+      var wrap = b.closest('.gbtns'), target = document.getElementById(wrap.dataset.for);
+      if (!target) return;
+      wrap.querySelectorAll('.gbtn').forEach(function(x){ x.classList.toggle('on', x === b); });
+      target.dataset.params = target.dataset.params.replace(/out=[^&]*/, 'out=' + encodeURIComponent(b.dataset.out));
+      delete target.dataset.loaded;
+      if (target.offsetHeight > 60) target.style.minHeight = target.offsetHeight + 'px';
+      target.innerHTML = window.TDLoad ? window.TDLoad() : 'Loading…';
+      loadQuickGraphs(target.parentElement);
+    });
+
+    // History view toggle: Continuous (parklong) vs By Year (parklongyear)
+    document.addEventListener('click', function(e){
+      var b = e.target.closest('.hl-view .gbtn[data-view]'); if (!b || b.classList.contains('on')) return;
+      var card = b.closest('.card'), target = card.querySelector('.quick-graph');
+      b.parentElement.querySelectorAll('.gbtn').forEach(function(x){ x.classList.toggle('on', x === b); });
+      target.dataset.url = (b.dataset.view === 'year') ? target.dataset.urlYear : target.dataset.urlCont;
+      delete target.dataset.loaded;
+      if (target.offsetHeight > 60) target.style.minHeight = target.offsetHeight + 'px';
+      target.innerHTML = window.TDLoad ? window.TDLoad() : 'Loading…';
+      loadQuickGraphs(target.parentElement);
+    });
+
+    // Data downloads (Thrill Data Plus): month buttons -> download link
+    document.addEventListener('click', function(e){
+      var b = e.target.closest('.dl-btn'); if (!b) return;
+      var out = document.getElementById('dl-out'); if (!out) return;
+      document.querySelectorAll('.dl-btn').forEach(function(x){ x.classList.toggle('on', x === b); });
+      out.innerHTML = '<div style="text-align:center; color:var(--muted); font-weight:400; padding:10px;">Preparing your download…</div>';
+      fetch('/waits/downloadpark?download=' + b.dataset.dl + '&park=universal-studios&ride=')
+        .then(function(r){ return r.json(); })
+        .then(function(d){ out.innerHTML = d.link || '<div style="text-align:center; color:var(--muted); font-weight:400; padding:10px;">No data available for that period.</div>'; })
+        .catch(function(){ out.innerHTML = '<div style="text-align:center; color:var(--muted); font-weight:400; padding:10px;">Could not prepare the download.</div>'; });
+    });
+
+    // Info buttons: toggle the graph description
+    document.addEventListener('click', function(e){
+      var b = e.target.closest('.ginfo-btn'); if (!b) return;
+      var card = b.closest('.card'); var info = card && card.querySelector('.ginfo');
+      if (info) info.hidden = !info.hidden;
+    });
+
+    // Overview jump buttons -> switch tabs
+    document.addEventListener('click', function(e){
+      var j = e.target.closest('.ov-jump[data-tab], .ov-jumplink[data-tab]'); if (!j) return;
+      e.preventDefault();
+      activate(j.dataset.tab);
+      if (history.replaceState) history.replaceState(null, '', '#' + j.dataset.tab);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+
+    // Native wait curves (hero + average day): area chart with hover tooltips
+    function drawCurves(scope){
+      var cs = getComputedStyle(document.documentElement);
+      var brand = cs.getPropertyValue('--brand').trim(), muted = cs.getPropertyValue('--muted').trim();
+      (scope || document).querySelectorAll('svg.wa-curve:not([data-built])').forEach(function(svg){
+        svg.setAttribute('data-built', '1');
+        var raw = (svg.dataset.spark || '').split(',').map(Number).filter(function(n){ return !isNaN(n); });
+        if (raw.length < 2){ svg.outerHTML = '<div class="ov-stat-s" style="text-align:center; padding:18px 0;">No wait data collected yet today.</div>'; return; }
+        var w = 600, h = 140, pad = 8, gid = 'ovg' + Math.random().toString(36).slice(2);
+        var times = (svg.dataset.times || '').split('|');
+        // Position points by real time so downtime shows as a proportional gap.
+        function parseMin(t){ var m = /(\d+):(\d+)\s*(AM|PM)/i.exec(t || ''); if (!m) return null; var hh = (+m[1]) % 12; if (/PM/i.test(m[3])) hh += 12; return hh * 60 + (+m[2]); }
+        var tmin = times.map(parseMin);
+        var useTime = tmin.length === raw.length && tmin.every(function(v){ return v != null; }) && tmin[tmin.length - 1] > tmin[0];
+        var gap = Infinity;
+        if (useTime){
+          var deltas = []; for (var di = 1; di < tmin.length; di++) deltas.push(tmin[di] - tmin[di - 1]);
+          var srt = deltas.slice().sort(function(a, b){ return a - b; });
+          var med = srt[Math.floor(srt.length / 2)] || 1;
+          gap = Math.max(med * 3, 8);
+        }
+        var typ = (svg.dataset.average || '').split(',').map(function(v){ var n = parseFloat(v); return isNaN(n) ? null : n; });
+        var hasTyp = typ.length === raw.length && typ.filter(function(n){ return n != null; }).length >= 2;
+        var all = raw.slice(); if (hasTyp){ typ.forEach(function(n){ if (n != null) all.push(n); }); }
+        var max = Math.max.apply(null, all), min = Math.min.apply(null, all), rng = (max - min) || 1;
+        var x = useTime ? function(i){ return (tmin[i] - tmin[0]) / ((tmin[tmin.length - 1] - tmin[0]) || 1) * w; }
+                        : function(i){ return (i / (raw.length - 1)) * w; };
+        var y = function(d){ return h - pad - ((d - min) / rng) * (h - 2 * pad); };
+        var segs = [], cur = [];
+        for (var si = 0; si < raw.length; si++){
+          if (si > 0 && useTime && (tmin[si] - tmin[si - 1] > gap)){ if (cur.length) segs.push(cur); cur = []; }
+          cur.push(si);
+        }
+        if (cur.length) segs.push(cur);
+        var mag = window.tdMag || function(){ return brand; };
+        var lgid = 'ovl' + gid, lstops = '';
+        for (var gs = 0; gs <= 4; gs++){ var goff = gs / 4; lstops += '<stop offset="' + goff + '" stop-color="' + mag(1 - goff) + '"/>'; }
+        // Line color follows wait magnitude vs THIS day's own min/max (top = highest, bottom = lowest).
+        var out = '<defs><linearGradient id="' + gid + '" x1="0" y1="0" x2="0" y2="1">'
+          + '<stop offset="0" stop-color="' + brand + '" stop-opacity="0.35"/>'
+          + '<stop offset="1" stop-color="' + brand + '" stop-opacity="0"/></linearGradient>'
+          + '<linearGradient id="' + lgid + '" gradientUnits="userSpaceOnUse" x1="0" y1="' + pad + '" x2="0" y2="' + (h - pad) + '">' + lstops + '</linearGradient>'
+          + '</defs>';
+        segs.forEach(function(seg){
+          if (seg.length < 2) return;
+          var sp = seg.map(function(i){ return x(i).toFixed(1) + ',' + y(raw[i]).toFixed(1); }).join(' ');
+          out += '<polygon points="' + x(seg[0]).toFixed(1) + ',' + h + ' ' + sp + ' ' + x(seg[seg.length - 1]).toFixed(1) + ',' + h + '" fill="url(#' + gid + ')"/>';
+        });
+        if (hasTyp){
+          var tpts = [];
+          typ.forEach(function(n, i){ if (n != null) tpts.push(x(i).toFixed(1) + ',' + y(n).toFixed(1)); });
+          out += '<polyline points="' + tpts.join(' ') + '" fill="none" stroke="' + muted + '" stroke-width="1.75" stroke-dasharray="5,5" opacity="0.8"><title>Average wait</title></polyline>';
+        } else {
+          var avg = parseFloat(svg.dataset.avg);
+          if (!isNaN(avg) && avg >= min && avg <= max){
+            out += '<line x1="0" y1="' + y(avg).toFixed(1) + '" x2="' + w + '" y2="' + y(avg).toFixed(1) + '" stroke="' + muted + '" stroke-width="1" stroke-dasharray="5,5" opacity="0.6"><title>Average: ' + avg + ' min</title></line>';
+          }
+        }
+        segs.forEach(function(seg){
+          if (seg.length >= 2){
+            var sp = seg.map(function(i){ return x(i).toFixed(1) + ',' + y(raw[i]).toFixed(1); }).join(' ');
+            out += '<polyline points="' + sp + '" fill="none" stroke="url(#' + lgid + ')" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>';
+          } else {
+            out += '<circle cx="' + x(seg[0]).toFixed(1) + '" cy="' + y(raw[seg[0]]).toFixed(1) + '" r="2.5" fill="' + brand + '"/>';
+          }
+        });
+        out += '<circle cx="' + x(raw.length - 1).toFixed(1) + '" cy="' + y(raw[raw.length - 1]).toFixed(1) + '" r="4" fill="' + mag((raw[raw.length - 1] - min) / rng) + '"/>'
+          + '<line class="ov-guide" x1="0" y1="0" x2="0" y2="' + h + '" stroke="' + brand + '" stroke-width="1" opacity="0" stroke-dasharray="3,3"/>'
+          + '<circle class="ov-dot" r="4.5" fill="' + brand + '" stroke="#fff" stroke-width="1.5" opacity="0"/>';
+        svg.innerHTML = out;
+
+        var wrap = svg.closest('.ov-chart'), tip = wrap && wrap.querySelector('.ov-tip');
+        var guide = svg.querySelector('.ov-guide'), dot = svg.querySelector('.ov-dot');
+        function hideTip(){ if (tip) tip.hidden = true; guide.setAttribute('opacity', '0'); dot.setAttribute('opacity', '0'); }
+        svg.addEventListener('mousemove', function(e){
+          if (!tip) return;
+          var r = svg.getBoundingClientRect();
+          var mx = ((e.clientX - r.left) / r.width) * w;
+          var bi = 0, bd = Infinity;
+          for (var k = 0; k < raw.length; k++){ var d = Math.abs(x(k) - mx); if (d < bd){ bd = d; bi = k; } }
+          var px = x(bi), py = y(raw[bi]);
+          guide.setAttribute('x1', px); guide.setAttribute('x2', px); guide.setAttribute('opacity', '0.45');
+          dot.setAttribute('cx', px); dot.setAttribute('cy', py); dot.setAttribute('opacity', '1');
+          tip.innerHTML = (times[bi] ? '<span class="t">' + times[bi] + '</span> · ' : '') + raw[bi] + ' min' + (hasTyp && typ[bi] != null ? '<span class="t"> · avg ' + Math.round(typ[bi]) + '</span>' : '');
+          tip.style.left = (px / w * r.width) + 'px';
+          tip.style.top = (py / h * r.height) + 'px';
+          tip.hidden = false;
+        });
+        svg.addEventListener('mouseleave', hideTip);
+      });
+    }
+    drawCurves(document);
+
+    // Park count: toggle whether this park is in your visited count
+    (function(){
+      var btn = document.getElementById('pk-count'); if (!btn) return;
+      btn.addEventListener('click', function(){
+        fetch('/waits/countpark?title=' + btn.dataset.park)
+          .then(function(r){ return r.json(); })
+          .then(function(d){
+            var on = d.css === 'remove';
+            btn.classList.toggle('on', on);
+            btn.querySelector('i').className = (on ? 'fa-solid' : 'fa-regular') + ' fa-circle-check';
+            btn.title = on ? 'Visited — click to remove from your count' : 'Add to your visited count';
+          }).catch(function(){});
+      });
+    })();
+
+    // Park rating: click along the header bar to set/change your 1-100 rating
+    (function(){
+      var bar = document.getElementById('pk-rate-bar');
+      if (!bar || !bar.classList.contains('can-rate')) return;
+      var fill = document.getElementById('pk-rate-fill'), wrap = document.getElementById('pk-rate');
+      bar.addEventListener('click', function(e){
+        var r = bar.getBoundingClientRect();
+        var val = Math.round(((e.clientX - r.left) / r.width) * 100);
+        val = Math.max(1, Math.min(100, val));
+        var mine = document.getElementById('pk-mine');
+        if (!mine){
+          mine = document.createElement('i');
+          mine.className = 'pk-mine'; mine.id = 'pk-mine';
+          bar.appendChild(mine);
+        }
+        mine.style.left = val + '%';
+        mine.title = 'Your rating: ' + val + '/100';
+        fetch('/rating/park?rating=' + val + '&park=' + wrap.dataset.park)
+          .then(function(res){ return res.json(); })
+          .then(function(d){
+            var avg = parseInt(d.parkAvg, 10);
+            if (!isNaN(avg) && fill) fill.style.width = avg + '%';
+            if (!isNaN(avg)) wrap.title = 'Park rating ' + avg + '/100 — your rating: ' + val + '/100';
+          })
+          .catch(function(){});
+      });
+    })();
+
+    // Date navigation keeps you on the tab you were viewing (via the #hash,
+    // which the deep-link handler restores on the next page load).
+    function currentTab(){
+      var cur = tabs.querySelector('.ptab[aria-selected="true"]');
+      return cur ? cur.dataset.tab : '';
+    }
+    document.addEventListener('click', function(e){
+      var a = e.target.closest('.dn-btn'); if (!a) return;
+      var t = currentTab();
+      if (t) a.href = a.href.split('#')[0] + '#' + t;
+    });
+
+    // Date picker: clicking the chip opens the native date selector; choosing
+    // a date jumps to that day's page (same tab).
+    document.querySelectorAll('.dn-date').forEach(function(label){
+      var inp = label.querySelector('input[type="date"]'); if (!inp) return;
+      label.addEventListener('click', function(e){
+        e.preventDefault();
+        try { inp.showPicker(); } catch(err) { inp.focus(); }
+      });
+      inp.addEventListener('change', function(){
+        if (!inp.value) return;
+        var p = inp.value.split('-');   // yyyy-mm-dd
+        var t = currentTab();
+        window.location.href = (window.TD_LANG||'') + '/waits/park/' + inp.dataset.park + '/' + p[0] + '/' + p[1] + '/' + p[2] + (t ? '#' + t : '');
+      });
+    });
+
+    // Deep link: /park/...#waits opens that tab
+    var h = (location.hash || '').replace('#','');
+    if (h && tabs.querySelector('.ptab[data-tab="' + h + '"]')) activate(h);
+  })();
+
+  // Rides table sorting lives in base_wa.html (shared with the Wait Times modal).
+
+  /* ==================================================================
+     FLOW MAP -> GIF (client-side)
+
+     The flow map is a px.scatter_mapbox built with animation_frame="Time",
+     so Plotly already holds one frame per time slice. Rather than render
+     frames on the server (Kaleido, one PNG per slice, per request), we step
+     the animation in the browser, composite each frame off the live canvas and
+     encode with gif.js. Costs the server nothing and works for every user.
+
+     gif.js needs a worker; loading one cross-origin is blocked, so the worker
+     source is fetched as text and turned into a blob URL.
+     ================================================================== */
+  (function(){
+    var GIF_JS     = 'https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.js';
+    var GIF_WORKER = 'https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.worker.js';
+    var MAX_W = 900;          // cap output width; GIF size grows fast
+    var MAX_FRAMES = 60;      // see sampleFrames() — a day can hold 500+
+    var FRAME_DELAY = 400;    // ms per frame in the finished GIF
+    var SETTLE = 120;         // ms to let the map tiles redraw before capture
+
+    var wrap = document.getElementById('pk-flowgif'),
+        btn  = document.getElementById('pk-gifbtn'),
+        note = document.getElementById('pk-gifnote');
+    if (!wrap || !btn) return;
+
+    var busy = false, libPromise = null, workerUrl = null;
+
+    function plotDiv(){
+      var host = document.getElementById('pk-flowmap');
+      return host ? host.querySelector('.js-plotly-plot') : null;
+    }
+    function framesOf(gd){
+      if (!gd) return [];
+      var f = (gd._transitionData && gd._transitionData._frames) || gd.frames || [];
+      return Array.prototype.slice.call(f).filter(Boolean);
+    }
+
+    // A park day holds a reading every minute or two — ~590 frames. Capturing
+    // every one takes ~10 minutes and yields a GIF nobody wants to load, so
+    // take an evenly spaced sample and always keep the last frame so the
+    // animation ends at close rather than partway through the evening.
+    function sampleFrames(all){
+      if (all.length <= MAX_FRAMES) return all;
+      var step = (all.length - 1) / (MAX_FRAMES - 1), out = [];
+      for (var i = 0; i < MAX_FRAMES; i++) out.push(all[Math.round(i * step)]);
+      return out;
+    }
+
+    // Show the button only once the map exists and actually has frames.
+    function poll(){
+      var gd = plotDiv();
+      wrap.hidden = !(gd && framesOf(gd).length > 1);
+    }
+    poll();
+    new MutationObserver(poll).observe(document.documentElement, { childList:true, subtree:true });
+
+    function loadScript(src){
+      return new Promise(function(res, rej){
+        var s = document.createElement('script');
+        s.src = src; s.onload = res; s.onerror = function(){ rej(new Error('load failed')); };
+        document.head.appendChild(s);
+      });
+    }
+
+    function loadLib(){
+      if (libPromise) return libPromise;
+      libPromise = loadScript(GIF_JS)
+        .then(function(){ return fetch(GIF_WORKER); })
+        .then(function(r){ if (!r.ok) throw new Error('worker ' + r.status); return r.text(); })
+        .then(function(txt){ workerUrl = URL.createObjectURL(new Blob([txt], { type:'application/javascript' })); })
+        .catch(function(e){ libPromise = null; throw e; });
+      return libPromise;
+    }
+
+    function say(msg){ if (note) note.textContent = msg; }
+
+    var PARK_TITLE = 'Universal Studios';
+    var DATE_RAW   = '2026\u002D08\u002D28';
+    var DATE_LABEL = (function(){
+      var d = new Date(DATE_RAW + 'T00:00:00');
+      if (isNaN(d)) return DATE_RAW;
+      return d.toLocaleDateString(undefined, { weekday:'long', month:'long', day:'numeric', year:'numeric' });
+    })();
+
+    // Burn the park, date and time into every frame. The slider is hidden for
+    // the capture (below), so once the GIF leaves the site this caption is the
+    // only thing saying what is being shown and when.
+    function drawCaption(c, w, h, timeLabel){
+      var pad   = Math.max(10, Math.round(w * 0.018));
+      var tSize = Math.max(15, Math.round(w * 0.027));
+      var sSize = Math.max(12, Math.round(w * 0.021));
+      var barH  = pad * 2 + tSize + sSize + 6;
+      var fam   = '"sofia-pro", "Segoe UI", system-ui, sans-serif';
+
+      c.save();
+      // Light plate: the carto-positron tiles are pale, so dark text on a
+      // translucent white band stays readable wherever the map scrolls to.
+      c.fillStyle = 'rgba(255,255,255,0.9)';
+      c.fillRect(0, 0, w, barH);
+      c.fillStyle = 'rgba(0,0,0,0.14)';
+      c.fillRect(0, barH - 1, w, 1);
+
+      c.textBaseline = 'top';
+      c.fillStyle = '#141414';
+      c.font = '800 ' + tSize + 'px ' + fam;
+      c.fillText(PARK_TITLE, pad, pad);
+
+      c.fillStyle = '#4a4a4a';
+      c.font = '600 ' + sSize + 'px ' + fam;
+      c.fillText(DATE_LABEL + '  ·  ' + (timeLabel || ''), pad, pad + tSize + 5);
+      c.restore();
+    }
+    function progressBar(){
+      var b = document.createElement('div'); b.className = 'flowgif-bar';
+      b.innerHTML = '<i></i>'; wrap.appendChild(b); return b;
+    }
+
+    function imageFromURL(url){
+      return new Promise(function(res, rej){
+        var im = new Image();
+        im.onload = function(){ res(im); };
+        im.onerror = function(){ rej(new Error('frame decode failed')); };
+        im.src = url;
+      });
+    }
+    function wait(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
+
+    // The underlying MapLibre/Mapbox instance behind the Plotly subplot.
+    function mapOf(gd){
+      var fl = gd._fullLayout || {};
+      var sp = (fl.mapbox && fl.mapbox._subplot) || (fl.map && fl.map._subplot);
+      return (sp && sp.map) || null;
+    }
+
+    // Tiles load asynchronously. Capturing before the map is idle yields a
+    // half-drawn frame, and on some builds throws outright — so wait for the
+    // map to settle, with a ceiling so a stalled tile can't hang the export.
+    function mapReady(gd){
+      var map = mapOf(gd);
+      if (!map) return Promise.resolve();
+      try { if (map.loaded && map.loaded() && !map.isMoving()) return Promise.resolve(); } catch(e){}
+      return new Promise(function(res){
+        var done = false;
+        function fin(){ if (!done){ done = true; res(); } }
+        try { map.once('idle', fin); } catch(e){ fin(); }
+        setTimeout(fin, 2500);
+      });
+    }
+
+    // Composite a frame from what is ALREADY on screen: the map's own WebGL
+    // canvas underneath, Plotly's SVG layers (markers, colourbar) on top.
+    //
+    // Deliberately NOT Plotly.toImage. For a mapbox subplot that spins up a new
+    // WebGL context per call; browsers only allow a handful at once, so a few
+    // frames in the context is lost, the map stops rendering and every
+    // subsequent animate() hangs ("WebGL context was lost" in the console).
+    // Reading the live canvas creates no new contexts at all.
+    function captureFrame(gd, w, h){
+      var out = document.createElement('canvas');
+      out.width = w; out.height = h;
+      var c = out.getContext('2d');
+      var rect = gd.getBoundingClientRect();
+      var sx = w / (rect.width || w), sy = h / (rect.height || h);
+      var map = mapOf(gd);
+
+      // A WebGL drawing buffer is cleared after compositing unless
+      // preserveDrawingBuffer is set, which Plotly does not set. The reliable
+      // way to read it is inside the map's own 'render' event, before the
+      // buffer goes — hence triggerRepaint() then grab synchronously.
+      function drawMap(){
+        c.fillStyle = '#fff'; c.fillRect(0, 0, w, h);
+        try {
+          var mc = map && map.getCanvas && map.getCanvas();
+          if (mc){
+            var mr = mc.getBoundingClientRect();
+            c.drawImage(mc, (mr.left - rect.left) * sx, (mr.top - rect.top) * sy,
+                            mr.width * sx, mr.height * sy);
+          }
+        } catch(e){
+          if (window.console) console.warn('[flow gif] map canvas read failed:', e);
+        }
+      }
+
+      return new Promise(function(res){
+        if (!map || !map.once){ drawMap(); res(); return; }
+        var done = false;
+        function grab(){ if (done) return; done = true; drawMap(); res(); }
+        try { map.once('render', grab); map.triggerRepaint(); }
+        catch(e){ grab(); }
+        setTimeout(grab, 1200);        // never wait on a repaint that won't come
+      }).then(function(){
+        // Markers and colourbar sit in Plotly's SVG layers above the map.
+        var svgs = Array.prototype.slice.call(gd.querySelectorAll('svg.main-svg'));
+        return svgs.reduce(function(chain, svg){
+          return chain.then(function(){
+            var clone = svg.cloneNode(true);
+            clone.setAttribute('width', rect.width);
+            clone.setAttribute('height', rect.height);
+            var xml = new XMLSerializer().serializeToString(clone);
+            var url = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(xml);
+            return imageFromURL(url)
+              .then(function(im){ c.drawImage(im, 0, 0, w, h); })
+              .catch(function(){});     // a layer that won't serialise is skipped
+          });
+        }, Promise.resolve());
+      }).then(function(){ return out; });
+    }
+
+    // Nothing here should be able to hang the whole export — if a single frame
+    // stalls (a tile request that never returns, a wedged WebGL read), give up
+    // on it and fall back rather than leaving the user staring at "frame 1".
+    function withTimeout(promise, ms, label){
+      return Promise.race([
+        promise,
+        new Promise(function(_, rej){ setTimeout(function(){ rej(new Error(label + ' timed out')); }, ms); })
+      ]);
+    }
+
+
+    btn.addEventListener('click', function(){
+      if (busy) return;
+      var gd = plotDiv();
+      var allFrames = framesOf(gd);
+      if (!gd || allFrames.length < 2){ say('Nothing to animate yet — let the map finish loading.'); return; }
+      var frames = sampleFrames(allFrames);
+
+      busy = true;
+      btn.disabled = true;
+      var bar = progressBar(), fill = bar.querySelector('i');
+      say('Preparing…');
+
+      var rect = gd.getBoundingClientRect();
+      var w = Math.min(Math.round(rect.width) || 800, MAX_W);
+      var h = Math.round((rect.height || 500) * (w / (rect.width || w)));
+      var canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      var ctx = canvas.getContext('2d');
+
+      // Put the map back where the user left it once we're done.
+      var startFrame = (gd._fullLayout && gd._fullLayout.sliders && gd._fullLayout.sliders[0])
+        ? gd._fullLayout.sliders[0].active : 0;
+
+      // The time slider and play button are UI, not content — hide them for
+      // the capture so the caption carries the time instead, and put them back
+      // whether the export succeeds or fails.
+      var chromeHidden = false;
+      function setChrome(visible){
+        var u = {};
+        if (gd.layout && gd.layout.sliders && gd.layout.sliders.length) u['sliders[0].visible'] = visible;
+        if (gd.layout && gd.layout.updatemenus && gd.layout.updatemenus.length) u['updatemenus[0].visible'] = visible;
+        if (!Object.keys(u).length) return Promise.resolve();
+        return Plotly.relayout(gd, u).catch(function(){});
+      }
+      function restoreChrome(){
+        if (!chromeHidden) return Promise.resolve();
+        chromeHidden = false;
+        return setChrome(true);
+      }
+
+      loadLib().then(function(){
+        return setChrome(false).then(function(){ chromeHidden = true; });
+      }).then(function(){
+        var gif = new GIF({ workers: 2, quality: 10, width: w, height: h,
+                            workerScript: workerUrl, background: '#fff' });
+
+        gif.on('progress', function(p){
+          fill.style.width = Math.round(50 + p * 50) + '%';
+          say('Encoding… ' + Math.round(p * 100) + '%');
+        });
+
+        gif.on('finished', function(blob){
+          var url = URL.createObjectURL(blob);
+          var a = document.createElement('a');
+          a.href = url;
+          a.download = 'universal-studios-flow-2026-08-28.gif';
+          document.body.appendChild(a); a.click(); a.remove();
+          setTimeout(function(){ URL.revokeObjectURL(url); }, 4000);
+          var mb = (blob.size / 1048576).toFixed(1);
+          say('Saved — ' + frames.length + ' frames, ' + mb + ' MB.');
+          bar.remove(); btn.disabled = false; busy = false;
+          restoreChrome();
+          // startFrame indexes the FULL frame list, not the sampled one.
+          var back = allFrames[Math.min(startFrame, allFrames.length - 1)];
+          try { if (back) Plotly.animate(gd, [back.name], { transition:{duration:0}, frame:{duration:0, redraw:true} }); } catch(e){}
+        });
+
+        // Step the animation one frame at a time, capturing as we go.
+        var chain = Promise.resolve();
+        frames.forEach(function(fr, i){
+          chain = chain.then(function(){
+            say('Capturing frame ' + (i + 1) + ' of ' + frames.length + '…');
+            fill.style.width = Math.round((i / frames.length) * 50) + '%';
+            return withTimeout(
+                Plotly.animate(gd, [fr.name], { transition:{duration:0}, frame:{duration:0, redraw:true} }),
+                8000, 'animate')
+              .catch(function(e){ if (window.console) console.warn('[flow gif] animate:', e); })
+              .then(function(){ return mapReady(gd); })      // tiles finished drawing
+              .then(function(){ return wait(SETTLE); })
+              .then(function(){ return captureFrame(gd, w, h); })
+              .then(function(im){
+                ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h);
+                ctx.drawImage(im, 0, 0, w, h);
+                drawCaption(ctx, w, h, fr.name);
+                gif.addFrame(ctx, { copy:true, delay:FRAME_DELAY });
+              });
+          });
+        });
+
+        return chain.then(function(){ say('Encoding…'); gif.render(); });
+      }).catch(function(e){
+        // Surface the real message; the details land in the console so a
+        // failure can actually be diagnosed rather than just reported.
+        if (window.console) console.error('[flow gif] export failed:', e);
+        var msg = (e && (e.message || e.toString())) || 'unknown error';
+        say('Could not build the GIF — ' + String(msg).slice(0, 160) + ' (details in the browser console).');
+        bar.remove(); btn.disabled = false; busy = false;
+        restoreChrome();
+      });
+    });
+  })();
+</script>
+
+    </main>
+  </div>
+
+  <!-- Global color-scale key (low → high), matches the site's magnitude ramp -->
+  <div class="mag-scale" aria-hidden="true">
+    <div class="mag-scale-cap">Accessible Colors &amp; Icons</div>
+    <div class="mag-scale-bar"></div>
+    <div class="mag-scale-lbls"><span>Low</span><span>Average</span><span>High</span></div>
+    <div class="mag-key">
+      <div class="mag-key-grp">
+        <span class="mag-key-h">Wait Level</span>
+        <span class="mag-key-item"><span class="lvl-bars low"><i></i><i></i><i></i></span> Low</span>
+        <span class="mag-key-item"><span class="lvl-bars avg"><i></i><i></i><i></i></span> Average</span>
+        <span class="mag-key-item"><span class="lvl-bars high"><i></i><i></i><i></i></span> High</span>
+      </div>
+      <div class="mag-key-grp">
+        <span class="mag-key-h">Trend</span>
+        <span class="mag-key-item"><span class="mag-key-ar">↑</span> Rising</span>
+        <span class="mag-key-item"><span class="mag-key-ar">↓</span> Falling</span>
+        <span class="mag-key-item"><span class="mag-key-ar">→</span> Steady</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==== FOOTER ==== -->
+  <footer class="site"><div class="wrap">
+    <span>© 2026 Thrill Data LLC</span>
+    <a href="/about">About</a>
+    <a href="/tos">Terms</a>
+    <a href="https://talk.thrill-data.com/contact/">Contact</a>
+
+    
+    <form method="post" action="/i18n/setlang/" class="lang-pick">
+      <input type="hidden" name="csrfmiddlewaretoken" value="gdZfRi5l2iThmCnv4ZnSVPBps8g3SVbkbP1FDrX339QdBDR1LWE19XEzQTmf0hQV">
+      
+      <input type="hidden" name="next" value="/waits/park/unit/universal-studios/">
+      <label class="sr-only" for="lang-pick">Language</label>
+      <select id="lang-pick" name="language" onchange="this.form.submit()">
+        
+        
+        
+        <option value="en" selected>English</option>
+        
+        <option value="es">español</option>
+        
+        <option value="pt">Português</option>
+        
+        <option value="fr">français</option>
+        
+        <option value="de">Deutsch</option>
+        
+        <option value="ja">日本語</option>
+        
+        <option value="zh-CN">简体中文</option>
+        
+        <option value="zh-TW">繁體中文</option>
+        
+        <option value="cs">čeština</option>
+        
+        <option value="da">dansk</option>
+        
+        <option value="nl">Nederlands</option>
+        
+        <option value="tl">Filipino</option>
+        
+        <option value="fi">suomi</option>
+        
+        <option value="el">Ελληνικά</option>
+        
+        <option value="hu">Magyar</option>
+        
+        <option value="is">Íslenska</option>
+        
+        <option value="id">Bahasa Indonesia</option>
+        
+        <option value="it">italiano</option>
+        
+        <option value="ko">한국어</option>
+        
+        <option value="no">norsk</option>
+        
+        <option value="pl">polski</option>
+        
+        <option value="ro">Română</option>
+        
+        <option value="ru">Русский</option>
+        
+        <option value="sw">Kiswahili</option>
+        
+        <option value="sv">svenska</option>
+        
+        <option value="tr">Türkçe</option>
+        
+        <option value="uk">Українська</option>
+        
+        <option value="vi">Tiếng Việt</option>
+        
+      </select>
+      <noscript><button type="submit">Go</button></noscript>
+    </form>
+  </div></footer>
+
+  
+
+  <!-- ==== SIDEBAR AD RAILS (desktop gutters) — Freestar 160x600 sticky sidewalls ==== -->
+  
+  <div class="ad-rail left">
+    <div id="freestar-ad-sl" class="freestar-ad-slot" data-slot-name="thrill-data-com_160x600_sticky_left" data-slot-type="static"></div>
+    <script>freestar.queue.push(function(){ freestar.newAdSlots([{ placementName:"thrill-data-com_160x600_sticky_left", slotId:"freestar-ad-sl", publisher:"thrill-data-com" }]); });</script>
+  </div>
+  <div class="ad-rail right">
+    <div id="freestar-ad-sr" class="freestar-ad-slot" data-slot-name="thrill-data-com_160x600_sticky_right" data-slot-type="static"></div>
+    <script>freestar.queue.push(function(){ freestar.newAdSlots([{ placementName:"thrill-data-com_160x600_sticky_right", slotId:"freestar-ad-sr", publisher:"thrill-data-com" }]); });</script>
+  </div>
+  
+
+  <!-- ==== NAV DRAWER ==== -->
+  <div class="scrim" id="scrim"></div>
+  <aside class="drawer" id="drawer" aria-label="Menu">
+    <div class="drawer-head">
+      <span class="brand">Thrill&nbsp;Data</span>
+      <button class="icon-btn close" id="nav-close" aria-label="Close menu"><svg class="i sm" viewBox="0 0 24 24"><use href="#ic-close"/></svg></button>
+    </div>
+    
+
+    <div class="navgroup">
+      <div class="navhead"><svg class="i sm" viewBox="0 0 24 24"><use href="#ic-book"/></svg> Trip Planning</div>
+      <a href="/agendas/">Agendas</a>
+      <a href="/alerts/">Alerts</a>
+      <a href="/crowd-calendars/">Crowd Calendars</a>
+      <a href="/graph">Custom Graphs</a>
+      <a href="/holidays/">Holiday Data</a>
+      <a href="/waitmagic">Wait Magic</a>
+      <a href="/park-weather/">Weather Data</a>
+    </div>
+    
+    <div class="navgroup">
+      <div class="navhead"><i class="fa-solid fa-utensils" style="color:var(--brand);font-size:15px;width:16px;text-align:center;"></i> Dining</div>
+      <a href="/disney-menus/wdw">Disney World Menus</a>
+      <a href="/disney-menus/dlr">Disneyland Menus</a>
+      <a href="/disney-dining">Reservation Finder</a>
+      <a href="/disney-merchandise/wdw">Pins &amp; Merchandise</a>
+    </div>
+
+    <div class="navgroup">
+      <div class="navhead"><svg class="i sm" viewBox="0 0 24 24"><use href="#ic-bolt"/></svg> Lightning Lanes</div>
+      <a href="/waitmagic/">Wait Magic</a>
+      <a href="/lightning-lane/">Disneyland</a>
+      <a href="/lightning-lane/">Disney World</a>
+    </div>
+    <div class="navgroup">
+      <div class="navhead"><svg class="i sm" viewBox="0 0 24 24"><use href="#ic-clock"/></svg> Wait Times</div>
+      <a href="/waits/">All Data</a>
+      <a href="/epic-universe/">Epic Universe</a>
+    </div>
+    <div class="navgroup">
+      <div class="navhead"><svg class="i sm" viewBox="0 0 24 24"><use href="#ic-calendar"/></svg> Special Events</div>
+      <a href="/halloween/">Halloween Events</a>
+      <a href="/mickeys-very-merry-christmas-party/2025">Christmas Party</a>
+      <a href="/mickeys-very-merry-christmas-party/2025">Jollywood Nights</a>
+    </div>
+    <div class="navgroup">
+      <div class="navhead"><svg class="i sm" viewBox="0 0 24 24"><use href="#ic-camera"/></svg> Community</div>
+      <a href="https://talk.thrill-data.com/blogs">Blog</a>
+      <a href="https://talk.thrill-data.com/">Forum</a>
+      
+      <a href="/photos/">Photo Gallery</a>
+    </div>
+    <div class="navgroup">
+      <div class="navhead"><svg class="i sm" viewBox="0 0 24 24"><use href="#ic-pin"/></svg> Tracking &amp; More</div>
+      
+      
+      <a href="/my-food-list">My Food List</a>
+      
+      <a href="/cheat-sheets">Cheat Sheets</a>
+      <a href="/users/mycount">Coaster Count</a>
+      
+      <a href="/tripreports/">Trip Reports</a>
+      <a href="/mania/">Wait Time Mania</a>
+    </div>
+  </aside>
+
+
+
+  
+  <script src="/wa-foot.js?v=77a80cc7b5"></script>
+<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a325f67da9c04032',t:'MTc4Nzk0Nzg2Mg=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
