@@ -1,5 +1,20 @@
 #frontEnd.py
 """Program that shows a user an optimized map of getting to rides at the amusement park Universal"""
+import sys
+
+# ── make the process DPI-aware BEFORE pygame/SDL creates a window ──
+# Without this, Windows treats the app as DPI-unaware and has the OS
+# compositor upscale (blur) the whole window to match display scaling.
+if sys.platform == "win32":
+    try:
+        import ctypes
+        try:
+            ctypes.windll.shcore.SetProcessDpiAwareness(2)  # PER_MONITOR_AWARE_V2
+        except Exception:
+            ctypes.windll.user32.SetProcessDPIAware()
+    except Exception:
+        pass
+
 import pygame
 import threading
 import Data
@@ -11,11 +26,43 @@ pygame.init()
 SIDEBAR_WIDTH = 260
 MAP_WIDTH = 1000
 MAP_HEIGHT = 800
-TOP_BAR_HEIGHT = 90   # new route bar above the map; pushes the map down
+# Default top-bar height only needs to comfortably fit ONE row of route
+# items (icon pill + predicted-wait chip + delete-X below it). The bar
+# grows dynamically at runtime (see EXTRA_ROW_TOPBAR_H / current_topbar_h)
+# when a 2nd or 3rd row of items is actually needed.
+TOP_BAR_HEIGHT = 104
+
+# ── figure out available screen space and scale everything to fit ──
+_display_info = pygame.display.Info()
+_avail_w = _display_info.current_w
+_avail_h = _display_info.current_h
+
+# Leave a little margin for OS taskbars/window chrome
+_margin_w = 40
+_margin_h = 80
+
+_desired_w = SIDEBAR_WIDTH + MAP_WIDTH
+_desired_h = MAP_HEIGHT + TOP_BAR_HEIGHT
+
+_scale = min(
+    1.0,
+    (_avail_w - _margin_w) / _desired_w,
+    (_avail_h - _margin_h) / _desired_h,
+)
+_scale = max(_scale, 0.6)  # don't shrink small enough to look pixelated
+
+SIDEBAR_WIDTH  = int(SIDEBAR_WIDTH * _scale)
+MAP_WIDTH      = int(MAP_WIDTH * _scale)
+MAP_HEIGHT     = int(MAP_HEIGHT * _scale)
+TOP_BAR_HEIGHT = int(TOP_BAR_HEIGHT * _scale)
+
 SCREEN_WIDTH = SIDEBAR_WIDTH + MAP_WIDTH
 SCREEN_HEIGHT = MAP_HEIGHT + TOP_BAR_HEIGHT
 
-screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+screen = pygame.display.set_mode(
+    (SCREEN_WIDTH, SCREEN_HEIGHT),
+    pygame.RESIZABLE
+)
 pygame.display.set_caption("front_end")
 
 threading.Thread(target=Data.update_backend, daemon=True).start()
@@ -29,6 +76,7 @@ mapImage = pygame.transform.scale(mapImage, (MAP_WIDTH, MAP_HEIGHT))
 
 # ── helper functions ───────────────────────────────────────────────
 def scale_img(img, target_width=90):
+    target_width = max(1, int(target_width * _scale))
     orig_w, orig_h = img.get_size()
     target_height = int(target_width * orig_h / orig_w)
     return pygame.transform.smoothscale(img, (target_width, target_height))
@@ -52,72 +100,49 @@ def draw_speech_bubble(surface, px, py, lines, font,
                         padding=12, tail_h=14, tail_w=18, radius=10,
                         bg_color=(255, 255, 255), border_color=(30, 30, 30),
                         text_color=(20, 20, 20), border_width=2):
-    """
-    Draw a programmatic speech bubble with a downward tail, dynamically
-    sized to fit `lines` of text.
-
-    Parameters
-    ----------
-    px, py   : tip position of the tail (i.e. where the bubble points to)
-    lines    : list of strings to render inside the bubble
-    font     : pygame.font.Font used for measuring / rendering text
-    """
     line_h = font.get_linesize()
     text_w = max(font.size(l)[0] for l in lines) if lines else 60
 
     box_w = text_w + padding * 2
     box_h = line_h * len(lines) + padding * 2
 
-    # Position bubble so tail tip lands at (px, py).
-    # Bubble sits above py; tail_h is the triangle height below the box.
-    bx = px - box_w // 2          # left edge of box
-    by = py - box_h - tail_h      # top edge of box
+    bx = px - box_w // 2
+    by = py - box_h - tail_h
 
-    # ── build a surface big enough for box + tail ──────────────────
     surf_w = box_w + border_width * 2
     surf_h = box_h + tail_h + border_width * 2
     bubble = pygame.Surface((surf_w, surf_h), pygame.SRCALPHA)
 
-    ox, oy = border_width, border_width  # drawing origin inside surf
+    ox, oy = border_width, border_width
 
-    # ── rounded rectangle (body) ───────────────────────────────────
     body_rect = pygame.Rect(ox, oy, box_w, box_h)
-
-    # filled body
     pygame.draw.rect(bubble, bg_color, body_rect, border_radius=radius)
-    # border
     pygame.draw.rect(bubble, border_color, body_rect,
                      width=border_width, border_radius=radius)
 
-    # ── tail (downward-pointing triangle) ─────────────────────────
-    tail_tip_x = ox + box_w // 2          # horizontal centre of box
-    tail_base_y = oy + box_h              # bottom of box
-    tail_tip_y  = tail_base_y + tail_h   # tip of tail
+    tail_tip_x = ox + box_w // 2
+    tail_base_y = oy + box_h
+    tail_tip_y  = tail_base_y + tail_h
 
     tail_left  = tail_tip_x - tail_w // 2
     tail_right = tail_tip_x + tail_w // 2
 
-    # filled triangle (cover the bottom border line so it looks seamless)
     pygame.draw.polygon(bubble, bg_color, [
         (tail_left,  tail_base_y + border_width),
         (tail_right, tail_base_y + border_width),
         (tail_tip_x, tail_tip_y),
     ])
-    # border on the two outer edges of the tail
     pygame.draw.line(bubble, border_color,
                      (tail_left,  tail_base_y), (tail_tip_x, tail_tip_y), border_width)
     pygame.draw.line(bubble, border_color,
                      (tail_right, tail_base_y), (tail_tip_x, tail_tip_y), border_width)
 
-    # ── blit text ──────────────────────────────────────────────────
     for i, line in enumerate(lines):
         label = font.render(line, True, text_color)
-        lx = ox + padding + (text_w - font.size(line)[0]) // 2  # centre each line
+        lx = ox + padding + (text_w - font.size(line)[0]) // 2
         ly = oy + padding + i * line_h
         bubble.blit(label, (lx, ly))
 
-    # ── blit finished bubble onto main surface ────────────────────
-    # Place so tail tip aligns with (px, py)
     dest_x = px - box_w // 2 - border_width
     dest_y = py - box_h - tail_h - border_width
     surface.blit(bubble, (dest_x, dest_y))
@@ -184,38 +209,37 @@ ride_names = {
     "harryPotter":    "Harry Potter and the\nForbidden Journey",
 }
 
-# ── ride visibility toggles (one bool per ride, default: all checked/on) ──
+# ── ride visibility toggles ────────────────────────────────────────
 ride_visible = {ride_id: True for ride_id in ride_names}
 
-# ── ride quantity counters (one int per ride, min 0, default 1) ──────
+# ── ride quantity counters ─────────────────────────────────────────
 ride_counts = {ride_id: 1 for ride_id in ride_names}
 RIDE_COUNT_MIN = 0
 
-# remembers each ride's count from just before it was unchecked, so
-# rechecking it can restore that value instead of resetting to 1
 ride_last_count = {ride_id: 1 for ride_id in ride_names}
 
-# ── ride lock toggles (one bool per ride, True = locked, default: unlocked) ──
-# A ride can only be locked while it is checked AND its count is > 0.
-# If it gets unchecked or its count drops to 0, it is automatically unlocked.
+# ── ride lock toggles ──────────────────────────────────────────────
 ride_locked = {ride_id: False for ride_id in ride_names}
-
-# Whenever a ride's count first crosses from 1 -> 2 it gets auto-locked.
-# This remembers whatever ride_locked was *right before* that happened, so
-# that if the count later drops back down to 1, we know whether to auto
-# -unlock it again or leave it locked (because the user had locked it
-# manually beforehand, independent of the count).
 ride_lock_before_bump = {ride_id: False for ride_id in ride_names}
 
-# ── the most recently generated route (list of ride_id strings, in visit
-# order) -- drawn in the new top bar. Updated by _run_route_computation()
-# once the background thread finishes. Empty until the first successful run.
+# ── current route + scroll state ───────────────────────────────────
 current_route = []
+# Parallel list, index-aligned with current_route: the PREDICTED wait time
+# (in minutes) for each ride at the point it's reached in the optimized
+# route -- not the live/current wait shown by the map-icon popup. An
+# entry is None when no prediction is available for that stop.
+current_route_predicted = []
+topbar_scroll_x     = 0   # pixels scrolled rightward in the route bar
+topbar_max_scroll_x = 0   # clamping ceiling; updated every frame by draw_top_bar
 
-# ── buttons: [x, y, clicked, ride_id, rect] ───────────────────────
-# NOTE: x/y below are in "map-local" coordinates (0-1000 / 0-800). We shift
-# x by SIDEBAR_WIDTH and y by TOP_BAR_HEIGHT so they land in the right place
-# on the wider/taller screen (sidebar on the left, route bar on top).
+# ── route computation status + click-flash feedback ────────────────
+route_generating = False
+ROUTE_CLICK_FLASH_MS = 220
+route_button_click_ms = -10_000
+topbar_route_button_click_ms = -10_000
+ROUTE_BUTTON_CLICK_COLOR = (90, 190, 130)  # brief green flash on click
+
+# ── buttons ────────────────────────────────────────────────────────
 raw_buttons = [
     [488, 620, False, "hulk"],
     [469, 654, False, "stormForce"],
@@ -239,62 +263,60 @@ raw_buttons = [
 buttons = []
 for b in raw_buttons:
     x, y, clicked, ride_id = b
-    sx = x + SIDEBAR_WIDTH   # shifted x, since map now starts after the sidebar
-    sy = y + TOP_BAR_HEIGHT  # shifted y, since map now starts below the top bar
+    x = int(x * _scale)
+    y = int(y * _scale)
+    sx = x + SIDEBAR_WIDTH
+    sy = y + TOP_BAR_HEIGHT
     if ride_id in ride_images:
         rect = ride_images[ride_id].get_rect(center=(sx, sy))
     else:
         rect = pygame.Rect(sx - 10, sy - 10, 20, 20)
     buttons.append([sx, sy, clicked, ride_id, rect])
 
-# popup is either None or (ride_id, anchor_x, anchor_y, lines_list).
-# Storing ride_id lets us auto-hide the bubble the moment its ride gets
-# unchecked (via the sidebar checkbox OR the spinner dropping to 0),
-# instead of it lingering on screen for a ride that's no longer selected.
 popup = None
 
-popup_font       = pygame.font.SysFont("Arial", 13, bold=False)
-popup_font_bold  = pygame.font.SysFont("Arial", 13, bold=True)
+popup_font       = pygame.font.SysFont("Arial", max(9, int(13 * _scale)), bold=False)
+popup_font_bold  = pygame.font.SysFont("Arial", max(9, int(13 * _scale)), bold=True)
 
 # ── sidebar checklist setup ────────────────────────────────────────
 SIDEBAR_BG_COLOR       = (245, 245, 245)
 SIDEBAR_BORDER_COLOR   = (180, 180, 180)
-CHECKBOX_SIZE          = 18
-CHECKBOX_MARGIN_LEFT   = 14
+CHECKBOX_SIZE          = max(10, int(18 * _scale))
+CHECKBOX_MARGIN_LEFT   = max(8, int(14 * _scale))
 CHECKBOX_CHECKED_COLOR = (40, 160, 70)
 CHECKBOX_BORDER_COLOR  = (60, 60, 60)
 LABEL_COLOR            = (20, 20, 20)
 
-sidebar_font = pygame.font.SysFont("Arial", 14)
-sidebar_title_font = pygame.font.SysFont("Arial", 18, bold=True)
+sidebar_font = pygame.font.SysFont("Arial", max(9, int(14 * _scale)))
+sidebar_title_font = pygame.font.SysFont("Arial", max(11, int(18 * _scale)), bold=True)
 
-TITLE_H = 40
+TITLE_H = max(24, int(40 * _scale))
 
-# ── quantity spinner (number + up/down arrows) layout ───────────────
-SPIN_RIGHT_MARGIN = 10   # gap from the sidebar's right border
-SPIN_ARROW_SIZE   = 11   # width/height of each arrow's clickable box
-SPIN_ARROW_GAP    = 3    # gap between arrow boxes and the number
-SPIN_NUM_W        = 20   # width reserved for the number text
+# ── quantity spinner layout ────────────────────────────────────────
+SPIN_RIGHT_MARGIN = max(6, int(10 * _scale))
+SPIN_ARROW_SIZE   = max(7, int(11 * _scale))
+SPIN_ARROW_GAP    = max(2, int(3 * _scale))
+SPIN_NUM_W        = max(14, int(20 * _scale))
 SPIN_AREA_W       = SPIN_ARROW_SIZE * 2 + SPIN_ARROW_GAP * 2 + SPIN_NUM_W
 SPIN_ARROW_BG          = (255, 255, 255)
 SPIN_ARROW_BORDER      = (60, 60, 60)
 SPIN_ARROW_TRIANGLE    = (60, 60, 60)
 SPIN_ARROW_DISABLED    = (200, 200, 200)
-spin_num_font = pygame.font.SysFont("Arial", 13, bold=True)
+spin_num_font = pygame.font.SysFont("Arial", max(9, int(13 * _scale)), bold=True)
 
-# ── lock icon (sits just to the left of the quantity spinner) ───────
-LOCK_SIZE           = 14   # width/height of the lock icon's clickable box
-LOCK_GAP            = 6    # gap between the lock icon and the spinner group
-LOCK_COLOR = (70, 70, 70)  # same solid color for both locked/unlocked shapes
-LOCK_DISABLED_ALPHA = 110  # alpha used when the lock isn't interactive (half-transparent)
+# ── lock icon ─────────────────────────────────────────────────────
+LOCK_SIZE           = max(9, int(14 * _scale))
+LOCK_GAP            = max(4, int(6 * _scale))
+LOCK_COLOR          = (70, 70, 70)
+LOCK_DISABLED_ALPHA = 110
 
-# ── "Get Optimal Route" button (reserved at the bottom of the sidebar) ──
-ROUTE_BUTTON_H = 46
-ROUTE_BUTTON_MARGIN = 12
+# ── "Get Optimal Route" button ─────────────────────────────────────
+ROUTE_BUTTON_H = max(30, int(46 * _scale))
+ROUTE_BUTTON_MARGIN = max(8, int(12 * _scale))
 ROUTE_BUTTON_COLOR = (30, 110, 200)
 ROUTE_BUTTON_HOVER_COLOR = (20, 90, 170)
 ROUTE_BUTTON_TEXT_COLOR = (255, 255, 255)
-route_button_font = pygame.font.SysFont("Arial", 15, bold=True)
+route_button_font = pygame.font.SysFont("Arial", max(10, int(15 * _scale)), bold=True)
 
 route_button_rect = pygame.Rect(
     CHECKBOX_MARGIN_LEFT,
@@ -305,7 +327,6 @@ route_button_rect = pygame.Rect(
 
 
 def _truncate_label(text, font, max_w):
-    """Shorten `text` with a trailing ellipsis so it renders within max_w px."""
     if font.size(text)[0] <= max_w:
         return text
     ellipsis = "..."
@@ -315,23 +336,19 @@ def _truncate_label(text, font, max_w):
     return truncated + ellipsis if truncated else ellipsis
 
 
-# ── starting-location dropdown (sits next to the "Rides" title) ─────
-# Lets the user pick where the route should start from. "Entrance" is
-# the default and corresponds to id 0 in the Supabase `rides` table;
-# picking any other ride uses that ride's short key instead.
-DROPDOWN_H           = 24
-DROPDOWN_ITEM_H      = 22
+# ── starting-location dropdown ─────────────────────────────────────
+DROPDOWN_H           = max(16, int(24 * _scale))
+DROPDOWN_ITEM_H      = max(15, int(22 * _scale))
 DROPDOWN_BG          = (255, 255, 255)
 DROPDOWN_BORDER      = (60, 60, 60)
 DROPDOWN_HOVER_COLOR = (225, 235, 250)
 DROPDOWN_SELECTED_BG = (235, 245, 255)
 DROPDOWN_TEXT_COLOR  = (20, 20, 20)
-dropdown_font = pygame.font.SysFont("Arial", 13)
+dropdown_font = pygame.font.SysFont("Arial", max(9, int(13 * _scale)))
 
 dropdown_open = False
-selected_start = "entrance"  # currently chosen starting location's short key
+selected_start = "entrance"
 
-# (key, display label) for every choice -- "Entrance" first, then every ride
 start_options = [("entrance", "Entrance")]
 for _ride_id, _name in ride_names.items():
     start_options.append((_ride_id, _name.replace("\n", " ")))
@@ -345,8 +362,7 @@ dropdown_rect = pygame.Rect(
     DROPDOWN_H,
 )
 
-# Precompute each dropdown item's rect + truncated label surface once.
-dropdown_items = []  # list of (key, label_surface, item_rect)
+dropdown_items = []
 for _i, (_key, _label) in enumerate(start_options):
     _item_rect = pygame.Rect(
         dropdown_rect.left,
@@ -360,16 +376,12 @@ for _i, (_key, _label) in enumerate(start_options):
 
 
 def _draw_dropdown_button(surface):
-    """Draws the title text and the closed dropdown button (always visible)."""
     surface.blit(title_surface, (CHECKBOX_MARGIN_LEFT, 8))
-
     pygame.draw.rect(surface, DROPDOWN_BG, dropdown_rect, border_radius=4)
     pygame.draw.rect(surface, DROPDOWN_BORDER, dropdown_rect, width=1, border_radius=4)
-
     current_label = _truncate_label(start_label_map[selected_start], dropdown_font, dropdown_rect.width - 24)
     label_surface = dropdown_font.render(current_label, True, DROPDOWN_TEXT_COLOR)
     surface.blit(label_surface, (dropdown_rect.left + 8, dropdown_rect.centery - label_surface.get_height() // 2))
-
     ax, ay = dropdown_rect.right - 14, dropdown_rect.centery
     if dropdown_open:
         pts = [(ax - 5, ay + 2), (ax + 5, ay + 2), (ax, ay - 3)]
@@ -379,14 +391,12 @@ def _draw_dropdown_button(surface):
 
 
 def _draw_dropdown_list(surface):
-    """Draws the open item list on top of everything else, if it's open."""
     if not dropdown_open:
         return
     mx, my = pygame.mouse.get_pos()
     list_h = len(dropdown_items) * DROPDOWN_ITEM_H
     panel_rect = pygame.Rect(dropdown_rect.left, dropdown_rect.bottom, dropdown_rect.width, list_h)
     pygame.draw.rect(surface, DROPDOWN_BG, panel_rect)
-
     for key, label_surface, item_rect in dropdown_items:
         if item_rect.collidepoint(mx, my):
             bg = DROPDOWN_HOVER_COLOR
@@ -396,46 +406,36 @@ def _draw_dropdown_list(surface):
             bg = DROPDOWN_BG
         pygame.draw.rect(surface, bg, item_rect)
         surface.blit(label_surface, (item_rect.left + 8, item_rect.centery - label_surface.get_height() // 2))
-
     pygame.draw.rect(surface, DROPDOWN_BORDER, panel_rect, width=1)
 
 
-# ── break entries (dynamic list, prepended to the ride list) ────────
-# Each entry is {"id": int, "label": str, "start_min": int, "end_min": int}.
-# start_min/end_min are minutes-since-midnight so the optimizer can turn
-# them into real datetimes. Newly generated breaks are inserted at the
-# front so they always show up as the first row.
+# ── break entries ──────────────────────────────────────────────────
 breaks = []
 _break_id_counter = 0
 
-# ── break time-entry boxes + "Generate Break" button ─────────────────
-# Sits directly below the starting-location dropdown row.
-BREAK_INPUT_H   = 24
-BREAK_ROW_GAP   = 6
-BREAK_BTN_H     = 28
+BREAK_INPUT_H   = max(16, int(24 * _scale))
+BREAK_ROW_GAP   = max(4, int(6 * _scale))
+BREAK_BTN_H     = max(18, int(28 * _scale))
 BREAK_SECTION_TOP = TITLE_H + 8
 BREAK_SECTION_H   = BREAK_INPUT_H + BREAK_ROW_GAP + BREAK_BTN_H + 10
 
-BREAK_INPUT_BG            = (255, 255, 255)
-BREAK_INPUT_BORDER        = (150, 150, 150)
-BREAK_INPUT_BORDER_ACTIVE = (30, 110, 200)
-BREAK_INPUT_TEXT_COLOR    = (20, 20, 20)
+BREAK_INPUT_BG                = (255, 255, 255)
+BREAK_INPUT_BORDER            = (150, 150, 150)
+BREAK_INPUT_BORDER_ACTIVE     = (30, 110, 200)
+BREAK_INPUT_TEXT_COLOR        = (20, 20, 20)
 BREAK_INPUT_PLACEHOLDER_COLOR = (160, 160, 160)
 BREAK_BTN_COLOR       = (200, 60, 60)
 BREAK_BTN_HOVER_COLOR = (170, 40, 40)
 BREAK_BTN_TEXT_COLOR  = (255, 255, 255)
 DELETE_X_COLOR        = (190, 40, 40)
 
-break_input_font = pygame.font.SysFont("Arial", 13)
-break_btn_font   = pygame.font.SysFont("Arial", 14, bold=True)
+break_input_font = pygame.font.SysFont("Arial", max(9, int(13 * _scale)))
+break_btn_font   = pygame.font.SysFont("Arial", max(10, int(14 * _scale)), bold=True)
 
 time1_text = ""
 time2_text = ""
-active_time_input = None  # None | "time1" | "time2"
+active_time_input = None
 
-# ── error-flash state ────────────────────────────────────────────────
-# When an entry is invalid, both boxes show "ERROR" for this long (ms)
-# before clearing themselves.
 TIME_ERROR_DURATION_MS = 2000
 time_error_active = False
 time_error_end_ms = 0
@@ -446,8 +446,6 @@ _TIME_INPUT_RE = _re.compile(r'(\d{1,2})(?::(\d{2}))?')
 
 
 def _parse_time_input(text):
-    """Parses 'H' or 'H:MM' (hour 1-12, minute 0-59). Returns (hour, minute)
-    or None if the text isn't a valid time at all."""
     text = text.strip()
     if not text:
         return None
@@ -462,9 +460,6 @@ def _parse_time_input(text):
 
 
 def _to_ampm(hour, minute):
-    """Universal's park day runs 9am-9pm with no AM/PM typed in: a bare hour
-    of 9, 10, or 11 is AM; 12 and 1-8 are PM. Returns (minutes_since_midnight,
-    display_label) so two parsed times can be compared and shown."""
     if hour in (9, 10, 11):
         period = "AM"
         hour24 = hour
@@ -496,18 +491,14 @@ generate_break_rect = pygame.Rect(
     BREAK_BTN_H,
 )
 
-# top of the scrollable-looking checklist -- everything (breaks + rides)
-# is laid out below this point, above the "Get Optimal Route" button.
 LIST_TOP = BREAK_SECTION_TOP + BREAK_SECTION_H
 
 list_area_h = 0
 row_h = 0
-sidebar_rows = []  # list of dicts, either type "break" or type "ride"
+sidebar_rows = []
 
 
 def rebuild_sidebar_rows():
-    """Recomputes every row's rects/labels. Call whenever `breaks` changes,
-    since adding/removing a break changes how many rows share the list area."""
     global list_area_h, row_h, sidebar_rows
 
     total_rows = len(breaks) + len(ride_names)
@@ -517,7 +508,6 @@ def rebuild_sidebar_rows():
     sidebar_rows = []
     row_index = 0
 
-    # breaks show first (most recently generated on top)
     for b in breaks:
         row_top = LIST_TOP + row_index * row_h
         x_rect = pygame.Rect(
@@ -540,7 +530,6 @@ def rebuild_sidebar_rows():
         })
         row_index += 1
 
-    # then every ride, in their fixed order
     for ride_id, name in ride_names.items():
         row_top = LIST_TOP + row_index * row_h
         cb_rect = pygame.Rect(
@@ -550,7 +539,6 @@ def rebuild_sidebar_rows():
             CHECKBOX_SIZE,
         )
 
-        # spinner: [down][number][up], with the lock icon rightmost against the sidebar edge
         lock_rect = pygame.Rect(
             SIDEBAR_WIDTH - SPIN_RIGHT_MARGIN - LOCK_SIZE,
             row_top + (row_h - LOCK_SIZE) // 2,
@@ -616,19 +604,12 @@ def _draw_spin_arrow(surface, rect, pointing_up, enabled=True):
 
 
 def _draw_lock_icon(surface, rect, locked, transparent=False):
-    """
-    Draws a small padlock. `locked` picks the closed vs. open shackle shape.
-    `transparent` half-fades the icon -- used only when the ride itself is
-    unchecked, not merely because its count is at 0.
-    """
     color = LOCK_COLOR
-
     icon = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
 
     body_h = int(rect.height * 0.55)
     body_rect = pygame.Rect(0, rect.height - body_h, rect.width, body_h)
     pygame.draw.rect(icon, color, body_rect, border_radius=2)
-    # keyhole
     keyhole_center = body_rect.center
     pygame.draw.circle(icon, (255, 255, 255), keyhole_center, max(1, body_rect.height // 6))
 
@@ -637,7 +618,6 @@ def _draw_lock_icon(surface, rect, locked, transparent=False):
     shackle_thickness = 2
 
     if locked:
-        # centered, closed shackle
         shackle_rect = pygame.Rect((rect.width - shackle_w) // 2, 0, shackle_w, shackle_h)
         pygame.draw.arc(icon, color, shackle_rect, 0, 3.14159, shackle_thickness)
         pygame.draw.line(icon, color, (shackle_rect.left, shackle_rect.centery),
@@ -645,7 +625,6 @@ def _draw_lock_icon(surface, rect, locked, transparent=False):
         pygame.draw.line(icon, color, (shackle_rect.right, shackle_rect.centery),
                           (shackle_rect.right, body_rect.top + 1), shackle_thickness)
     else:
-        # shifted/open shackle, swung off to one side
         shackle_rect = pygame.Rect((rect.width - shackle_w) // 2 + 3, -1, shackle_w, shackle_h)
         pygame.draw.arc(icon, color, shackle_rect, 0.6, 3.6, shackle_thickness)
         pygame.draw.line(icon, color, (shackle_rect.left + 1, shackle_rect.centery + 1),
@@ -692,13 +671,11 @@ def _draw_delete_x(surface, rect):
 
 
 def draw_sidebar(surface, route_button_hover):
-    # background panel
     pygame.draw.rect(surface, SIDEBAR_BG_COLOR, (0, 0, SIDEBAR_WIDTH, SCREEN_HEIGHT))
     pygame.draw.line(surface, SIDEBAR_BORDER_COLOR, (SIDEBAR_WIDTH, 0), (SIDEBAR_WIDTH, SCREEN_HEIGHT), 2)
 
     _draw_dropdown_button(surface)
 
-    # ── break time-entry boxes + Generate Break button ──
     _draw_time_box(surface, time1_rect, time1_text, active_time_input == "time1", "Start", error=time_error_active)
     dash_surface = dropdown_font.render("-", True, LABEL_COLOR)
     dash_x = time1_rect.right + (time2_rect.left - time1_rect.right - dash_surface.get_width()) // 2
@@ -711,7 +688,6 @@ def draw_sidebar(surface, route_button_hover):
     gen_label = break_btn_font.render("Generate Break", True, BREAK_BTN_TEXT_COLOR)
     surface.blit(gen_label, gen_label.get_rect(center=generate_break_rect.center))
 
-    # ── list rows: breaks (with red-X delete) then rides (checkbox/spinner/lock) ──
     for row in sidebar_rows:
         row_top = row["row_top"]
 
@@ -730,19 +706,16 @@ def draw_sidebar(surface, route_button_hover):
         num_right = row["num_right"]
         lock_rect = row["lock_rect"]
 
-        # checkbox
         pygame.draw.rect(surface, (255, 255, 255), cb_rect, border_radius=3)
         pygame.draw.rect(surface, CHECKBOX_BORDER_COLOR, cb_rect, width=2, border_radius=3)
         if ride_visible[ride_id]:
             inner = cb_rect.inflate(-6, -6)
             pygame.draw.rect(surface, CHECKBOX_CHECKED_COLOR, inner, border_radius=2)
 
-        # label, vertically centered next to checkbox
         label_x = cb_rect.right + 10
         label_y = row_top + (row_h - label_surface.get_height()) // 2
         surface.blit(label_surface, (label_x, label_y))
 
-        # quantity spinner
         count = ride_counts[ride_id]
         _draw_spin_arrow(surface, down_rect, pointing_up=False, enabled=count > RIDE_COUNT_MIN)
         _draw_spin_arrow(surface, up_rect, pointing_up=True, enabled=True)
@@ -752,54 +725,41 @@ def draw_sidebar(surface, route_button_hover):
         num_x = num_left + (num_right - num_left - num_surface.get_width()) // 2
         surface.blit(num_surface, (num_x, num_y))
 
-        # lock icon -- only lockable while checked and count > 0
         lockable = ride_visible[ride_id] and count > RIDE_COUNT_MIN
         if not lockable:
-            ride_locked[ride_id] = False  # can't stay "locked" while off/at zero
+            ride_locked[ride_id] = False
         _draw_lock_icon(surface, lock_rect, ride_locked[ride_id], transparent=not ride_visible[ride_id])
 
-    # ── "Get Optimal Route" button ──
-    color = ROUTE_BUTTON_HOVER_COLOR if route_button_hover else ROUTE_BUTTON_COLOR
+    if pygame.time.get_ticks() - route_button_click_ms < ROUTE_CLICK_FLASH_MS:
+        color = ROUTE_BUTTON_CLICK_COLOR
+    else:
+        color = ROUTE_BUTTON_HOVER_COLOR if route_button_hover else ROUTE_BUTTON_COLOR
     pygame.draw.rect(surface, color, route_button_rect, border_radius=8)
     label = route_button_font.render("Get Optimal Route", True, ROUTE_BUTTON_TEXT_COLOR)
     label_pos = label.get_rect(center=route_button_rect.center)
     surface.blit(label, label_pos)
 
-    # drawn last so the open list overlays the rows/button beneath it
     _draw_dropdown_list(surface)
 
 
 def trigger_route_computation():
-    """Shared by both the sidebar's 'Get Optimal Route' button and the top
-    bar's 'Generate Route' button -- snapshots the current selection/live
-    data and kicks off the optimizer on a background thread."""
-    # only checked rides with a count > 0 are candidates
+    global route_generating
+    route_generating = True
+
     selected_counts = {
         ride_id: ride_counts[ride_id]
         for ride_id in ride_names
         if ride_visible[ride_id] and ride_counts[ride_id] > RIDE_COUNT_MIN
     }
-    # locked rides among those -- the optimizer force-includes these
     selected_locked = {
         ride_id: True
         for ride_id in ride_names
         if ride_locked[ride_id]
     }
 
-    # Take one consistent snapshot of the live data right now, instead
-    # of handing the optimizer thread a live reference into dicts that
-    # Data.update_backend() keeps mutating every 5 seconds in the
-    # background. Without this, the wait times the optimizer reads
-    # while it's mid-calculation could shift out from under it.
     live_waits_snapshot = dict(Data.ride_waits)
-    live_open_snapshot = dict(Data.ride_open)
+    live_open_snapshot  = dict(Data.ride_open)
 
-    # A ride is closed if the API's own is_open flag says so -- NOT if
-    # its live wait happens to read 0. A 0-min wait is a legitimate
-    # walk-on and shouldn't be treated as a closure; conversely a
-    # closed ride can still be reporting a stale nonzero wait from
-    # before it went down, so wait==0 was both a false-positive and a
-    # false-negative detector.
     closed_ride_keys = [
         ride_id for ride_id in ride_names
         if live_open_snapshot.get(ride_id) is False
@@ -817,22 +777,51 @@ def trigger_route_computation():
     ).start()
 
 
+def _extract_ride_id_and_predicted_wait(entry):
+    """
+    Normalizes one entry of routeOptimizer's returned route into
+    (ride_id, predicted_wait_minutes). Accepts several shapes so this
+    keeps working whether routeOptimizer returns:
+      - a plain ride_id string (predicted wait unknown -> None)
+      - a (ride_id, predicted_wait) tuple/list
+      - a dict like {"ride_id": ..., "predicted_wait": ...}
+        (also tries "id"/"ride", and "predicted_wait_minutes"/"wait")
+    """
+    if isinstance(entry, dict):
+        ride_id = entry.get("ride_id", entry.get("id", entry.get("ride")))
+        predicted_wait = entry.get(
+            "predicted_wait",
+            entry.get("predicted_wait_minutes", entry.get("wait")),
+        )
+        return ride_id, predicted_wait
+    if isinstance(entry, (tuple, list)):
+        ride_id = entry[0] if len(entry) > 0 else None
+        predicted_wait = entry[1] if len(entry) > 1 else None
+        return ride_id, predicted_wait
+    return entry, None
+
+
 def _run_route_computation(counts, locked, closed_keys, break_windows, start_key="entrance", live_waits=None):
-    """Runs on a background thread. Calls the optimizer (which still prints
-    its usual terminal output) and, if it returned a real result, updates
-    `current_route` so the top bar picks it up on the next frame."""
-    global current_route
+    global current_route, current_route_predicted, topbar_scroll_x, route_generating
     result = routeOptimizer.compute_and_print_route(
         counts, locked, closed_keys, break_windows,
         start_key=start_key, live_waits=live_waits,
     )
     if result is not None:
-        current_route = result
+        route_list = []
+        predicted_list = []
+        for entry in result:
+            ride_id, predicted_wait = _extract_ride_id_and_predicted_wait(entry)
+            route_list.append(ride_id)
+            predicted_list.append(predicted_wait)
+        current_route = route_list
+        current_route_predicted = predicted_list
+        topbar_scroll_x = 0  # reset scroll when a new route arrives
+    route_generating = False
 
 
 def handle_sidebar_click(mx, my):
-    """Returns True if the click was consumed by the sidebar."""
-    global dropdown_open, selected_start, active_time_input, time1_text, time2_text, _break_id_counter, popup
+    global dropdown_open, selected_start, active_time_input, time1_text, time2_text, _break_id_counter, popup, route_button_click_ms
 
     if dropdown_rect.collidepoint(mx, my):
         dropdown_open = not dropdown_open
@@ -845,12 +834,10 @@ def handle_sidebar_click(mx, my):
                 selected_start = key
                 dropdown_open = False
                 return True
-        # clicked elsewhere while it was open -- just close it
         dropdown_open = False
         return True
 
     if time_error_active:
-        # boxes are locked while flashing "ERROR" -- ignore clicks on them/the button
         if time1_rect.collidepoint(mx, my) or time2_rect.collidepoint(mx, my) \
                 or generate_break_rect.collidepoint(mx, my):
             return True
@@ -875,7 +862,7 @@ def handle_sidebar_click(mx, my):
         if t1 is not None and t2 is not None:
             m1, label1 = _to_ampm(*t1)
             m2, label2 = _to_ampm(*t2)
-            valid = m2 > m1  # end must come after start
+            valid = m2 > m1
 
         if valid:
             _break_id_counter += 1
@@ -892,9 +879,10 @@ def handle_sidebar_click(mx, my):
             _trigger_time_error()
         return True
 
-    active_time_input = None  # any other sidebar click defocuses the time inputs
+    active_time_input = None
 
     if route_button_rect.collidepoint(mx, my):
+        route_button_click_ms = pygame.time.get_ticks()
         trigger_route_computation()
         return True
 
@@ -915,14 +903,11 @@ def handle_sidebar_click(mx, my):
         if cb_rect.collidepoint(mx, my):
             ride_visible[ride_id] = not ride_visible[ride_id]
             if ride_visible[ride_id]:
-                # re-checked: restore whatever count it had before unchecking
                 ride_counts[ride_id] = ride_last_count[ride_id]
             else:
-                # unchecked: remember the current count, then zero it out
                 ride_last_count[ride_id] = ride_counts[ride_id]
                 ride_counts[ride_id] = RIDE_COUNT_MIN
-                ride_locked[ride_id] = False  # can't be locked while unchecked
-                # hide this ride's wait-time speech bubble too, if it's showing
+                ride_locked[ride_id] = False
                 if popup is not None and popup[0] == ride_id:
                     popup = None
             return True
@@ -930,11 +915,8 @@ def handle_sidebar_click(mx, my):
             old_count = ride_counts[ride_id]
             ride_counts[ride_id] += 1
             if not ride_visible[ride_id]:
-                # incrementing an unchecked ride checks it back in
                 ride_visible[ride_id] = True
             if old_count == 1 and ride_counts[ride_id] == 2:
-                # crossing above 1 -- auto-lock, but remember whether it was
-                # already locked so a later drop back to 1 knows what to do
                 ride_lock_before_bump[ride_id] = ride_locked[ride_id]
                 ride_locked[ride_id] = True
             return True
@@ -943,152 +925,364 @@ def handle_sidebar_click(mx, my):
             new_count = max(RIDE_COUNT_MIN, old_count - 1)
             ride_counts[ride_id] = new_count
             if old_count == 2 and new_count == 1:
-                # dropping back down to 1 -- restore whatever the lock state
-                # was before the count first went above 1, instead of
-                # blindly unlocking (in case it was locked manually)
                 ride_locked[ride_id] = ride_lock_before_bump[ride_id]
             if new_count == RIDE_COUNT_MIN and old_count > RIDE_COUNT_MIN:
-                # hit zero: remember what it was, then uncheck it
                 ride_last_count[ride_id] = old_count
                 ride_visible[ride_id] = False
-                ride_locked[ride_id] = False  # can't be locked at zero
-                # spinner drop-to-zero also unchecks the ride -- hide its
-                # wait-time speech bubble too, if it's showing
+                ride_locked[ride_id] = False
                 if popup is not None and popup[0] == ride_id:
                     popup = None
             return True
         if lock_rect.collidepoint(mx, my):
-            # only togglable while the ride is checked and its count > 0
             if ride_visible[ride_id] and ride_counts[ride_id] > RIDE_COUNT_MIN:
                 ride_locked[ride_id] = not ride_locked[ride_id]
             return True
     return False
 
 
-# ── top route bar (shows the generated route, pushes the map down) ──
-TOP_BAR_BG_COLOR = (235, 240, 246)
-TOP_BAR_PLACEHOLDER_COLOR = (130, 130, 130)
-ROUTE_ITEM_BG = (255, 255, 255)
-ROUTE_ITEM_BORDER = SIDEBAR_BORDER_COLOR
-ROUTE_ARROW_COLOR = (90, 90, 90)
+# ── top route bar ──────────────────────────────────────────────────
+TOP_BAR_BG_COLOR           = (235, 240, 246)
+TOP_BAR_PLACEHOLDER_COLOR  = (130, 130, 130)
+ROUTE_ITEM_BG              = (255, 255, 255)
+ROUTE_ITEM_BORDER          = SIDEBAR_BORDER_COLOR
+ROUTE_ARROW_COLOR          = (90, 90, 90)
 
-ROUTE_ITEM_H = 32
-ROUTE_ITEM_PAD_X = 10
-ROUTE_ITEM_MAX_LABEL_W = 130
-ROUTE_ARROW_GAP = 22   # horizontal space reserved for the arrow between items
-ROUTE_ITEM_GAP = 10    # extra breathing room on either side of the arrow
-ROUTE_X_BTN_SIZE = 14
-ROUTE_X_GAP = 6        # gap between the item box and its delete-X
+ROUTE_ITEM_H         = max(36, int(52 * _scale))
+ROUTE_ITEM_PAD_X     = max(4, int(6 * _scale))
+ROUTE_ITEM_MAX_LABEL_W = max(80, int(130 * _scale))
+ROUTE_ARROW_GAP      = max(14, int(22 * _scale))
+ROUTE_ITEM_GAP       = max(6, int(10 * _scale))
+ROUTE_X_BTN_SIZE     = max(9, int(14 * _scale))
+ROUTE_X_GAP          = max(4, int(6 * _scale))
 
-topbar_font = pygame.font.SysFont("Arial", 13, bold=True)
-topbar_placeholder_font = pygame.font.SysFont("Arial", 13)
-topbar_arrow_font = pygame.font.SysFont("Arial", 16, bold=True)
-topbar_btn_font = pygame.font.SysFont("Arial", 14, bold=True)
+# ── ride icons in the route bar: square pills sized to the row height ─
+ROUTE_ICON_PAD    = max(1, int(2 * _scale))
+ROUTE_ICON_MAX    = ROUTE_ITEM_H - ROUTE_ICON_PAD * 2  # icon drawn inside the pill
 
-top_bar_rect = pygame.Rect(SIDEBAR_WIDTH, 0, MAP_WIDTH, TOP_BAR_HEIGHT)
+# original (unscaled) image paths, reused so topbar icons aren't scaled
+# down twice (once for map buttons, again for the pill) which looked blurry
+_ride_image_paths = {
+    "hulk":           "logos/hulk_logo.png",
+    "stormForce":     "logos/stormForce_logo.png",
+    "doctorDoom":     "logos/Doctor-dooms-fearfall-ride-logo-b.png",
+    "spiderMan":      "logos/Amazing-adventures-spider-man-ride-logo-b.png",
+    "bilgeRat":       "logos/bilge_rat.png",
+    "ripsawFalls":    "logos/Dudley-do-rights-ripsaw-falls-water-ride-logo-b.png",
+    "skullIsland":    "logos/Skull_Island-_Reign_of_Kong_Logo.png",
+    "velociCoaster":  "logos/velocicoaster.png",
+    "riverAdventure": "logos/jurrasicPark.png",
+    "hogwartsTrain":  "logos/express.png",
+    "hippogriff":     "logos/hippogriph.png",
+    "hagrid":         "logos/Hagrid27s_Magical_Creatures_Motorbike_Adventure.png",
+    "harryPotter":    "logos/hogwarts.png",
+    "catInTheHat":    "logos/cat.png",
+    "oneFishtwoFish": "logos/blue.png",
+    "drSeussAirRide": "logos/seuss.png",
+    "caroSeussel":    "logos/caro.png",
+}
 
-TOPBAR_BTN_W = 150
-TOPBAR_BTN_H = 42
+_topbar_icon_cache = {}
+
+
+def _get_topbar_icon(ride_id):
+    icon = _topbar_icon_cache.get(ride_id)
+    if icon is not None:
+        return icon
+
+    path = _ride_image_paths.get(ride_id)
+    if path is None:
+        return None
+
+    src = remove_white_background(pygame.image.load(path).convert_alpha())
+    w, h = src.get_size()
+    if w <= 0 or h <= 0:
+        return None
+    # "cover" scaling: scale up until the image fills the square in both
+    # dimensions, then crop the overflow, so there's no leftover whitespace
+    # on the shorter axis (as a plain aspect-fit would leave).
+    scale_factor = max(ROUTE_ICON_MAX / w, ROUTE_ICON_MAX / h)
+    new_w = max(1, round(w * scale_factor))
+    new_h = max(1, round(h * scale_factor))
+    scaled = pygame.transform.smoothscale(src, (new_w, new_h))
+
+    icon = pygame.Surface((ROUTE_ICON_MAX, ROUTE_ICON_MAX), pygame.SRCALPHA)
+    crop_x = (new_w - ROUTE_ICON_MAX) // 2
+    crop_y = (new_h - ROUTE_ICON_MAX) // 2
+    icon.blit(scaled, (0, 0), area=pygame.Rect(crop_x, crop_y, ROUTE_ICON_MAX, ROUTE_ICON_MAX))
+
+    _topbar_icon_cache[ride_id] = icon
+    return icon
+
+
+# ── predicted-wait chip (sits below each ride icon in the route bar) ──
+# Shows the PREDICTED wait for that ride at the point it's reached in the
+# optimized route -- distinct from the live/current wait shown when a
+# ride icon on the map is clicked.
+PRED_CHIP_H       = max(13, int(16 * _scale))
+PRED_CHIP_GAP     = max(2, int(3 * _scale))     # gap: icon->chip, and chip->delete-X
+PRED_CHIP_RADIUS  = max(3, int(5 * _scale))
+topbar_pred_font  = pygame.font.SysFont("Arial", max(8, int(11 * _scale)), bold=True)
+
+PRED_CHIP_UNKNOWN_BG   = (225, 227, 231)
+PRED_CHIP_UNKNOWN_TEXT = (110, 110, 110)
+PRED_CHIP_LOW_BG       = (60, 170, 90)     # short wait -- green
+PRED_CHIP_MED_BG       = (230, 160, 40)    # moderate wait -- amber
+PRED_CHIP_HIGH_BG      = (210, 70, 70)     # long wait -- red
+PRED_CHIP_TEXT         = (255, 255, 255)
+
+
+def _predicted_wait_chip_style(predicted_wait):
+    """Returns (bg_color, text_color, label) for a predicted-wait chip."""
+    if predicted_wait is None:
+        return PRED_CHIP_UNKNOWN_BG, PRED_CHIP_UNKNOWN_TEXT, "--"
+    try:
+        minutes = int(round(float(predicted_wait)))
+    except (TypeError, ValueError):
+        return PRED_CHIP_UNKNOWN_BG, PRED_CHIP_UNKNOWN_TEXT, "--"
+    if minutes <= 10:
+        bg = PRED_CHIP_LOW_BG
+    elif minutes <= 25:
+        bg = PRED_CHIP_MED_BG
+    else:
+        bg = PRED_CHIP_HIGH_BG
+    return bg, PRED_CHIP_TEXT, f"~{minutes}m"
+
+
+def _draw_predicted_wait_chip(surface, rect, predicted_wait):
+    bg_color, text_color, label_text = _predicted_wait_chip_style(predicted_wait)
+    pygame.draw.rect(surface, bg_color, rect, border_radius=PRED_CHIP_RADIUS)
+    label_surface = topbar_pred_font.render(label_text, True, text_color)
+    surface.blit(label_surface, label_surface.get_rect(center=rect.center))
+
+
+# ── multi-row + scrollbar constants ───────────────────────────────
+TOPBAR_ROWS        = 3
+TOPBAR_ROW_GAP     = max(4, int(6 * _scale))    # vertical gap between rows
+TOPBAR_ROW_SLOT_H  = ROUTE_ITEM_H + PRED_CHIP_GAP + PRED_CHIP_H + ROUTE_X_GAP + ROUTE_X_BTN_SIZE
+TOPBAR_SCROLLBAR_H     = max(3, int(5 * _scale))
+TOPBAR_SCROLLBAR_BG    = (210, 215, 225)
+TOPBAR_SCROLLBAR_COLOR = (130, 140, 170)
+# fixed width of each item pill (square, sized to row height so it holds an icon)
+TOPBAR_ITEM_FIXED_W = ROUTE_ITEM_H
+
+# Extra vertical room the bar needs to grow into when a 2nd or 3rd row of
+# route items is required (each additional row needs one more row-slot
+# plus the gap between rows). TOP_BAR_HEIGHT itself is sized for one row.
+EXTRA_ROW_TOPBAR_H = TOPBAR_ROW_SLOT_H + TOPBAR_ROW_GAP
+
+topbar_font             = pygame.font.SysFont("Arial", max(9, int(13 * _scale)), bold=True)
+topbar_placeholder_font = pygame.font.SysFont("Arial", max(9, int(13 * _scale)))
+topbar_generating_font  = pygame.font.SysFont("Arial", max(14, int(20 * _scale)), bold=True)
+topbar_arrow_font       = pygame.font.SysFont("Arial", max(10, int(16 * _scale)), bold=True)
+topbar_btn_font         = pygame.font.SysFont("Arial", max(10, int(15 * _scale)), bold=True)
+
+top_bar_rect = pygame.Rect(SIDEBAR_WIDTH, 0, MAP_WIDTH, TOP_BAR_HEIGHT)  # placeholder, recomputed per-frame
+
+# "Generate Route" button matches "Get Optimal Route" button's size exactly.
+TOPBAR_BTN_W = route_button_rect.width
+TOPBAR_BTN_H = ROUTE_BUTTON_H
 topbar_route_button_rect = pygame.Rect(
     SCREEN_WIDTH - TOPBAR_BTN_W - 16,
-    (TOP_BAR_HEIGHT - TOPBAR_BTN_H) // 2,
+    0,  # y recomputed each frame once the current bar height is known
     TOPBAR_BTN_W,
     TOPBAR_BTN_H,
 )
 
-# rebuilt every draw call: list of {"ride_id": str, "x_rect": pygame.Rect}
-# for hit-testing each route item's delete-X button.
+# rebuilt every draw call
 topbar_item_rects = []
 
+# How many rows the route bar actually needed last time it was drawn.
+# Read by current_topbar_h() so the bar can grow past its default
+# (1-row) height when 2 or 3 rows are required, and shrink back down
+# once they're no longer needed.
+topbar_rows_needed = 1
 
-def draw_top_bar(surface, generate_hover):
-    """Draws the route bar across the top of the map area: the generated
-    route (ride -> ride -> ride, each with a red X below it to remove),
-    and a 'Generate Route' button on the right."""
-    global topbar_item_rects
+
+def draw_top_bar(surface, generate_hover, cur_sb_w, bar_h):
+    """
+    Draws the route bar across the top of the map area.
+
+    The bar's left edge always starts at the sidebar's *current* animated
+    width (cur_sb_w), so when the sidebar is collapsed the top bar expands
+    to reclaim that space (dropping to fewer rows if everything now fits),
+    and gives the space back smoothly as the sidebar re-expands.
+
+    `bar_h` is the actual pixel height of the bar for this frame (already
+    grown to accommodate multiple rows if needed -- see current_topbar_h).
+
+    Items are wrapped into up to TOPBAR_ROWS rows, filling each row to
+    capacity left-to-right before starting the next -- so the bar defaults
+    to a single row and only adds more when needed. If even 3 full rows
+    aren't enough, all rows are split evenly and the whole block scrolls
+    horizontally together via the mouse-wheel; a thin scrollbar appears
+    at the bottom of the bar to show position.
+    """
+    global topbar_item_rects, topbar_max_scroll_x, top_bar_rect, topbar_rows_needed
     topbar_item_rects = []
+
+    top_bar_rect = pygame.Rect(cur_sb_w, 0, SCREEN_WIDTH - cur_sb_w, bar_h)
 
     pygame.draw.rect(surface, TOP_BAR_BG_COLOR, top_bar_rect)
     pygame.draw.line(surface, SIDEBAR_BORDER_COLOR,
-                      (SIDEBAR_WIDTH, TOP_BAR_HEIGHT), (SCREEN_WIDTH, TOP_BAR_HEIGHT), 2)
+                     (cur_sb_w, bar_h),
+                     (SCREEN_WIDTH,  bar_h), 2)
 
-    # ── "Generate Route" button (right side of the bar) ──
-    btn_color = ROUTE_BUTTON_HOVER_COLOR if generate_hover else ROUTE_BUTTON_COLOR
+    # ── "Generate Route" button (right side of bar, vertically centred) ─
+    topbar_route_button_rect.top = (bar_h - TOPBAR_BTN_H) // 2
+    if pygame.time.get_ticks() - topbar_route_button_click_ms < ROUTE_CLICK_FLASH_MS:
+        btn_color = ROUTE_BUTTON_CLICK_COLOR
+    else:
+        btn_color = ROUTE_BUTTON_HOVER_COLOR if generate_hover else ROUTE_BUTTON_COLOR
     pygame.draw.rect(surface, btn_color, topbar_route_button_rect, border_radius=8)
     btn_label = topbar_btn_font.render("Generate Route", True, ROUTE_BUTTON_TEXT_COLOR)
     surface.blit(btn_label, btn_label.get_rect(center=topbar_route_button_rect.center))
 
-    items_left = top_bar_rect.left + 16
+    items_left  = cur_sb_w + 16
     items_right = topbar_route_button_rect.left - 16
+    viewport_w  = max(1, items_right - items_left)
 
     if not current_route:
-        placeholder = topbar_placeholder_font.render(
-            "No route generated yet -- check some rides and hit Generate Route",
-            True, TOP_BAR_PLACEHOLDER_COLOR,
-        )
-        surface.blit(placeholder, (items_left, top_bar_rect.centery - placeholder.get_height() // 2))
+        topbar_rows_needed = 1
+        if route_generating:
+            placeholder = topbar_generating_font.render("Generating...", True, (0, 0, 0))
+        else:
+            placeholder = topbar_generating_font.render(
+                'No route generate yet -- check or uncheck rides and click "generate route"',
+                True, (0, 0, 0),
+            )
+        surface.blit(placeholder,
+                     (items_left, bar_h // 2 - placeholder.get_height() // 2))
         return
 
-    # pre-render each item's label
-    labels = []
-    for ride_id in current_route:
-        name = ride_names.get(ride_id, ride_id).replace("\n", " ")
-        short = _truncate_label(name, topbar_font, ROUTE_ITEM_MAX_LABEL_W)
-        labels.append((ride_id, topbar_font.render(short, True, LABEL_COLOR)))
+    # (ride_id, predicted_wait) pairs, index-aligned with current_route
+    combined_route = list(zip(current_route, current_route_predicted))
 
-    item_top = top_bar_rect.centery - ROUTE_ITEM_H // 2 - 6
-    x = items_left
+    n        = len(combined_route)
+    col_step = TOPBAR_ITEM_FIXED_W + ROUTE_ARROW_GAP + ROUTE_ITEM_GAP  # px per column
 
-    for i, (ride_id, label_surface) in enumerate(labels):
-        box_w = label_surface.get_width() + ROUTE_ITEM_PAD_X * 2
-        box_rect = pygame.Rect(x, item_top, box_w, ROUTE_ITEM_H)
+    # How many items fit in one row within the visible viewport?
+    fit_per_row = max(1, (viewport_w + ROUTE_ARROW_GAP + ROUTE_ITEM_GAP) // col_step)
 
-        if box_rect.right > items_right:
-            break  # ran out of horizontal room -- stop drawing further stops
+    if n <= fit_per_row * TOPBAR_ROWS:
+        # Everything fits without scrolling: fill each row to capacity
+        # before starting the next one (last row holds the remainder).
+        needed_rows = max(1, -(-n // fit_per_row))  # ceil(n / fit_per_row)
+        row_item_lists = []
+        idx = 0
+        for _ in range(needed_rows):
+            row_item_lists.append(combined_route[idx: idx + fit_per_row])
+            idx += fit_per_row
+        virtual_w = viewport_w
+        topbar_max_scroll_x = 0
+    else:
+        # Too many items even at 3 full rows: split evenly across all
+        # rows and let the whole block scroll horizontally together.
+        needed_rows = TOPBAR_ROWS
+        items_per_row = -(-n // needed_rows)  # ceil(n / needed_rows)
+        row_item_lists = []
+        idx = 0
+        for _ in range(needed_rows):
+            row_item_lists.append(combined_route[idx: idx + items_per_row])
+            idx += items_per_row
+        virtual_w = items_per_row * col_step - (ROUTE_ARROW_GAP + ROUTE_ITEM_GAP)
+        topbar_max_scroll_x = max(0, virtual_w - viewport_w)
 
-        pygame.draw.rect(surface, ROUTE_ITEM_BG, box_rect, border_radius=6)
-        pygame.draw.rect(surface, ROUTE_ITEM_BORDER, box_rect, width=1, border_radius=6)
-        surface.blit(
-            label_surface,
-            (box_rect.left + ROUTE_ITEM_PAD_X, box_rect.centery - label_surface.get_height() // 2),
+    topbar_rows_needed = needed_rows
+
+    # Vertically centre the block of rows (reserve scrollbar space at bottom)
+    content_h    = bar_h - TOPBAR_SCROLLBAR_H - 4
+    total_rows_h = needed_rows * TOPBAR_ROW_SLOT_H + (needed_rows - 1) * TOPBAR_ROW_GAP
+    v_offset     = max(4, (content_h - total_rows_h) // 2)
+
+    # Clip so items never overdraw the Generate-Route button or the sidebar
+    clip_rect = pygame.Rect(items_left, 0, viewport_w, bar_h)
+    old_clip  = surface.get_clip()
+    surface.set_clip(clip_rect)
+
+    for row_idx in range(needed_rows):
+        row_items = row_item_lists[row_idx]
+
+        item_y = v_offset + row_idx * (TOPBAR_ROW_SLOT_H + TOPBAR_ROW_GAP)
+
+        for col_idx, (ride_id, predicted_wait) in enumerate(row_items):
+            item_x   = items_left + col_idx * col_step - topbar_scroll_x
+            box_rect = pygame.Rect(item_x, item_y, TOPBAR_ITEM_FIXED_W, ROUTE_ITEM_H)
+
+            # predicted-wait chip sits directly below the icon pill
+            chip_rect = pygame.Rect(
+                box_rect.left,
+                box_rect.bottom + PRED_CHIP_GAP,
+                TOPBAR_ITEM_FIXED_W,
+                PRED_CHIP_H,
+            )
+
+            # draw the pill only when at least partially in the viewport
+            if box_rect.right > items_left and box_rect.left < items_right:
+                pygame.draw.rect(surface, ROUTE_ITEM_BG,    box_rect, border_radius=6)
+                pygame.draw.rect(surface, ROUTE_ITEM_BORDER, box_rect, width=1, border_radius=6)
+
+                icon = _get_topbar_icon(ride_id)
+                if icon is not None:
+                    icon_rect = icon.get_rect(center=box_rect.center)
+                    surface.blit(icon, icon_rect)
+                else:
+                    name  = ride_names.get(ride_id, ride_id).replace("\n", " ")
+                    short = _truncate_label(name, topbar_font, ROUTE_ITEM_MAX_LABEL_W)
+                    label_surface = topbar_font.render(short, True, LABEL_COLOR)
+                    surface.blit(label_surface, label_surface.get_rect(center=box_rect.center))
+
+                _draw_predicted_wait_chip(surface, chip_rect, predicted_wait)
+
+                # arrow to the next item in the same row
+                if col_idx < len(row_items) - 1:
+                    arrow_surface = topbar_arrow_font.render("->", True, ROUTE_ARROW_COLOR)
+                    ax = box_rect.right + (ROUTE_ARROW_GAP - arrow_surface.get_width()) // 2
+                    surface.blit(arrow_surface,
+                                 (ax, box_rect.centery - arrow_surface.get_height() // 2))
+
+            # delete-X sits below the chip; register it for hit-testing
+            x_rect = pygame.Rect(
+                box_rect.centerx - ROUTE_X_BTN_SIZE // 2,
+                chip_rect.bottom + ROUTE_X_GAP,
+                ROUTE_X_BTN_SIZE,
+                ROUTE_X_BTN_SIZE,
+            )
+            if x_rect.right > items_left and x_rect.left < items_right:
+                _draw_delete_x(surface, x_rect)
+                topbar_item_rects.append({"ride_id": ride_id, "x_rect": x_rect})
+
+    surface.set_clip(old_clip)
+
+    # ── scrollbar (only shown when content overflows the viewport) ─
+    if topbar_max_scroll_x > 0:
+        sb_y     = bar_h - TOPBAR_SCROLLBAR_H - 2
+        sb_track = pygame.Rect(items_left, sb_y, viewport_w, TOPBAR_SCROLLBAR_H)
+        pygame.draw.rect(surface, TOPBAR_SCROLLBAR_BG, sb_track, border_radius=3)
+
+        thumb_w = max(40, int(viewport_w * viewport_w / max(viewport_w, virtual_w)))
+        thumb_x = items_left + int(
+            (viewport_w - thumb_w) * topbar_scroll_x / max(1, topbar_max_scroll_x)
         )
-
-        # red-X delete button, under this ride
-        x_rect = pygame.Rect(
-            box_rect.centerx - ROUTE_X_BTN_SIZE // 2,
-            box_rect.bottom + ROUTE_X_GAP,
-            ROUTE_X_BTN_SIZE,
-            ROUTE_X_BTN_SIZE,
-        )
-        _draw_delete_x(surface, x_rect)
-        topbar_item_rects.append({"ride_id": ride_id, "x_rect": x_rect})
-
-        x = box_rect.right
-
-        # arrow separating this item from the next
-        if i != len(labels) - 1:
-            arrow_x = x + (ROUTE_ARROW_GAP - topbar_arrow_font.size("->")[0]) // 2 + ROUTE_ITEM_GAP // 2
-            arrow_surface = topbar_arrow_font.render("->", True, ROUTE_ARROW_COLOR)
-            surface.blit(arrow_surface, (arrow_x, box_rect.centery - arrow_surface.get_height() // 2))
-            x += ROUTE_ARROW_GAP + ROUTE_ITEM_GAP
+        pygame.draw.rect(surface, TOPBAR_SCROLLBAR_COLOR,
+                         pygame.Rect(thumb_x, sb_y, thumb_w, TOPBAR_SCROLLBAR_H),
+                         border_radius=3)
 
 
 def handle_top_bar_click(mx, my):
-    """Returns True if the click was consumed by the top bar."""
-    global current_route, popup
+    global current_route, current_route_predicted, popup, topbar_route_button_click_ms
 
     if topbar_route_button_rect.collidepoint(mx, my):
+        topbar_route_button_click_ms = pygame.time.get_ticks()
         trigger_route_computation()
         return True
 
     for item in topbar_item_rects:
         if item["x_rect"].collidepoint(mx, my):
             ride_id = item["ride_id"]
+            kept = [(r, p) for r, p in zip(current_route, current_route_predicted) if r != ride_id]
+            current_route = [r for r, _p in kept]
+            current_route_predicted = [p for _r, p in kept]
 
-            # remove this stop from the displayed route
-            current_route = [r for r in current_route if r != ride_id]
-
-            # ...and uncheck the ride itself, same as the sidebar checkbox
             if ride_visible[ride_id]:
                 ride_last_count[ride_id] = ride_counts[ride_id]
             ride_counts[ride_id] = RIDE_COUNT_MIN
@@ -1098,7 +1292,68 @@ def handle_top_bar_click(mx, my):
                 popup = None
             return True
 
-    return top_bar_rect.collidepoint(mx, my)  # swallow any other click inside the bar
+    return top_bar_rect.collidepoint(mx, my)
+
+
+# ── collapse/expand toggle state ───────────────────────────────────
+COLLAPSE_ANIM_SPEED = 0.12   # fraction of full size per frame (~8 frames to animate, cheap)
+
+sidebar_collapsed = False
+sidebar_anim = 1.0          # 1.0 = fully expanded, 0.0 = fully collapsed
+sidebar_anim_target = 1.0
+
+topbar_collapsed = False
+topbar_anim = 1.0
+topbar_anim_target = 1.0
+
+# Larger, more visible toggle arrows (bigger tab + more opaque colors)
+TOGGLE_ARROW_W = max(30, int(34 * _scale))
+TOGGLE_ARROW_H = max(56, int(64 * _scale))
+TOGGLE_ARROW_COLOR = (60, 60, 60, 235)   # dark gray, mostly opaque
+TOGGLE_ARROW_BG     = (255, 255, 255, 220)
+
+
+def _make_toggle_arrow_surface(pointing_left):
+    """Pre-render once: tab with a triangle, large and clearly visible."""
+    surf = pygame.Surface((TOGGLE_ARROW_W, TOGGLE_ARROW_H), pygame.SRCALPHA)
+    pygame.draw.rect(surf, TOGGLE_ARROW_BG, surf.get_rect(), border_radius=8)
+    pygame.draw.rect(surf, (120, 120, 120, 235), surf.get_rect(), width=1, border_radius=8)
+    cx, cy = TOGGLE_ARROW_W // 2, TOGGLE_ARROW_H // 2
+    tri_half_h = int(TOGGLE_ARROW_H * 0.22)
+    tri_reach  = int(TOGGLE_ARROW_W * 0.32)
+    if pointing_left:
+        pts = [(cx + tri_reach, cy - tri_half_h), (cx + tri_reach, cy + tri_half_h), (cx - tri_reach, cy)]
+    else:
+        pts = [(cx - tri_reach, cy - tri_half_h), (cx - tri_reach, cy + tri_half_h), (cx + tri_reach, cy)]
+    pygame.draw.polygon(surf, TOGGLE_ARROW_COLOR, pts)
+    return surf
+
+
+# pre-rendered once at startup — no per-frame cost beyond a blit
+sidebar_arrow_left  = _make_toggle_arrow_surface(pointing_left=True)   # points into sidebar (expanded)
+sidebar_arrow_right = _make_toggle_arrow_surface(pointing_left=False)  # points away (collapsed)
+
+_topbar_arrow_base_down = _make_toggle_arrow_surface(pointing_left=False)
+_topbar_arrow_base_up   = _make_toggle_arrow_surface(pointing_left=True)
+topbar_arrow_down = pygame.transform.rotate(_topbar_arrow_base_down, 90)  # points down (expanded)
+topbar_arrow_up    = pygame.transform.rotate(_topbar_arrow_base_up, 90)   # points up (collapsed)
+
+
+def current_sidebar_w():
+    return int(SIDEBAR_WIDTH * sidebar_anim)
+
+
+def current_topbar_h():
+    """
+    Base height (sized for exactly one row) scaled by the collapse
+    animation, PLUS extra room grown in to fit any additional rows that
+    were needed the last time the bar was drawn (2nd/3rd row of route
+    items). The extra room only applies while the bar is expanded, and
+    scales down smoothly along with the collapse animation so collapsing
+    still shrinks the bar to nothing.
+    """
+    extra = EXTRA_ROW_TOPBAR_H * max(0, topbar_rows_needed - 1)
+    return int((TOP_BAR_HEIGHT + extra) * topbar_anim)
 
 
 # ── main loop ──────────────────────────────────────────────────────
@@ -1106,34 +1361,62 @@ running = True
 
 while running:
 
+    cur_sb_w = current_sidebar_w()
+    cur_tb_h = current_topbar_h()
+
+    sb_arrow = sidebar_arrow_right if sidebar_collapsed else sidebar_arrow_left
+    sb_arrow_rect = sb_arrow.get_rect(midleft=(cur_sb_w, SCREEN_HEIGHT // 2))
+
+    tb_arrow = topbar_arrow_up if topbar_collapsed else topbar_arrow_down
+    tb_arrow_rect = tb_arrow.get_rect(midtop=(SCREEN_WIDTH // 2, cur_tb_h))
+
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
 
+        # ── mouse-wheel: scroll the route bar horizontally ─────────
+        if event.type == pygame.MOUSEWHEEL:
+            emx, emy = pygame.mouse.get_pos()
+            if emx >= cur_sb_w and emy < cur_tb_h:
+                # event.x  = horizontal wheel axis (some mice/trackpads)
+                # event.y  = vertical wheel axis (standard scroll wheel);
+                #            positive = scroll up, so we invert it to mean
+                #            "scroll the view left" which is natural.
+                delta = event.x * 40 - event.y * 40
+                topbar_scroll_x = max(0, min(topbar_max_scroll_x,
+                                             topbar_scroll_x + delta))
+
         if event.type == pygame.MOUSEBUTTONDOWN:
             mx, my = pygame.mouse.get_pos()
 
-            # sidebar clicks (checkbox toggles / spinner / route button / time
-            # inputs / generate-break) take priority
-            if mx < SIDEBAR_WIDTH:
+            if sb_arrow_rect.collidepoint(mx, my):
+                sidebar_collapsed = not sidebar_collapsed
+                sidebar_anim_target = 0.0 if sidebar_collapsed else 1.0
+                continue
+
+            if tb_arrow_rect.collidepoint(mx, my):
+                topbar_collapsed = not topbar_collapsed
+                topbar_anim_target = 0.0 if topbar_collapsed else 1.0
+                continue
+
+            if mx < cur_sb_w:
                 handle_sidebar_click(mx, my)
                 continue
 
-            # top route bar (above the map) is checked next
-            if my < TOP_BAR_HEIGHT:
+            if my < cur_tb_h:
                 active_time_input = None
                 popup = None
                 handle_top_bar_click(mx, my)
                 continue
 
-            active_time_input = None  # clicking the map defocuses any time input
+            active_time_input = None
             popup = None
 
             for button in buttons:
                 x, y, clicked, ride_id, rect = button
 
                 if not ride_visible[ride_id]:
-                    continue  # hidden rides aren't clickable
+                    continue
 
                 if rect.collidepoint(mx, my):
                     for b in buttons:
@@ -1143,15 +1426,13 @@ while running:
                     display_name = ride_names.get(ride_id, ride_id)
                     wait = Data.ride_waits.get(ride_id, None)
                     is_open = Data.ride_open.get(ride_id, None)
-                    # is_open is the source of truth for "closed" now -- a
-                    # 0-min wait is a legitimate walk-on, not a closure.
-                    wait_str = "Loading..." if wait is None else "Ride is currently closed" if is_open is False else f"Wait: {wait} min"
+                    wait_str = ("Loading..." if wait is None
+                                else "Ride is currently closed" if is_open is False
+                                else f"Wait: {wait} min")
 
-                    # Split name lines + wait line
                     name_lines = display_name.split("\n")
                     all_lines  = name_lines + [wait_str]
 
-                    # anchor = top-centre of the ride icon
                     anchor_x = rect.centerx
                     anchor_y = rect.top
                     popup = (ride_id, anchor_x, anchor_y, all_lines)
@@ -1164,7 +1445,6 @@ while running:
                 else:
                     time2_text = time2_text[:-1]
             elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_TAB):
-                # Enter/Tab hops from the first box to the second, then defocuses
                 active_time_input = "time2" if active_time_input == "time1" else None
             elif event.unicode and event.unicode.isprintable():
                 if active_time_input == "time1" and len(time1_text) < 8:
@@ -1175,35 +1455,67 @@ while running:
     if time_error_active and pygame.time.get_ticks() >= time_error_end_ms:
         time_error_active = False
 
-    # Safety net: if the ride behind the current popup somehow ended up
-    # unchecked through a path other than the two handled above, don't
-    # let a stale bubble render for a ride that's no longer selected.
     if popup is not None and not ride_visible[popup[0]]:
         popup = None
 
+    # ── step collapse/expand animations (cheap: one float compare+add) ─
+    if sidebar_anim != sidebar_anim_target:
+        if sidebar_anim < sidebar_anim_target:
+            sidebar_anim = min(sidebar_anim_target, sidebar_anim + COLLAPSE_ANIM_SPEED)
+        else:
+            sidebar_anim = max(sidebar_anim_target, sidebar_anim - COLLAPSE_ANIM_SPEED)
+
+    if topbar_anim != topbar_anim_target:
+        if topbar_anim < topbar_anim_target:
+            topbar_anim = min(topbar_anim_target, topbar_anim + COLLAPSE_ANIM_SPEED)
+        else:
+            topbar_anim = max(topbar_anim_target, topbar_anim - COLLAPSE_ANIM_SPEED)
+
+    # recompute post-step sizes/rects for drawing this frame
+    cur_sb_w = current_sidebar_w()
+    cur_tb_h = current_topbar_h()
+
+    sb_arrow = sidebar_arrow_right if sidebar_collapsed else sidebar_arrow_left
+    sb_arrow_rect = sb_arrow.get_rect(midleft=(cur_sb_w, SCREEN_HEIGHT // 2))
+
+    tb_arrow = topbar_arrow_up if topbar_collapsed else topbar_arrow_down
+    tb_arrow_rect = tb_arrow.get_rect(midtop=(SCREEN_WIDTH // 2, cur_tb_h))
+
     # ── draw ───────────────────────────────────────────────────────
     screen.fill((255, 255, 255))
-    screen.blit(mapImage, (SIDEBAR_WIDTH, TOP_BAR_HEIGHT))
+    screen.blit(mapImage, (cur_sb_w, cur_tb_h),
+                area=pygame.Rect(0, 0, MAP_WIDTH, MAP_HEIGHT))
 
     for button in buttons:
         x, y, clicked, ride_id, rect = button
         if not ride_visible[ride_id]:
             continue
+        offset_rect = rect.move(cur_sb_w - SIDEBAR_WIDTH, cur_tb_h - TOP_BAR_HEIGHT)
         if ride_id in ride_images:
-            screen.blit(ride_images[ride_id], rect)
+            screen.blit(ride_images[ride_id], offset_rect)
         else:
             color = (0, 200, 0) if clicked else (200, 0, 0)
-            pygame.draw.circle(screen, color, (x, y), 10)
+            pygame.draw.circle(screen, color,
+                                (x + cur_sb_w - SIDEBAR_WIDTH, y + cur_tb_h - TOP_BAR_HEIGHT), 10)
 
     mx, my = pygame.mouse.get_pos()
-    draw_top_bar(screen, topbar_route_button_rect.collidepoint(mx, my))
+
+    if cur_tb_h > 0:
+        full_bar_h = TOP_BAR_HEIGHT + EXTRA_ROW_TOPBAR_H * max(0, topbar_rows_needed - 1)
+        if cur_tb_h >= full_bar_h:
+            draw_top_bar(screen, topbar_route_button_rect.collidepoint(mx, my), cur_sb_w, cur_tb_h)
+        else:
+            topbar_surface = pygame.Surface((SCREEN_WIDTH, full_bar_h), pygame.SRCALPHA)
+            draw_top_bar(topbar_surface, topbar_route_button_rect.collidepoint(mx, my), cur_sb_w, full_bar_h)
+            scaled_topbar = pygame.transform.smoothscale(topbar_surface, (SCREEN_WIDTH, cur_tb_h))
+            screen.blit(scaled_topbar, (0, 0))
 
     if popup is not None:
         _popup_ride_id, anchor_x, anchor_y, lines = popup
         draw_speech_bubble(
             screen,
             px=anchor_x,
-            py=anchor_y,          # tail tip touches the top of the icon
+            py=anchor_y,
             lines=lines,
             font=popup_font,
             padding=10,
@@ -1216,7 +1528,15 @@ while running:
             border_width=2,
         )
 
-    draw_sidebar(screen, route_button_rect.collidepoint(mx, my))
+    if cur_sb_w > 0:
+        old_clip = screen.get_clip()
+        screen.set_clip(pygame.Rect(0, 0, cur_sb_w, SCREEN_HEIGHT))
+        draw_sidebar(screen, route_button_rect.collidepoint(mx, my))
+        screen.set_clip(old_clip)
+
+    # ── toggle arrows: larger, dark, mostly opaque, pre-rendered ─
+    screen.blit(sb_arrow, sb_arrow_rect)
+    screen.blit(tb_arrow, tb_arrow_rect)
 
     pygame.display.update()
     clock.tick(60)

@@ -18,8 +18,10 @@ Target table: ride_waits(id, ride_id int2, timestamp timestamptz,
                           waittime int2 null, issue_with_ride bool,
                           created_at timestamptz)
 
-A NULL waittime (with issue_with_ride = True) means the ride/house was
-closed or Thrill Data was not reporting a wait at the time of the check.
+Only rows with a real integer waittime are inserted. If Thrill Data is not
+reporting a wait (ride closed, house not open yet, etc.) the row is skipped
+entirely rather than inserted with a NULL waittime -- the algorithm already
+ignores issue_with_ride=True rows, so null rows are pure DB clutter.
 
 Data sources:
   - The 4 regular daytime rides (Mummy, Gringotts, Transformers, MIB) are
@@ -60,38 +62,42 @@ HEADERS = {
     )
 }
 
-REQUEST_TIMEOUT = 15  # seconds
+REQUEST_TIMEOUT = 15        # seconds
 DELAY_BETWEEN_REQUESTS = 1.5  # seconds, be polite to thrill-data.com
 
 # Regular rides: scraped from their own attraction page.
 THRILL_RIDES = [
-    {"id": 1, "name": "Revenge of the Mummy", "slug": "revengeofthemummy"},
-    {"id": 2, "name": "Harry Potter and the Escape from Gringotts", "slug": "harrypotterandtheescapefromgringotts"},
-    {"id": 3, "name": "Transformers", "slug": "transformerstherided"},
-    {"id": 4, "name": "Men In Black", "slug": "meninblackalienattack"},
+    {"id": 1, "name": "Revenge of the Mummy",                          "slug": "revengeofthemummy"},
+    {"id": 2, "name": "Harry Potter and the Escape from Gringotts",    "slug": "harrypotterandtheescapefromgringotts"},
+    {"id": 3, "name": "Transformers",                                   "slug": "transformerstherided"},
+    {"id": 4, "name": "Men In Black",                                   "slug": "meninblackalienattack"},
 ]
 
 # HHN houses: scraped from the /hhn live dashboard instead. "match" is the
 # exact display name Thrill Data uses in that dashboard's live waits list
 # (may differ slightly from our short `name`, e.g. includes a subtitle).
 HOUSES = [
-    {"id": 5, "name": "Stranger Things", "match": "Stranger Things 5"},
-    {"id": 6, "name": "Evil Dead Burn", "match": "Evil Dead Burn"},
-    {"id": 7, "name": "Jack and Oddfellow", "match": "Jack & Oddfellow: Chaos & Control"},
-    {"id": 8, "name": "Ozzy Osbourne", "match": "Ozzy Osbourne: Prince of Darkness"},
-    {"id": 9, "name": "MADLANDS: Caged Cannibals", "match": "Madlands: Caged Cannibals"},
-    {"id": 10, "name": "Cybergoria", "match": "Cybergoria"},
+    {"id": 5,  "name": "Stranger Things",          "match": "Stranger Things 5"},
+    {"id": 6,  "name": "Evil Dead Burn",            "match": "Evil Dead Burn"},
+    {"id": 7,  "name": "Jack and Oddfellow",        "match": "Jack & Oddfellow: Chaos & Control"},
+    {"id": 8,  "name": "Ozzy Osbourne",             "match": "Ozzy Osbourne: Prince of Darkness"},
+    {"id": 9,  "name": "MADLANDS: Caged Cannibals", "match": "Madlands: Caged Cannibals"},
+    {"id": 10, "name": "Cybergoria",                "match": "Cybergoria"},
     {"id": 11, "name": "INVASION: Alien Abduction", "match": "Invasion: Alien Abduction"},
-    {"id": 12, "name": "H.R. Bloodengutz", "match": "H.R. Bloodengutz Presents: A Halloween Fright-Tacular"},
-    {"id": 13, "name": "Hellraiser", "match": "Hellraiser"},
-    {"id": 14, "name": "Sinners", "match": "Sinners"},
+    {"id": 12, "name": "H.R. Bloodengutz",          "match": "H.R. Bloodengutz Presents: A Halloween Fright-Tacular"},
+    {"id": 13, "name": "Hellraiser",                "match": "Hellraiser"},
+    {"id": 14, "name": "Sinners",                   "match": "Sinners"},
 ]
 
 # Matches the "->80min now" style live-wait badge Thrill Data renders
 # server-side on each individual attraction page.
 WAIT_NOW_RE = re.compile(r"→\s*(\d+)\s*min\s*now", re.IGNORECASE)
-WAIT_ANY_RE = re.compile(r"→\s*(\d+)\s*min", re.IGNORECASE)
+WAIT_ANY_RE = re.compile(r"→\s*(\d+)\s*min",       re.IGNORECASE)
 
+
+# ---------------------------------------------------------------------------
+# Fetchers
+# ---------------------------------------------------------------------------
 
 def fetch_ride_wait(slug: str) -> int | None:
     """Fetch a single attraction page and extract the current live wait."""
@@ -138,6 +144,10 @@ def fetch_hhn_house_waits(house_names: list[str]) -> dict[str, int | None]:
     return results
 
 
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
 def main() -> int:
     if not SUPABASE_URL or not SUPABASE_KEY:
         print("ERROR: HHN_SUPABASE_URL and HHN_SUPABASE_KEY must be set.", file=sys.stderr)
@@ -147,21 +157,24 @@ def main() -> int:
 
     rows_to_insert = []
     errors = []
-    now_iso = datetime.now(timezone.utc).isoformat()
 
     # --- Regular rides: one page each ---
     for i, ride in enumerate(THRILL_RIDES):
         try:
             wait = fetch_ride_wait(ride["slug"])
-            rows_to_insert.append(
-                {
-                    "ride_id": ride["id"],
-                    "waittime": wait,
-                    "timestamp": now_iso,
-                    "issue_with_ride": wait is None,
-                }
-            )
-            print(f"[ok] {ride['name']}: {wait if wait is not None else 'closed/no data'}")
+            if wait is None:
+                # No wait reported (ride closed, no data) -- skip entirely.
+                # Inserting a NULL waittime row adds no value since the
+                # algorithm filters those out anyway.
+                print(f"[skip] {ride['name']}: no wait data reported")
+            else:
+                rows_to_insert.append({
+                    "ride_id":        ride["id"],
+                    "waittime":       wait,
+                    "timestamp":      datetime.now(timezone.utc).isoformat(),
+                    "issue_with_ride": False,
+                })
+                print(f"[ok] {ride['name']}: {wait} min")
         except Exception as exc:  # noqa: BLE001 - keep going on a per-ride failure
             errors.append((ride["name"], str(exc)))
             print(f"[error] {ride['name']}: {exc}", file=sys.stderr)
@@ -174,28 +187,33 @@ def main() -> int:
         house_waits = fetch_hhn_house_waits([h["match"] for h in HOUSES])
         for house in HOUSES:
             wait = house_waits.get(house["match"])
-            rows_to_insert.append(
-                {
-                    "ride_id": house["id"],
-                    "waittime": wait,
-                    "timestamp": now_iso,
-                    "issue_with_ride": wait is None,
-                }
-            )
-            print(f"[ok] {house['name']}: {wait if wait is not None else 'closed/no data'}")
+            if wait is None:
+                # Same logic: skip rather than insert a null row.
+                print(f"[skip] {house['name']}: no wait data reported")
+            else:
+                rows_to_insert.append({
+                    "ride_id":        house["id"],
+                    "waittime":       wait,
+                    "timestamp":      datetime.now(timezone.utc).isoformat(),
+                    "issue_with_ride": False,
+                })
+                print(f"[ok] {house['name']}: {wait} min")
     except Exception as exc:  # noqa: BLE001
         errors.append(("HHN live dashboard", str(exc)))
         print(f"[error] HHN live dashboard fetch failed: {exc}", file=sys.stderr)
 
+    # --- Insert whatever we collected ---
     if rows_to_insert:
         result = supabase.table("ride_waits").insert(rows_to_insert).execute()
         print(f"Inserted {len(result.data)} rows into ride_waits.")
+    else:
+        print("No rows to insert this run (all rides closed or errored).")
 
     total_items = len(THRILL_RIDES) + 1  # +1 for the single houses fetch
     if errors:
         print(f"Completed with {len(errors)} failure(s).", file=sys.stderr)
         if len(errors) == total_items:
-            return 1
+            return 1  # everything failed -- signal the workflow as failed
 
     return 0
 
