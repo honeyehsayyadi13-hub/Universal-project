@@ -1,0 +1,27 @@
+name: HHN Wait Time Scraper
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        working-directory: hhn_scraper
+        run: pip install -r requirements-hhn.txt
+
+      - name: Run HHN scraper
+        working-directory: hhn_scraper
+        env:
+          HHN_SUPABASE_URL: ${{ secrets.HHN_SUPABASE_URL }}
+          HHN_SUPABASE_KEY: ${{ secrets.HHN_SUPABASE_KEY }}
+        run: python hhn_scraper.py

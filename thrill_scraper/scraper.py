@@ -30,7 +30,7 @@ print(rides.data)
 
 waits = (
     supabase
-    .table("wait_times")
+    .table("ride_waits")
     .select("*")
     .limit(5)
     .execute()
