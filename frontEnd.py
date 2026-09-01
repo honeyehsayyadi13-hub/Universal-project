@@ -19,6 +19,7 @@ import pygame
 import threading
 import Data
 import routeOptimizer
+import time 
 
 
 pygame.init()
@@ -73,6 +74,8 @@ clock = pygame.time.Clock()
 # ── map image and scaling ──────────────────────────────────────────
 mapImage = pygame.image.load("map.png")
 mapImage = pygame.transform.scale(mapImage, (MAP_WIDTH, MAP_HEIGHT))
+
+
 
 
 # ── helper functions ───────────────────────────────────────────────
@@ -314,6 +317,19 @@ def _fetch_avg_wait_async(ride_id):
 
     threading.Thread(target=worker, daemon=True).start()
 
+def _prefetch_all_averages_loop():
+    """Keeps ride_avg_wait_cache warm for every ride in the background,
+    so a popup can show the correct color the moment it's clicked instead
+    of waiting on a fetch that only starts once the popup asks for it."""
+    while True:
+        for ride_id in ride_names:
+            last_fetch_ms = ride_avg_wait_last_ms.get(ride_id, -AVG_WAIT_REFRESH_MS - 1)
+            is_stale = pygame.time.get_ticks() - last_fetch_ms > AVG_WAIT_REFRESH_MS
+            if is_stale:
+                _fetch_avg_wait_async(ride_id)
+        time.sleep(5)
+
+threading.Thread(target=_prefetch_all_averages_loop, daemon=True).start()
 
 def _popup_bubble_color(ride_id, wait):
     """
