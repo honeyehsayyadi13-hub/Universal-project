@@ -289,12 +289,24 @@ POPUP_BUBBLE_HIGH_COLOR    = (255, 165, 60)    # orange: wait >= 1.2x avg
 POPUP_BUBBLE_LOW_COLOR     = (140, 220, 150)   # green:  wait <= 0.8x avg
 AVG_WAIT_HIGH_RATIO = 1.2
 AVG_WAIT_LOW_RATIO  = 0.8
-AVG_WAIT_REFRESH_MS = 5 * 60 * 1000  # re-fetch a ride's average at most every 5 min
+AVG_WAIT_REFRESH_MS       = 60 * 1000   # normal refresh cadence: was 5 min, now 1 min
+AVG_WAIT_RETRY_MS         = 5 * 1000    # retry quickly if we don't have a value yet
+PREFETCH_SWEEP_INTERVAL_S = 1           # was 5
 
-ride_avg_wait_cache   = {}   # ride_id -> average wait (float) or None
-ride_avg_wait_last_ms = {}   # ride_id -> pygame.time.get_ticks() at last successful fetch
-ride_avg_wait_pending = set()  # ride_ids currently being fetched on a background thread
+ride_avg_wait_cache   = {}
+ride_avg_wait_last_ms = {}
+ride_avg_wait_pending = set()
 
+
+def _is_avg_stale(ride_id):
+    last_fetch_ms = ride_avg_wait_last_ms.get(ride_id)
+    if last_fetch_ms is None:
+        return True
+    # If we still don't have a usable value, retry much sooner than a
+    # normal refresh -- a failed/empty fetch shouldn't lock us out for
+    # a full refresh cycle.
+    threshold = AVG_WAIT_REFRESH_MS if ride_avg_wait_cache.get(ride_id) else AVG_WAIT_RETRY_MS
+    return pygame.time.get_ticks() - last_fetch_ms > threshold
 
 def _fetch_avg_wait_async(ride_id):
     """Kicks off a background thread to fetch the historical average wait
@@ -316,40 +328,20 @@ def _fetch_avg_wait_async(ride_id):
         ride_avg_wait_pending.discard(ride_id)
 
     threading.Thread(target=worker, daemon=True).start()
-
+    
 def _prefetch_all_averages_loop():
-    """Keeps ride_avg_wait_cache warm for every ride in the background,
-    so a popup can show the correct color the moment it's clicked instead
-    of waiting on a fetch that only starts once the popup asks for it."""
     while True:
         for ride_id in ride_names:
-            last_fetch_ms = ride_avg_wait_last_ms.get(ride_id, -AVG_WAIT_REFRESH_MS - 1)
-            is_stale = pygame.time.get_ticks() - last_fetch_ms > AVG_WAIT_REFRESH_MS
-            if is_stale:
+            if _is_avg_stale(ride_id):
                 _fetch_avg_wait_async(ride_id)
-        time.sleep(5)
+        time.sleep(PREFETCH_SWEEP_INTERVAL_S)
 
-threading.Thread(target=_prefetch_all_averages_loop, daemon=True).start()
 
 def _popup_bubble_color(ride_id, wait):
-    """
-    Decides the popup speech-bubble color for `ride_id` given its current
-    live `wait` (minutes, or None if unknown/closed):
-      - orange  if wait >= 1.2x the ride's historical average right now
-      - green   if wait <= 0.8x that average
-      - white   otherwise, or whenever the average isn't known yet
-
-    Triggers (and/or refreshes) a background fetch of the average as a
-    side effect, so the color can update on its own once the fetch
-    completes -- this is called every frame the popup is visible, so
-    there's no need to explicitly wait on the fetch before returning.
-    """
     if wait is None:
         return POPUP_BUBBLE_DEFAULT_COLOR
 
-    last_fetch_ms = ride_avg_wait_last_ms.get(ride_id, -AVG_WAIT_REFRESH_MS - 1)
-    is_stale = pygame.time.get_ticks() - last_fetch_ms > AVG_WAIT_REFRESH_MS
-    if is_stale:
+    if _is_avg_stale(ride_id):
         _fetch_avg_wait_async(ride_id)
 
     avg = ride_avg_wait_cache.get(ride_id)
