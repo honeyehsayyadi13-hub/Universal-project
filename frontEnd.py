@@ -17,10 +17,47 @@ if sys.platform == "win32":
 
 import pygame
 import threading
+import copy
+import json
+import os
 import Data
 import routeOptimizer
-import time 
 
+# ── local, per-user preset storage ──────────────────────────────────
+# Presets are saved to a small JSON file inside the CURRENT OS USER's own
+# home folder:
+#   Windows:      C:\Users\<name>\.universal_route_planner\presets.json
+#   macOS/Linux:  ~/.universal_route_planner/presets.json
+# Because this lives under the logged-in user's own profile, two people
+# sharing one device under *separate* OS user accounts (separate Windows
+# logins / separate phone profiles) will each only ever see their own
+# presets -- os.path.expanduser("~") resolves to a different folder for
+# each account. If multiple people share a single OS user account, they'd
+# share this file too; there's no way to distinguish them from inside the
+# app itself in that case.
+PRESETS_DIR  = os.path.join(os.path.expanduser("~"), ".universal_route_planner")
+PRESETS_FILE = os.path.join(PRESETS_DIR, "presets.json")
+
+
+def _load_presets_from_disk():
+    """Returns (presets_list, max_id_seen). Missing/corrupt file -> ([], 0)."""
+    try:
+        with open(PRESETS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        loaded = data.get("presets", [])
+        max_id = max((p.get("id", 0) for p in loaded), default=0)
+        return loaded, max_id
+    except (FileNotFoundError, json.JSONDecodeError, OSError, ValueError, TypeError):
+        return [], 0
+
+
+def _save_presets_to_disk(presets_list):
+    try:
+        os.makedirs(PRESETS_DIR, exist_ok=True)
+        with open(PRESETS_FILE, "w", encoding="utf-8") as f:
+            json.dump({"presets": presets_list}, f)
+    except OSError:
+        pass  # best-effort -- app still works fine without disk persistence
 
 pygame.init()
 
@@ -74,8 +111,6 @@ clock = pygame.time.Clock()
 # ── map image and scaling ──────────────────────────────────────────
 mapImage = pygame.image.load("map.png")
 mapImage = pygame.transform.scale(mapImage, (MAP_WIDTH, MAP_HEIGHT))
-
-
 
 
 # ── helper functions ───────────────────────────────────────────────
@@ -279,82 +314,6 @@ for b in raw_buttons:
 
 popup = None
 
-# ── popup wait-time comparison-to-average coloring ─────────────────
-# Colors: white (default/unknown), orange (wait is notably worse than
-# average), green (wait is notably better than average). "Notably"
-# means the live wait is >=20% above (orange) or <=20% below (green)
-# the historical average wait for that ride at the current time of day.
-POPUP_BUBBLE_DEFAULT_COLOR = (255, 255, 255)
-POPUP_BUBBLE_HIGH_COLOR    = (255, 165, 60)    # orange: wait >= 1.2x avg
-POPUP_BUBBLE_LOW_COLOR     = (140, 220, 150)   # green:  wait <= 0.8x avg
-AVG_WAIT_HIGH_RATIO = 1.2
-AVG_WAIT_LOW_RATIO  = 0.8
-AVG_WAIT_REFRESH_MS       = 60 * 1000   # normal refresh cadence: was 5 min, now 1 min
-AVG_WAIT_RETRY_MS         = 5 * 1000    # retry quickly if we don't have a value yet
-PREFETCH_SWEEP_INTERVAL_S = 1           # was 5
-
-ride_avg_wait_cache   = {}
-ride_avg_wait_last_ms = {}
-ride_avg_wait_pending = set()
-
-
-def _is_avg_stale(ride_id):
-    last_fetch_ms = ride_avg_wait_last_ms.get(ride_id)
-    if last_fetch_ms is None:
-        return True
-    # If we still don't have a usable value, retry much sooner than a
-    # normal refresh -- a failed/empty fetch shouldn't lock us out for
-    # a full refresh cycle.
-    threshold = AVG_WAIT_REFRESH_MS if ride_avg_wait_cache.get(ride_id) else AVG_WAIT_RETRY_MS
-    return pygame.time.get_ticks() - last_fetch_ms > threshold
-
-def _fetch_avg_wait_async(ride_id):
-    """Kicks off a background thread to fetch the historical average wait
-    for `ride_id` via routeOptimizer.get_historical_average (a Supabase
-    round trip), so the main/UI thread never blocks on it. Safe to call
-    repeatedly -- it no-ops if a fetch for this ride is already in flight."""
-    if ride_id in ride_avg_wait_pending:
-        return
-    ride_avg_wait_pending.add(ride_id)
-
-    def worker():
-        try:
-            avg = routeOptimizer.get_historical_average(ride_id)
-        except Exception as e:
-            print(f"Failed to fetch average wait for {ride_id}: {e}")
-            avg = None
-        ride_avg_wait_cache[ride_id] = avg
-        ride_avg_wait_last_ms[ride_id] = pygame.time.get_ticks()
-        ride_avg_wait_pending.discard(ride_id)
-
-    threading.Thread(target=worker, daemon=True).start()
-    
-def _prefetch_all_averages_loop():
-    while True:
-        for ride_id in ride_names:
-            if _is_avg_stale(ride_id):
-                _fetch_avg_wait_async(ride_id)
-        time.sleep(PREFETCH_SWEEP_INTERVAL_S)
-
-
-def _popup_bubble_color(ride_id, wait):
-    if wait is None:
-        return POPUP_BUBBLE_DEFAULT_COLOR
-
-    if _is_avg_stale(ride_id):
-        _fetch_avg_wait_async(ride_id)
-
-    avg = ride_avg_wait_cache.get(ride_id)
-    if not avg or avg <= 0:
-        return POPUP_BUBBLE_DEFAULT_COLOR
-
-    ratio = wait / avg
-    if ratio >= AVG_WAIT_HIGH_RATIO:
-        return POPUP_BUBBLE_HIGH_COLOR
-    if ratio <= AVG_WAIT_LOW_RATIO:
-        return POPUP_BUBBLE_LOW_COLOR
-    return POPUP_BUBBLE_DEFAULT_COLOR
-
 popup_font       = pygame.font.SysFont("Arial", max(9, int(13 * _scale)), bold=False)
 popup_font_bold  = pygame.font.SysFont("Arial", max(9, int(13 * _scale)), bold=True)
 
@@ -371,6 +330,9 @@ sidebar_font = pygame.font.SysFont("Arial", max(9, int(14 * _scale)))
 sidebar_title_font = pygame.font.SysFont("Arial", max(11, int(18 * _scale)), bold=True)
 
 TITLE_H = max(24, int(40 * _scale))
+# Height reserved for the Presets row, which sits directly above the
+# Rides title/dropdown row. Reuses the same row height as that row.
+PRESET_ROW_H = TITLE_H
 
 # ── quantity spinner layout ────────────────────────────────────────
 SPIN_RIGHT_MARGIN = max(6, int(10 * _scale))
@@ -426,6 +388,160 @@ DROPDOWN_SELECTED_BG = (235, 245, 255)
 DROPDOWN_TEXT_COLOR  = (20, 20, 20)
 dropdown_font = pygame.font.SysFont("Arial", max(9, int(13 * _scale)))
 
+# ── presets dropdown (sits directly above the Rides title/dropdown) ─
+preset_dropdown_open = False
+presets, _preset_id_counter = _load_presets_from_disk()  # loaded from disk, per OS user
+# id of the preset currently shown in the dropdown button (None = blank,
+# shown before any preset has ever been added/selected this run)
+selected_preset_id = None
+
+preset_title_surface = sidebar_title_font.render("Presets", True, LABEL_COLOR)
+preset_dropdown_rect = pygame.Rect(
+    CHECKBOX_MARGIN_LEFT + preset_title_surface.get_width() + 10,
+    (PRESET_ROW_H - DROPDOWN_H) // 2,
+    SIDEBAR_WIDTH - (CHECKBOX_MARGIN_LEFT + preset_title_surface.get_width() + 10) - CHECKBOX_MARGIN_LEFT,
+    DROPDOWN_H,
+)
+
+PRESET_ITEM_H = DROPDOWN_ITEM_H
+PRESET_X_SIZE = max(9, int(14 * _scale))
+
+preset_dropdown_items = []
+
+
+def _rebuild_preset_dropdown_items():
+    global preset_dropdown_items
+    preset_dropdown_items = []
+    for i, p in enumerate(presets):
+        item_rect = pygame.Rect(
+            preset_dropdown_rect.left,
+            preset_dropdown_rect.bottom + i * PRESET_ITEM_H,
+            preset_dropdown_rect.width,
+            PRESET_ITEM_H,
+        )
+        x_rect = pygame.Rect(
+            item_rect.right - PRESET_X_SIZE - 6,
+            item_rect.centery - PRESET_X_SIZE // 2,
+            PRESET_X_SIZE,
+            PRESET_X_SIZE,
+        )
+        apply_rect = pygame.Rect(
+            item_rect.left, item_rect.top,
+            item_rect.width - PRESET_X_SIZE - 12, item_rect.height,
+        )
+        label_max_w = apply_rect.width - 16
+        short_label = _truncate_label(p["name"], dropdown_font, label_max_w)
+        label_surface = dropdown_font.render(short_label, True, DROPDOWN_TEXT_COLOR)
+        preset_dropdown_items.append({
+            "id": p["id"],
+            "label_surface": label_surface,
+            "item_rect": item_rect,
+            "apply_rect": apply_rect,
+            "x_rect": x_rect,
+        })
+
+
+def _draw_preset_dropdown_button(surface):
+    surface.blit(preset_title_surface, (CHECKBOX_MARGIN_LEFT, 8))
+    pygame.draw.rect(surface, DROPDOWN_BG, preset_dropdown_rect, border_radius=4)
+    pygame.draw.rect(surface, DROPDOWN_BORDER, preset_dropdown_rect, width=1, border_radius=4)
+
+    selected_preset = next((p for p in presets if p["id"] == selected_preset_id), None)
+    if selected_preset is not None:
+        label_text = selected_preset["name"]
+    elif presets:
+        label_text = "Select preset..."
+    else:
+        label_text = ""  # blank until a preset exists
+    label_surface = dropdown_font.render(label_text, True, DROPDOWN_TEXT_COLOR)
+    surface.blit(label_surface, (preset_dropdown_rect.left + 8,
+                                  preset_dropdown_rect.centery - label_surface.get_height() // 2))
+    ax, ay = preset_dropdown_rect.right - 14, preset_dropdown_rect.centery
+    if preset_dropdown_open:
+        pts = [(ax - 5, ay + 2), (ax + 5, ay + 2), (ax, ay - 3)]
+    else:
+        pts = [(ax - 5, ay - 3), (ax + 5, ay - 3), (ax, ay + 3)]
+    pygame.draw.polygon(surface, DROPDOWN_BORDER, pts)
+
+
+def _draw_preset_dropdown_list(surface):
+    if not preset_dropdown_open:
+        return
+    mx, my = pygame.mouse.get_pos()
+
+    if not presets:
+        panel_rect = pygame.Rect(preset_dropdown_rect.left, preset_dropdown_rect.bottom,
+                                  preset_dropdown_rect.width, PRESET_ITEM_H)
+        pygame.draw.rect(surface, DROPDOWN_BG, panel_rect)
+        pygame.draw.rect(surface, DROPDOWN_BORDER, panel_rect, width=1)
+        empty_label = dropdown_font.render("No presets saved", True, (130, 130, 130))
+        surface.blit(empty_label, empty_label.get_rect(center=panel_rect.center))
+        return
+
+    list_h = len(preset_dropdown_items) * PRESET_ITEM_H
+    panel_rect = pygame.Rect(preset_dropdown_rect.left, preset_dropdown_rect.bottom,
+                              preset_dropdown_rect.width, list_h)
+    pygame.draw.rect(surface, DROPDOWN_BG, panel_rect)
+    for item in preset_dropdown_items:
+        bg = DROPDOWN_HOVER_COLOR if item["apply_rect"].collidepoint(mx, my) else DROPDOWN_BG
+        pygame.draw.rect(surface, bg, item["item_rect"])
+        surface.blit(item["label_surface"],
+                     (item["item_rect"].left + 8,
+                      item["item_rect"].centery - item["label_surface"].get_height() // 2))
+        _draw_delete_x(surface, item["x_rect"])
+    pygame.draw.rect(surface, DROPDOWN_BORDER, panel_rect, width=1)
+
+
+def add_preset():
+    global _preset_id_counter, selected_preset_id
+    _preset_id_counter += 1
+    new_preset = {
+        "id": _preset_id_counter,
+        "name": f"Preset {len(presets) + 1}",
+        "ride_visible": dict(ride_visible),
+        "ride_counts": dict(ride_counts),
+        "ride_locked": dict(ride_locked),
+        "ride_last_count": dict(ride_last_count),
+        "breaks": copy.deepcopy(breaks),
+        "selected_start": selected_start,
+    }
+    presets.append(new_preset)
+    selected_preset_id = new_preset["id"]  # dropdown now shows the new preset
+    _rebuild_preset_dropdown_items()
+    _save_presets_to_disk(presets)
+
+
+def delete_preset(preset_id):
+    global selected_preset_id
+    presets[:] = [p for p in presets if p["id"] != preset_id]
+    for i, p in enumerate(presets):
+        p["name"] = f"Preset {i + 1}"
+    if selected_preset_id == preset_id:
+        selected_preset_id = None  # dropdown goes blank again
+    _rebuild_preset_dropdown_items()
+    _save_presets_to_disk(presets)
+
+
+def apply_preset(preset_id):
+    global selected_start, selected_preset_id
+    preset = next((p for p in presets if p["id"] == preset_id), None)
+    if preset is None:
+        return
+    for ride_id in ride_names:
+        if ride_id in preset["ride_visible"]:
+            ride_visible[ride_id] = preset["ride_visible"][ride_id]
+        if ride_id in preset["ride_counts"]:
+            ride_counts[ride_id] = preset["ride_counts"][ride_id]
+        if ride_id in preset["ride_locked"]:
+            ride_locked[ride_id] = preset["ride_locked"][ride_id]
+        if ride_id in preset.get("ride_last_count", {}):
+            ride_last_count[ride_id] = preset["ride_last_count"][ride_id]
+    breaks[:] = copy.deepcopy(preset["breaks"])
+    selected_start = preset["selected_start"]
+    selected_preset_id = preset["id"]  # dropdown now shows "Preset X"
+    rebuild_sidebar_rows()
+
+
 dropdown_open = False
 selected_start = "entrance"
 
@@ -437,7 +553,7 @@ start_label_map = dict(start_options)
 title_surface = sidebar_title_font.render("Rides", True, LABEL_COLOR)
 dropdown_rect = pygame.Rect(
     CHECKBOX_MARGIN_LEFT + title_surface.get_width() + 10,
-    (TITLE_H - DROPDOWN_H) // 2,
+    PRESET_ROW_H + (TITLE_H - DROPDOWN_H) // 2,
     SIDEBAR_WIDTH - (CHECKBOX_MARGIN_LEFT + title_surface.get_width() + 10) - CHECKBOX_MARGIN_LEFT,
     DROPDOWN_H,
 )
@@ -456,7 +572,7 @@ for _i, (_key, _label) in enumerate(start_options):
 
 
 def _draw_dropdown_button(surface):
-    surface.blit(title_surface, (CHECKBOX_MARGIN_LEFT, 8))
+    surface.blit(title_surface, (CHECKBOX_MARGIN_LEFT, PRESET_ROW_H + 8))
     pygame.draw.rect(surface, DROPDOWN_BG, dropdown_rect, border_radius=4)
     pygame.draw.rect(surface, DROPDOWN_BORDER, dropdown_rect, width=1, border_radius=4)
     current_label = _truncate_label(start_label_map[selected_start], dropdown_font, dropdown_rect.width - 24)
@@ -496,8 +612,13 @@ _break_id_counter = 0
 BREAK_INPUT_H   = max(16, int(24 * _scale))
 BREAK_ROW_GAP   = max(4, int(6 * _scale))
 BREAK_BTN_H     = max(18, int(28 * _scale))
-BREAK_SECTION_TOP = TITLE_H + 8
-BREAK_SECTION_H   = BREAK_INPUT_H + BREAK_ROW_GAP + BREAK_BTN_H + 10
+BREAK_SECTION_TOP = PRESET_ROW_H + TITLE_H + 8
+
+# The Add Preset button sits directly below Generate Break, so the
+# reserved section height needs to grow to fit that extra row + gap.
+ADD_PRESET_BTN_H = BREAK_BTN_H
+ADD_PRESET_GAP   = BREAK_ROW_GAP
+BREAK_SECTION_H  = BREAK_INPUT_H + BREAK_ROW_GAP + BREAK_BTN_H + ADD_PRESET_GAP + ADD_PRESET_BTN_H + 10
 
 BREAK_INPUT_BG                = (255, 255, 255)
 BREAK_INPUT_BORDER            = (150, 150, 150)
@@ -508,6 +629,10 @@ BREAK_BTN_COLOR       = (200, 60, 60)
 BREAK_BTN_HOVER_COLOR = (170, 40, 40)
 BREAK_BTN_TEXT_COLOR  = (255, 255, 255)
 DELETE_X_COLOR        = (190, 40, 40)
+
+# ── "Add Preset" button (green, below "Generate Break") ────────────
+ADD_PRESET_BTN_COLOR       = (40, 160, 70)
+ADD_PRESET_HOVER_COLOR     = (30, 130, 55)
 
 break_input_font = pygame.font.SysFont("Arial", max(9, int(13 * _scale)))
 break_btn_font   = pygame.font.SysFont("Arial", max(10, int(14 * _scale)), bold=True)
@@ -569,6 +694,13 @@ generate_break_rect = pygame.Rect(
     BREAK_SECTION_TOP + BREAK_INPUT_H + BREAK_ROW_GAP,
     SIDEBAR_WIDTH - CHECKBOX_MARGIN_LEFT * 2,
     BREAK_BTN_H,
+)
+
+add_preset_rect = pygame.Rect(
+    CHECKBOX_MARGIN_LEFT,
+    generate_break_rect.bottom + ADD_PRESET_GAP,
+    SIDEBAR_WIDTH - CHECKBOX_MARGIN_LEFT * 2,
+    ADD_PRESET_BTN_H,
 )
 
 LIST_TOP = BREAK_SECTION_TOP + BREAK_SECTION_H
@@ -661,6 +793,7 @@ def rebuild_sidebar_rows():
 
 
 rebuild_sidebar_rows()
+_rebuild_preset_dropdown_items()
 
 
 def _draw_spin_arrow(surface, rect, pointing_up, enabled=True):
@@ -754,6 +887,7 @@ def draw_sidebar(surface, route_button_hover):
     pygame.draw.rect(surface, SIDEBAR_BG_COLOR, (0, 0, SIDEBAR_WIDTH, SCREEN_HEIGHT))
     pygame.draw.line(surface, SIDEBAR_BORDER_COLOR, (SIDEBAR_WIDTH, 0), (SIDEBAR_WIDTH, SCREEN_HEIGHT), 2)
 
+    _draw_preset_dropdown_button(surface)
     _draw_dropdown_button(surface)
 
     _draw_time_box(surface, time1_rect, time1_text, active_time_input == "time1", "Start", error=time_error_active)
@@ -767,6 +901,12 @@ def draw_sidebar(surface, route_button_hover):
     pygame.draw.rect(surface, gen_color, generate_break_rect, border_radius=6)
     gen_label = break_btn_font.render("Generate Break", True, BREAK_BTN_TEXT_COLOR)
     surface.blit(gen_label, gen_label.get_rect(center=generate_break_rect.center))
+
+    add_preset_hover = add_preset_rect.collidepoint(pygame.mouse.get_pos())
+    add_preset_color = ADD_PRESET_HOVER_COLOR if add_preset_hover else ADD_PRESET_BTN_COLOR
+    pygame.draw.rect(surface, add_preset_color, add_preset_rect, border_radius=6)
+    add_preset_label = break_btn_font.render("+ Add Preset", True, BREAK_BTN_TEXT_COLOR)
+    surface.blit(add_preset_label, add_preset_label.get_rect(center=add_preset_rect.center))
 
     for row in sidebar_rows:
         row_top = row["row_top"]
@@ -820,6 +960,7 @@ def draw_sidebar(surface, route_button_hover):
     surface.blit(label, label_pos)
 
     _draw_dropdown_list(surface)
+    _draw_preset_dropdown_list(surface)
 
 
 def trigger_route_computation():
@@ -902,9 +1043,29 @@ def _run_route_computation(counts, locked, closed_keys, break_windows, start_key
 
 def handle_sidebar_click(mx, my):
     global dropdown_open, selected_start, active_time_input, time1_text, time2_text, _break_id_counter, popup, route_button_click_ms
+    global preset_dropdown_open
+
+    if preset_dropdown_rect.collidepoint(mx, my):
+        preset_dropdown_open = not preset_dropdown_open
+        dropdown_open = False
+        active_time_input = None
+        return True
+
+    if preset_dropdown_open:
+        for item in preset_dropdown_items:
+            if item["x_rect"].collidepoint(mx, my):
+                delete_preset(item["id"])
+                return True
+            if item["apply_rect"].collidepoint(mx, my):
+                apply_preset(item["id"])
+                preset_dropdown_open = False
+                return True
+        preset_dropdown_open = False
+        return True
 
     if dropdown_rect.collidepoint(mx, my):
         dropdown_open = not dropdown_open
+        preset_dropdown_open = False
         active_time_input = None
         return True
 
@@ -957,6 +1118,11 @@ def handle_sidebar_click(mx, my):
             rebuild_sidebar_rows()
         else:
             _trigger_time_error()
+        return True
+
+    if add_preset_rect.collidepoint(mx, my):
+        active_time_input = None
+        add_preset()
         return True
 
     active_time_input = None
@@ -1515,11 +1681,7 @@ while running:
 
                     anchor_x = rect.centerx
                     anchor_y = rect.top
-                    # None (-> default white bubble) unless we have a real,
-                    # live wait for a currently-open ride to compare against
-                    # its historical average.
-                    bubble_wait = wait if is_open is not False else None
-                    popup = (ride_id, anchor_x, anchor_y, all_lines, bubble_wait)
+                    popup = (ride_id, anchor_x, anchor_y, all_lines)
                     break
 
         if event.type == pygame.KEYDOWN and active_time_input is not None and not time_error_active:
@@ -1595,8 +1757,7 @@ while running:
             screen.blit(scaled_topbar, (0, 0))
 
     if popup is not None:
-        _popup_ride_id, anchor_x, anchor_y, lines, bubble_wait = popup
-        bubble_color = _popup_bubble_color(_popup_ride_id, bubble_wait)
+        _popup_ride_id, anchor_x, anchor_y, lines = popup
         draw_speech_bubble(
             screen,
             px=anchor_x,
@@ -1607,7 +1768,7 @@ while running:
             tail_h=12,
             tail_w=16,
             radius=8,
-            bg_color=bubble_color,
+            bg_color=(255, 255, 255),
             border_color=(50, 50, 50),
             text_color=(20, 20, 20),
             border_width=2,
