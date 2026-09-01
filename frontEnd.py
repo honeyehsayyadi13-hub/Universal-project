@@ -20,6 +20,7 @@ import threading
 import Data
 import routeOptimizer
 
+
 pygame.init()
 
 # ── layout constants ───────────────────────────────────────────────
@@ -274,6 +275,77 @@ for b in raw_buttons:
     buttons.append([sx, sy, clicked, ride_id, rect])
 
 popup = None
+
+# ── popup wait-time comparison-to-average coloring ─────────────────
+# Colors: white (default/unknown), orange (wait is notably worse than
+# average), green (wait is notably better than average). "Notably"
+# means the live wait is >=20% above (orange) or <=20% below (green)
+# the historical average wait for that ride at the current time of day.
+POPUP_BUBBLE_DEFAULT_COLOR = (255, 255, 255)
+POPUP_BUBBLE_HIGH_COLOR    = (255, 165, 60)    # orange: wait >= 1.2x avg
+POPUP_BUBBLE_LOW_COLOR     = (140, 220, 150)   # green:  wait <= 0.8x avg
+AVG_WAIT_HIGH_RATIO = 1.2
+AVG_WAIT_LOW_RATIO  = 0.8
+AVG_WAIT_REFRESH_MS = 5 * 60 * 1000  # re-fetch a ride's average at most every 5 min
+
+ride_avg_wait_cache   = {}   # ride_id -> average wait (float) or None
+ride_avg_wait_last_ms = {}   # ride_id -> pygame.time.get_ticks() at last successful fetch
+ride_avg_wait_pending = set()  # ride_ids currently being fetched on a background thread
+
+
+def _fetch_avg_wait_async(ride_id):
+    """Kicks off a background thread to fetch the historical average wait
+    for `ride_id` via routeOptimizer.get_historical_average (a Supabase
+    round trip), so the main/UI thread never blocks on it. Safe to call
+    repeatedly -- it no-ops if a fetch for this ride is already in flight."""
+    if ride_id in ride_avg_wait_pending:
+        return
+    ride_avg_wait_pending.add(ride_id)
+
+    def worker():
+        try:
+            avg = routeOptimizer.get_historical_average(ride_id)
+        except Exception as e:
+            print(f"Failed to fetch average wait for {ride_id}: {e}")
+            avg = None
+        ride_avg_wait_cache[ride_id] = avg
+        ride_avg_wait_last_ms[ride_id] = pygame.time.get_ticks()
+        ride_avg_wait_pending.discard(ride_id)
+
+    threading.Thread(target=worker, daemon=True).start()
+
+
+def _popup_bubble_color(ride_id, wait):
+    """
+    Decides the popup speech-bubble color for `ride_id` given its current
+    live `wait` (minutes, or None if unknown/closed):
+      - orange  if wait >= 1.2x the ride's historical average right now
+      - green   if wait <= 0.8x that average
+      - white   otherwise, or whenever the average isn't known yet
+
+    Triggers (and/or refreshes) a background fetch of the average as a
+    side effect, so the color can update on its own once the fetch
+    completes -- this is called every frame the popup is visible, so
+    there's no need to explicitly wait on the fetch before returning.
+    """
+    if wait is None:
+        return POPUP_BUBBLE_DEFAULT_COLOR
+
+    last_fetch_ms = ride_avg_wait_last_ms.get(ride_id, -AVG_WAIT_REFRESH_MS - 1)
+    is_stale = pygame.time.get_ticks() - last_fetch_ms > AVG_WAIT_REFRESH_MS
+    if is_stale:
+        _fetch_avg_wait_async(ride_id)
+
+    avg = ride_avg_wait_cache.get(ride_id)
+    if not avg or avg <= 0:
+        return POPUP_BUBBLE_DEFAULT_COLOR
+
+    ratio = wait / avg
+    if ratio >= AVG_WAIT_HIGH_RATIO:
+        return POPUP_BUBBLE_HIGH_COLOR
+    if ratio <= AVG_WAIT_LOW_RATIO:
+        return POPUP_BUBBLE_LOW_COLOR
+    return POPUP_BUBBLE_DEFAULT_COLOR
 
 popup_font       = pygame.font.SysFont("Arial", max(9, int(13 * _scale)), bold=False)
 popup_font_bold  = pygame.font.SysFont("Arial", max(9, int(13 * _scale)), bold=True)
@@ -1435,7 +1507,11 @@ while running:
 
                     anchor_x = rect.centerx
                     anchor_y = rect.top
-                    popup = (ride_id, anchor_x, anchor_y, all_lines)
+                    # None (-> default white bubble) unless we have a real,
+                    # live wait for a currently-open ride to compare against
+                    # its historical average.
+                    bubble_wait = wait if is_open is not False else None
+                    popup = (ride_id, anchor_x, anchor_y, all_lines, bubble_wait)
                     break
 
         if event.type == pygame.KEYDOWN and active_time_input is not None and not time_error_active:
@@ -1511,7 +1587,8 @@ while running:
             screen.blit(scaled_topbar, (0, 0))
 
     if popup is not None:
-        _popup_ride_id, anchor_x, anchor_y, lines = popup
+        _popup_ride_id, anchor_x, anchor_y, lines, bubble_wait = popup
+        bubble_color = _popup_bubble_color(_popup_ride_id, bubble_wait)
         draw_speech_bubble(
             screen,
             px=anchor_x,
@@ -1522,7 +1599,7 @@ while running:
             tail_h=12,
             tail_w=16,
             radius=8,
-            bg_color=(255, 255, 255),
+            bg_color=bubble_color,
             border_color=(50, 50, 50),
             text_color=(20, 20, 20),
             border_width=2,

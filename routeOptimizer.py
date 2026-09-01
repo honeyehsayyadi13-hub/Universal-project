@@ -758,6 +758,47 @@ def _fill_until_close(order, candidate_ids, weights, histories, walk_map, durati
 
     return order
 
+def get_historical_average(ride_key, at_time=None):
+    """
+    Returns the kernel-weighted historical average wait (minutes) for
+    `ride_key` at `at_time` (defaults to now, in the park's local
+    timezone), or None if it can't be determined (unknown ride key,
+    Supabase unreachable, or no history at all for this ride).
+
+    This is a lightweight, read-only helper meant for the FRONTEND to
+    compare a live wait reading against "the average wait this ride
+    usually has at this time of day" -- e.g. to color-code the wait-time
+    popup. It reuses the same time-of-day/day-of-week/recency weighted
+    curve the route optimizer itself uses (_historical_wait_curve), but
+    does none of the route-planning work, so it's safe/cheap to call on
+    a simple ride-icon click.
+
+    Because it hits Supabase, callers on a UI thread (e.g. pygame) should
+    call this from a background thread rather than the main loop, to
+    avoid blocking on network latency.
+    """
+    if at_time is None:
+        at_time = datetime.now(PARK_TIMEZONE).replace(tzinfo=None)
+    elif at_time.tzinfo is not None:
+        at_time = at_time.astimezone(PARK_TIMEZONE).replace(tzinfo=None)
+
+    try:
+        key_to_id, _ = _load_ride_id_map()
+    except Exception as e:
+        print(f"get_historical_average: could not reach Supabase: {e}")
+        return None
+
+    db_id = key_to_id.get(ride_key)
+    if db_id is None:
+        return None
+
+    try:
+        history = _load_wait_history([db_id]).get(db_id, [])
+    except Exception as e:
+        print(f"get_historical_average: could not load wait history: {e}")
+        return None
+
+    return _historical_wait_curve(history, at_time)
 
 # ── public entry point ──────────────────────────────────────────────
 def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None,
