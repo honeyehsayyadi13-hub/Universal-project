@@ -1023,12 +1023,12 @@ PRED_CHIP_GAP     = max(2, int(3 * _scale))     # gap: icon->chip, and chip->del
 PRED_CHIP_RADIUS  = max(3, int(5 * _scale))
 topbar_pred_font  = pygame.font.SysFont("Arial", max(8, int(11 * _scale)), bold=True)
 
-PRED_CHIP_UNKNOWN_BG   = (225, 227, 231)
-PRED_CHIP_UNKNOWN_TEXT = (110, 110, 110)
-PRED_CHIP_LOW_BG       = (60, 170, 90)     # short wait -- green
-PRED_CHIP_MED_BG       = (230, 160, 40)    # moderate wait -- amber
-PRED_CHIP_HIGH_BG      = (210, 70, 70)     # long wait -- red
-PRED_CHIP_TEXT         = (255, 255, 255)
+PRED_CHIP_UNKNOWN_BG   = (255, 255, 255)
+PRED_CHIP_UNKNOWN_TEXT = (0, 0, 0)
+PRED_CHIP_LOW_BG       = (255, 255, 255)
+PRED_CHIP_MED_BG       = (255, 255, 255)
+PRED_CHIP_HIGH_BG      = (255, 255, 255)
+PRED_CHIP_TEXT         = (0, 0, 0)
 
 
 def _predicted_wait_chip_style(predicted_wait):
@@ -1045,7 +1045,7 @@ def _predicted_wait_chip_style(predicted_wait):
         bg = PRED_CHIP_MED_BG
     else:
         bg = PRED_CHIP_HIGH_BG
-    return bg, PRED_CHIP_TEXT, f"~{minutes}m"
+    return bg, PRED_CHIP_TEXT, f"{minutes}m"
 
 
 def _draw_predicted_wait_chip(surface, rect, predicted_wait):

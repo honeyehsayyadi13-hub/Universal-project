@@ -981,8 +981,10 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
     # Return the committed order as plain ride_key strings so the frontend
     # can render it (e.g. in the top route bar), without needing to know
     # anything about db_ids.
-    return [id_to_key.get(d["db_id"], str(d["db_id"])) for d in committed]
-
+    return [
+        (id_to_key.get(d["db_id"], str(d["db_id"])), d["predicted_wait"])
+        for d in committed
+    ]
 
 if __name__ == "__main__":
     # quick manual test -- edit below to try it out
