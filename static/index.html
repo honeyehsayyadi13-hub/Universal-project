@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Universal Route Planner</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ═══════════════ SIDEBAR ═══════════════ -->
+  <aside id="sidebar">
+
+    <div class="sidebar-row" id="presetRow">
+      <span class="sidebar-label">Presets</span>
+      <div class="dropdown" id="presetDropdown">
+        <button class="dropdown-btn" id="presetDropdownBtn">
+          <span id="presetDropdownLabel">Select preset&hellip;</span>
+          <svg class="chevron" viewBox="0 0 10 6"><path d="M1 1l4 4 4-4"/></svg>
+        </button>
+        <ul class="dropdown-list" id="presetDropdownList"></ul>
+      </div>
+    </div>
+
+    <div class="sidebar-row" id="ridesRow">
+      <span class="sidebar-label">Rides</span>
+      <div class="dropdown" id="startDropdown">
+        <button class="dropdown-btn" id="startDropdownBtn">
+          <span id="startDropdownLabel">Entrance</span>
+          <svg class="chevron" viewBox="0 0 10 6"><path d="M1 1l4 4 4-4"/></svg>
+        </button>
+        <ul class="dropdown-list" id="startDropdownList"></ul>
+      </div>
+    </div>
+
+    <div class="break-section">
+      <div class="break-time-row">
+        <input type="text" id="time1Input" class="time-input" placeholder="Start" maxlength="8">
+        <span class="break-dash">&ndash;</span>
+        <input type="text" id="time2Input" class="time-input" placeholder="End" maxlength="8">
+      </div>
+      <button id="generateBreakBtn" class="pill-btn pill-btn--danger">Generate Break</button>
+      <button id="addPresetBtn" class="pill-btn pill-btn--success">+ Add Preset</button>
+    </div>
+
+    <div id="sidebarList" class="sidebar-list"></div>
+
+    <button id="getRouteBtn" class="route-cta">Get Optimal Route</button>
+  </aside>
+
+  <button id="sidebarToggle" class="edge-toggle edge-toggle--left" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24"><path d="M15 4l-8 8 8 8"/></svg>
+  </button>
+
+  <!-- ═══════════════ MAP + TOP BAR ═══════════════ -->
+  <main id="mapPane">
+
+    <div id="topBar">
+      <div id="routeTrack">
+        <p id="routePlaceholder">No route yet &mdash; check some rides and hit &ldquo;Get Optimal Route&rdquo;.</p>
+        <div id="routeItems"></div>
+      </div>
+      <button id="generateRouteBtn" class="route-cta route-cta--compact">Generate Route</button>
+    </div>
+
+    <button id="topBarToggle" class="edge-toggle edge-toggle--top" aria-label="Toggle route bar">
+      <svg viewBox="0 0 24 24"><path d="M4 9l8 8 8-8"/></svg>
+    </button>
+
+    <div id="mapViewport">
+      <div id="mapInner">
+        <img id="mapImage" src="assets/map.png" alt="Park map" draggable="false">
+        <div id="pinLayer"></div>
+      </div>
+    </div>
+
+  </main>
+
+  <div id="popup" class="popup hidden"></div>
+
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

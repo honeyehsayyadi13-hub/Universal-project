@@ -800,6 +800,63 @@ def get_historical_average(ride_key, at_time=None):
 
     return _historical_wait_curve(history, at_time)
 
+def get_current_waits():
+    """
+    Returns the most recent live wait-time reading for every ride, keyed
+    by ride_key (the same string keys used everywhere else -- "hulk",
+    "spiderMan", etc.), so a frontend/API layer can display "what's
+    happening right now" without needing any route-planning logic.
+
+    Format: { ride_key: {"waittime": int, "timestamp": datetime} }
+
+    Rows with issue_with_ride=True are skipped, same as the route
+    optimizer's own history loading. Rides with no reading at all are
+    simply absent from the returned dict.
+
+    Because it hits Supabase, callers on a UI thread should call this
+    from a background thread; callers building a web API should call it
+    from within their request handler as normal.
+    """
+    try:
+        key_to_id, id_to_key = _load_ride_id_map()
+    except Exception as e:
+        print(f"get_current_waits: could not reach Supabase: {e}")
+        return {}
+
+    if not id_to_key:
+        return {}
+
+    try:
+        resp = (
+            _get_client()
+            .table("ride_waits")
+            .select("ride_id, waittime, timestamp, issue_with_ride")
+            .order("timestamp", desc=True)
+            .limit(len(id_to_key) * 5)
+            .execute()
+        )
+    except Exception as e:
+        print(f"get_current_waits: could not load ride_waits: {e}")
+        return {}
+
+    latest_by_db_id = {}
+    for row in resp.data:
+        if row.get("issue_with_ride"):
+            continue
+        db_id = row["ride_id"]
+        if db_id not in id_to_key:
+            continue  # not one of the rides we track (e.g. an entrance row)
+        if db_id in latest_by_db_id:
+            continue  # already have the most recent reading for this ride
+        latest_by_db_id[db_id] = {
+            "waittime": row["waittime"],
+            "timestamp": _parse_ts(row["timestamp"]),
+        }
+
+    return {
+        id_to_key[db_id]: reading
+        for db_id, reading in latest_by_db_id.items()
+    }
 # ── public entry point ──────────────────────────────────────────────
 def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None,
                              breaks=None, start_time=None, start_key="entrance",
