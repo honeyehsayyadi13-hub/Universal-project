@@ -4,28 +4,30 @@
    BACKEND CONTRACT (point API_BASE at your Flask app, or leave it as
    '' if this file is served by the same Flask app):
 
-   GET  {API_BASE}/api/status
-     -> { "ride_waits": { "<rideId>": <minutes>|null, ... },
-          "ride_open":  { "<rideId>": true|false|null, ... } }
-     Mirrors Data.ride_waits / Data.ride_open from the pygame app.
-     Polled every STATUS_POLL_MS.
+   GET  {API_BASE}/api/rides
+     -> { "<rideId>": { "timestamp": "...", "waittime": <minutes> }, ... }
+     A ride only appears in this dict when it's currently reporting a wait
+     time. A ride missing from the dict means "unknown" (not necessarily
+     closed) — we don't force it into the closed list on that basis alone.
 
    POST {API_BASE}/api/route
      body: {
-       "counts":  { "<rideId>": <int quantity>, ... },   // only visible, qty>0 rides
-       "locked":  ["<rideId>", ...],
-       "closed":  ["<rideId>", ...],                      // rides marked closed
-       "breaks":  [[startMin, endMin], ...],               // minutes since midnight
-       "start":   "<rideId>|entrance",
-       "live_waits": { "<rideId>": <minutes>|null, ... }
+       "ride_counts":       { "<rideId>": <int quantity>, ... },  // only visible, qty>0 rides
+       "ride_locked":       ["<rideId>", ...],
+       "closed_ride_keys":  ["<rideId>", ...],
+       "breaks":            [[startMin, endMin], ...],             // minutes since midnight
+       "start_key":         "<rideId>|entrance",
+       "live_waits":        { "<rideId>": <minutes>, ... }          // straight from /api/rides
      }
-     -> [ { "ride_id": "<rideId>", "predicted_wait": <minutes>|null }, ... ]
-     This is the JSON-ified equivalent of routeOptimizer.compute_and_print_route().
+     -> a list from compute_and_print_route(); each entry may be a plain
+        ride-id string, a [ride_id, predicted_wait] pair, or a dict with
+        ride_id/predicted_wait-style keys — the normalizer below handles
+        all three shapes.
 
    Adjust API_BASE / field names below to match your actual Flask routes.
    ════════════════════════════════════════════════════════════════ */
 
-const API_BASE = 'https://universal-project.onrender.com';
+const API_BASE = '';
 const STATUS_POLL_MS = 8000;
 
 // ── ride catalogue (mirrors ride_names / raw_buttons / _ride_image_paths) ──
@@ -475,10 +477,10 @@ function renderRouteBar() {
 // ═══════════════ ROUTE GENERATION ═══════════════
 
 async function generateRoute(triggerBtn) {
-  const counts = {};
-  RIDES.forEach(r => { if (state.visible[r.id] && state.counts[r.id] > 0) counts[r.id] = state.counts[r.id]; });
-  const locked = RIDES.filter(r => state.locked[r.id]).map(r => r.id);
-  const closed = RIDES.filter(r => state.liveOpen[r.id] === false).map(r => r.id);
+  const ride_counts = {};
+  RIDES.forEach(r => { if (state.visible[r.id] && state.counts[r.id] > 0) ride_counts[r.id] = state.counts[r.id]; });
+  const ride_locked = RIDES.filter(r => state.locked[r.id]).map(r => r.id);
+  const closed_ride_keys = RIDES.filter(r => state.liveOpen[r.id] === false).map(r => r.id);
   const breaks = state.breaks.map(b => [b.startMin, b.endMin]);
 
   triggerBtn.classList.add('flash');
@@ -491,8 +493,8 @@ async function generateRoute(triggerBtn) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        counts, locked, closed, breaks,
-        start: state.selectedStart,
+        ride_counts, ride_locked, closed_ride_keys, breaks,
+        start_key: state.selectedStart,
         live_waits: state.liveWaits,
       }),
     });
@@ -517,11 +519,24 @@ $('#generateRouteBtn').addEventListener('click', () => generateRoute($('#generat
 
 async function pollStatus() {
   try {
-    const res = await fetch(`${API_BASE}/api/status`);
+    const res = await fetch(`${API_BASE}/api/rides`);
     if (!res.ok) return;
     const data = await res.json();
-    state.liveWaits = data.ride_waits || {};
-    state.liveOpen  = data.ride_open  || {};
+    // data shape: { "<rideId>": { timestamp, waittime }, ... } — a ride
+    // missing from this dict is "unknown", not "closed", since the
+    // backend only reports rides that currently have a wait time.
+    const waits = {}, open = {};
+    RIDES.forEach(r => {
+      if (data[r.id] && typeof data[r.id].waittime === 'number') {
+        waits[r.id] = data[r.id].waittime;
+        open[r.id] = true;
+      } else {
+        waits[r.id] = null;
+        open[r.id] = null; // unknown — don't treat as closed
+      }
+    });
+    state.liveWaits = waits;
+    state.liveOpen  = open;
     renderPins();
     if (popupState.rideId) showPopup(popupState.rideId, [...pinLayerEl.children].find(p => p.querySelector('img')?.alt === rideById[popupState.rideId]?.name));
   } catch (err) {
