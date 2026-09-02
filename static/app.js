@@ -5,15 +5,18 @@
    '' if this file is served by the same Flask app):
 
    GET  {API_BASE}/api/rides
-     -> { "<rideId>": { "timestamp": "...", "waittime": <minutes> }, ... }
-     A ride only appears in this dict when it's currently reporting a wait
-     time. A ride missing from the dict means "unknown" (not necessarily
-     closed) — we don't force it into the closed list on that basis alone.
+     -> { "<rideId>": { "waittime": <minutes>, "is_open": true|false|null }, ... }
+     A ride only appears in this dict when Data.py's background poller has
+     ever seen it. A ride missing from the dict means "unknown" (not
+     necessarily closed) — we don't force it into the closed list on that
+     basis alone.
 
    POST {API_BASE}/api/route
      body: {
        "ride_counts":       { "<rideId>": <int quantity>, ... },  // only visible, qty>0 rides
-       "ride_locked":       ["<rideId>", ...],
+       "ride_locked":       { "<rideId>": true, ... },             // OBJECT, not array —
+                                                                    // routeOptimizer.py calls
+                                                                    // ride_locked.get(key) on this
        "closed_ride_keys":  ["<rideId>", ...],
        "breaks":            [[startMin, endMin], ...],             // minutes since midnight
        "start_key":         "<rideId>|entrance",
@@ -22,7 +25,8 @@
      -> a list from compute_and_print_route(); each entry may be a plain
         ride-id string, a [ride_id, predicted_wait] pair, or a dict with
         ride_id/predicted_wait-style keys — the normalizer below handles
-        all three shapes.
+        all three shapes. On failure the backend returns a JSON body of
+        { "error": "..." } with a non-200 status.
 
    Adjust API_BASE / field names below to match your actual Flask routes.
    ════════════════════════════════════════════════════════════════ */
@@ -135,7 +139,7 @@ const routePlaceholderEl= $('#routePlaceholder');
 
 // ═══════════════ DROPDOWNS ═══════════════
 
-function setupDropdown({ btn, list, dropdown, getLabel }) {
+function setupDropdown({ dropdown }) {
   dropdown.addEventListener('click', e => {
     const isBtn = e.target.closest('.dropdown-btn');
     if (isBtn) {
@@ -479,7 +483,17 @@ function renderRouteBar() {
 async function generateRoute(triggerBtn) {
   const ride_counts = {};
   RIDES.forEach(r => { if (state.visible[r.id] && state.counts[r.id] > 0) ride_counts[r.id] = state.counts[r.id]; });
-  const ride_locked = RIDES.filter(r => state.locked[r.id]).map(r => r.id);
+
+  // IMPORTANT: this must be an OBJECT ({ rideId: true, ... }), not an
+  // array. routeOptimizer.py does `ride_locked.get(key)` on this value --
+  // sending an array made every route request throw
+  // AttributeError: 'list' object has no attribute 'get', which is why
+  // "Generate Route" used to hang on "Generating…" forever (the backend
+  // call was failing every time a ride ended up locked, which happens
+  // automatically once its count is bumped above 1).
+  const ride_locked = {};
+  RIDES.forEach(r => { if (state.locked[r.id]) ride_locked[r.id] = true; });
+
   const closed_ride_keys = RIDES.filter(r => state.liveOpen[r.id] === false).map(r => r.id);
   const breaks = state.breaks.map(b => [b.startMin, b.endMin]);
 
@@ -498,15 +512,29 @@ async function generateRoute(triggerBtn) {
         live_waits: state.liveWaits,
       }),
     });
-    if (!res.ok) throw new Error(`route request failed: ${res.status}`);
-    const data = await res.json();
+
+    const data = await res.json().catch(() => null);
+
+    if (!res.ok) {
+      const message = (data && data.error) ? data.error : `route request failed: ${res.status}`;
+      throw new Error(message);
+    }
+    if (!Array.isArray(data)) {
+      throw new Error('Unexpected response from route service.');
+    }
+
     state.route = data.map(entry => ({
       rideId: entry.ride_id ?? entry.id ?? entry.ride,
       predictedWait: entry.predicted_wait ?? entry.predicted_wait_minutes ?? entry.wait ?? null,
     }));
+
+    if (!state.route.length) {
+      routePlaceholderEl.textContent = 'Nothing fit before closing — try uncheck a few rides or start earlier.';
+    }
   } catch (err) {
     console.error(err);
-    routePlaceholderEl.textContent = "Couldn't reach the route service — check the backend and try again.";
+    state.route = [];
+    routePlaceholderEl.textContent = `Couldn't generate a route: ${err.message}`;
   } finally {
     renderRouteBar();
   }
@@ -522,14 +550,15 @@ async function pollStatus() {
     const res = await fetch(`${API_BASE}/api/rides`);
     if (!res.ok) return;
     const data = await res.json();
-    // data shape: { "<rideId>": { timestamp, waittime }, ... } — a ride
-    // missing from this dict is "unknown", not "closed", since the
-    // backend only reports rides that currently have a wait time.
+    // data shape: { "<rideId>": { waittime, is_open }, ... } — a ride
+    // missing from this dict is "unknown" (the poller hasn't reported it
+    // yet), not "closed".
     const waits = {}, open = {};
     RIDES.forEach(r => {
-      if (data[r.id] && typeof data[r.id].waittime === 'number') {
-        waits[r.id] = data[r.id].waittime;
-        open[r.id] = true;
+      const entry = data[r.id];
+      if (entry && typeof entry.waittime === 'number') {
+        waits[r.id] = entry.waittime;
+        open[r.id] = entry.is_open === false ? false : true;
       } else {
         waits[r.id] = null;
         open[r.id] = null; // unknown — don't treat as closed
