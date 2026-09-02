@@ -403,10 +403,19 @@ function showPopup(rideId, anchorEl) {
 
 function positionPopup(anchorEl) {
   if (!anchorEl || popupState.rideId == null) return;
-  const mapRect = $('#mapViewport').getBoundingClientRect();
+  // getBoundingClientRect() is already relative to the browser viewport,
+  // accounting for every ancestor's offset AND scroll automatically — no
+  // need to subtract #mapViewport's rect or add its scroll manually. The
+  // old code computed coordinates relative to #mapViewport, but #popup is
+  // actually a child of #app (position: relative), which is #popup's real
+  // positioning ancestor. That mismatch silently shifted every popup up
+  // and to the left by the sidebar width / topbar height, pushing many of
+  // them off-screen or behind other elements. Using `position: fixed` on
+  // .popup (see styles.css) plus the pin's own rect directly sidesteps the
+  // whole ancestor-offset problem.
   const pinRect = anchorEl.getBoundingClientRect();
-  popupEl.style.left = (pinRect.left - mapRect.left + pinRect.width / 2 + $('#mapViewport').scrollLeft) + 'px';
-  popupEl.style.top  = (pinRect.top  - mapRect.top  + $('#mapViewport').scrollTop) + 'px';
+  popupEl.style.left = (pinRect.left + pinRect.width / 2) + 'px';
+  popupEl.style.top  = pinRect.top + 'px';
 }
 
 function hidePopup() {
@@ -480,6 +489,38 @@ function renderRouteBar() {
 
 // ═══════════════ ROUTE GENERATION ═══════════════
 
+/**
+ * Normalizes one entry of the /api/route response into { rideId, predictedWait }.
+ *
+ * compute_and_print_route() returns a list of (ride_key, predicted_wait)
+ * TUPLES. Flask's jsonify() serializes each tuple as a plain JSON ARRAY,
+ * e.g. ["hulk", 45.2] — not an object with a `.ride_id` property. The
+ * previous version of this function only handled the object shape
+ * (`entry.ride_id`), so `rideId` came back `undefined` for every single
+ * stop, renderRouteBar() silently skipped all of them (rideById[undefined]
+ * is falsy), and the top bar rendered as blank even though a route had
+ * been computed successfully. This mirrors frontEnd.py's
+ * `_extract_ride_id_and_predicted_wait`, which already handled all three
+ * shapes the backend might send (string / tuple-array / dict) — app.js
+ * just never got the same treatment.
+ */
+function extractRideIdAndWait(entry) {
+  if (Array.isArray(entry)) {
+    return {
+      rideId: entry.length > 0 ? entry[0] : undefined,
+      predictedWait: entry.length > 1 ? entry[1] : null,
+    };
+  }
+  if (entry && typeof entry === 'object') {
+    return {
+      rideId: entry.ride_id ?? entry.id ?? entry.ride,
+      predictedWait: entry.predicted_wait ?? entry.predicted_wait_minutes ?? entry.wait ?? null,
+    };
+  }
+  // plain ride_id string
+  return { rideId: entry, predictedWait: null };
+}
+
 async function generateRoute(triggerBtn) {
   const ride_counts = {};
   RIDES.forEach(r => { if (state.visible[r.id] && state.counts[r.id] > 0) ride_counts[r.id] = state.counts[r.id]; });
@@ -523,10 +564,7 @@ async function generateRoute(triggerBtn) {
       throw new Error('Unexpected response from route service.');
     }
 
-    state.route = data.map(entry => ({
-      rideId: entry.ride_id ?? entry.id ?? entry.ride,
-      predictedWait: entry.predicted_wait ?? entry.predicted_wait_minutes ?? entry.wait ?? null,
-    }));
+    state.route = data.map(extractRideIdAndWait);
 
     if (!state.route.length) {
       routePlaceholderEl.textContent = 'Nothing fit before closing — try uncheck a few rides or start earlier.';
