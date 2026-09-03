@@ -1,3 +1,4 @@
+# server.py
 import threading
 
 from flask import Flask, jsonify, request, send_from_directory
@@ -7,12 +8,10 @@ from routeOptimizer import compute_and_print_route
 
 app = Flask(__name__, static_folder="static", static_url_path="")
 
-# Start the live queue-times.com poller as soon as this module is imported
-# (not inside `if __name__ == "__main__":`) so it also runs when the app is
-# served by a WSGI server like gunicorn (e.g. `gunicorn server:app`), which
-# imports this module but never executes that block. Without this thread
-# running, Data.ride_waits / Data.ride_open never get populated on the
-# deployed server, and /api/rides has nothing live to report.
+# Keep a lightweight background thread running so ride_waits / ride_open
+# stay warm for routeOptimizer even between page loads.  The thread now
+# sleeps 60 s (not 5 s) because /api/rides does its own on-demand fetch
+# with a 30 s cache -- the thread is only a backstop, not the live feed.
 threading.Thread(target=Data.update_backend, daemon=True).start()
 
 
@@ -24,23 +23,20 @@ def home():
 @app.route("/api/rides")
 def rides():
     """
-    Live wait times, straight from Data.py's in-memory dicts (populated by
-    the background poller above from queue-times.com every 5s).
+    Live wait times fetched on-demand from queue-times.com (cached 30 s).
 
-    NOTE: this is deliberately NOT routeOptimizer.get_current_waits(),
-    which reads the Supabase `ride_waits` table -- that table is the
-    historical log the route optimizer trains predictions on, not a live
-    feed, and nothing repopulates it in real time on its own. Serving it
-    from /api/rides would show stale/"hardcoded"-looking numbers instead
-    of what the park is actually reporting right now.
+    Fetching on-demand is more reliable than a background thread on
+    Render free tier: the service spins down after inactivity, and a
+    daemon thread that was alive before spin-down does NOT automatically
+    restart on wake-up.  The first request after wake-up triggers a
+    fresh fetch here, so the UI always gets real data instead of {}.
     """
-    return jsonify({
-        ride_id: {
-            "waittime": wait,
-            "is_open": Data.ride_open.get(ride_id),
-        }
-        for ride_id, wait in Data.ride_waits.items()
-    })
+    payload = Data.get_live_wait_times()
+    # Also sync the legacy dicts so routeOptimizer sees fresh data
+    # if it reads ride_waits/ride_open before the background thread
+    # has had a chance to run.
+    Data._sync_legacy_dicts(payload)
+    return jsonify(payload)
 
 
 @app.route("/api/route", methods=["POST"])
@@ -56,15 +52,10 @@ def route():
             live_waits=payload.get("live_waits"),
         )
     except Exception as e:
-        # Surface real backend errors as a real HTTP error instead of
-        # letting the frontend hang on "Generating..." forever.
         app.logger.exception("route computation failed")
         return jsonify({"error": str(e)}), 500
 
     if result is None:
-        # compute_and_print_route() returns None only when it couldn't run
-        # at all (e.g. Supabase unreachable) -- treat that as a real error,
-        # distinct from [] ("ran fine, nothing fit").
         return jsonify({"error": "Route could not be computed (backend data unreachable)."}), 502
 
     return jsonify(result)
