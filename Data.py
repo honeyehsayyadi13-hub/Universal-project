@@ -54,12 +54,20 @@ def get_live_wait_times() -> dict:
         return _cache
 
     url = "https://queue-times.com/parks/64/queue_times.json"
+    # Some sites reject the default python-requests User-Agent (403), which
+    # would otherwise look identical to a timeout/network failure. Sending a
+    # normal browser-ish UA avoids that class of silent failure.
+    headers = {
+        "User-Agent": "Mozilla/5.0 (compatible; UniversalRoutePlanner/1.0; +https://universal-project.onrender.com)",
+        "Accept": "application/json",
+    }
     try:
-        response = requests.get(url, timeout=10)
+        response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status()
         data = response.json()
     except requests.exceptions.RequestException as e:
-        print(f"[data] fetch failed: {e}")
+        status = getattr(getattr(e, "response", None), "status_code", None)
+        print(f"[data] fetch failed: {e!r} (status={status})")
         return _cache          # stale cache beats an empty response
     except ValueError as e:
         print(f"[data] JSON parse failed: {e}")
@@ -82,6 +90,9 @@ def get_live_wait_times() -> dict:
     if result:                 # only promote to cache if we got real data
         _cache    = result
         _cache_ts = now
+    else:
+        print("[data] fetch succeeded but 0 rides matched RIDE_NAME_MAP "
+              "-- check for a name/encoding mismatch against the live API")
 
     return _cache
 
@@ -109,7 +120,7 @@ def _sync_legacy_dicts(payload: dict) -> None:
 def update_backend():
     """
     Retained for any caller that still does
-    `threading.Thread(target=Data.update_backend, …).start()`.
+    `threading.Thread(target=Data.update_backend, ...).start()`.
     Now polls at 60 s (not 5 s) since /api/rides does its own on-demand
     fetch; this thread's only job is to keep ride_waits/ride_open warm
     for routeOptimizer between page loads.
