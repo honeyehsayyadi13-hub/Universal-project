@@ -70,8 +70,11 @@ const state = {
   route: [],            // [{ rideId, predictedWait }]
   liveWaits: {},         // rideId -> minutes|null
   liveOpen: {},           // rideId -> bool|null
+  selectedStops: new Set(), // rideIds the user has highlighted
 };
+
 let breakIdCounter = 0;
+let dragSrcIdx = null;
 
 const startOptions = [{ id: 'entrance', label: 'Entrance' },
   ...RIDES.map(r => ({ id: r.id, label: r.name }))];
@@ -443,17 +446,79 @@ function renderRouteBar() {
   state.route.forEach((stop, i) => {
     const r = rideById[stop.rideId];
     if (!r) return;
+
     const wrap = document.createElement('div');
     wrap.className = 'route-stop';
+    wrap.draggable = true;
+    wrap.dataset.idx = i;
 
+    // ── drag events ──────────────────────────────────
+    wrap.addEventListener('dragstart', e => {
+      dragSrcIdx = i;
+      wrap.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+
+    wrap.addEventListener('dragend', () => {
+      dragSrcIdx = null;
+      document.querySelectorAll('.route-stop').forEach(el => {
+        el.classList.remove('dragging', 'drag-over');
+      });
+    });
+
+    wrap.addEventListener('dragover', e => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      if (dragSrcIdx !== null && dragSrcIdx !== i) {
+        document.querySelectorAll('.route-stop').forEach(el => el.classList.remove('drag-over'));
+        wrap.classList.add('drag-over');
+      }
+    });
+
+    wrap.addEventListener('dragleave', () => wrap.classList.remove('drag-over'));
+
+    wrap.addEventListener('drop', e => {
+      e.preventDefault();
+      wrap.classList.remove('drag-over');
+      if (dragSrcIdx === null || dragSrcIdx === i) return;
+
+      // Reorder state.route in place
+      const moved = state.route.splice(dragSrcIdx, 1)[0];
+      state.route.splice(i, 0, moved);
+      dragSrcIdx = null;
+      renderRouteBar();
+    });
+
+    // ── card (pill + chip + remove) ──────────────────
     const card = document.createElement('div');
     card.className = 'route-stop-card';
 
     const pill = document.createElement('div');
-    pill.className = 'route-pill';
+    pill.className = 'route-pill' + (state.selectedStops.has(stop.rideId) ? ' highlighted' : '');
+
+    // Click the pill to toggle highlight; suppress if it was a drag
+    let pointerMoved = false;
+    pill.addEventListener('pointerdown', () => { pointerMoved = false; });
+    pill.addEventListener('pointermove', () => { pointerMoved = true; });
+    pill.addEventListener('pointerup', () => {
+      if (pointerMoved) return;
+      if (state.selectedStops.has(stop.rideId)) {
+        state.selectedStops.delete(stop.rideId);
+      } else {
+        state.selectedStops.add(stop.rideId);
+      }
+      renderRouteBar();
+    });
+
+    // Also highlight when the stop is dropped onto a new position
+    wrap.addEventListener('drop', () => {
+      state.selectedStops.add(stop.rideId);
+    }, { once: true });
+
     const img = document.createElement('img');
     img.src = r.icon;
     img.alt = r.name;
+    img.draggable = false; // let the parent <div> handle dragging
     img.onerror = () => { img.remove(); pill.innerHTML = `<span>${r.name.split(' ')[0]}</span>`; };
     pill.appendChild(img);
 
@@ -465,6 +530,7 @@ function renderRouteBar() {
     remove.className = 'stop-remove';
     remove.textContent = '✕';
     remove.addEventListener('click', () => {
+      state.selectedStops.delete(stop.rideId);
       state.route = state.route.filter(s => s.rideId !== stop.rideId);
       state.visible[stop.rideId] = false;
       state.locked[stop.rideId] = false;

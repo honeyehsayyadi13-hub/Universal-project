@@ -484,6 +484,24 @@ input { font-family: inherit; }
   box-shadow: 0 1px 4px rgba(0,0,0,0.12);
 }
 
+/* ── draggable route stops ── */
+.route-stop[draggable="true"] { cursor: grab; }
+.route-stop[draggable="true"]:active { cursor: grabbing; }
+
+.route-stop.drag-over .route-pill {
+  outline: 2px dashed var(--gold);
+  outline-offset: 3px;
+}
+
+.route-stop.dragging { opacity: 0.35; }
+
+/* ── highlighted (selected) state ── */
+.route-pill.highlighted {
+  background: #FFF4C2;
+  border-color: var(--gold);
+  box-shadow: 0 0 0 2px var(--gold-dark);
+}
+
 .route-pill img { width: 92%; height: 92%; object-fit: contain; }
 .route-pill span { font-size: 10px; font-weight: 700; text-align: center; padding: 2px; }
 
