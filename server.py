@@ -50,6 +50,7 @@ def route():
             breaks=payload.get("breaks"),
             start_key=payload.get("start_key", "entrance"),
             live_waits=payload.get("live_waits"),
+            time_pinned=payload.get("time_pinned"),
         )
     except Exception as e:
         app.logger.exception("route computation failed")

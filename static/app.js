@@ -70,9 +70,17 @@ const state = {
   route: [],            // [{ rideId, predictedWait }]
   liveWaits: {},         // rideId -> minutes|null
   liveOpen: {},           // rideId -> bool|null
-  selectedStops: new Set(), // rideIds the user has highlighted
+  timePinned: {},
 };
 
+function getInstanceIndex(route, pos) {
+  const rideId = route[pos].rideId;
+  let count = 0;
+  for (let i = 0; i < pos; i++) if (route[i].rideId === rideId) count++;
+  return count;
+}
+
+function getUniqueKey(rideId, instanceIndex) { return `${rideId}:${instanceIndex}`; }
 let breakIdCounter = 0;
 let dragSrcIdx = null;
 
@@ -98,6 +106,7 @@ function addPreset() {
     lastCount: { ...state.lastCount },
     breaks: JSON.parse(JSON.stringify(state.breaks)),
     selectedStart: state.selectedStart,
+    timePinned: JSON.parse(JSON.stringify(state.timePinned)),
   });
   selectedPresetId = presetIdCounter;
   savePresets();
@@ -123,6 +132,7 @@ function applyPreset(id) {
   });
   state.breaks = JSON.parse(JSON.stringify(p.breaks));
   state.selectedStart = p.selectedStart;
+  state.timePinned = JSON.parse(JSON.stringify(p.timePinned || {}));
   selectedPresetId = p.id;
   renderStartDropdown();
   renderSidebarList();
@@ -431,7 +441,6 @@ document.addEventListener('click', e => {
 });
 
 // ═══════════════ TOP ROUTE BAR ═══════════════
-
 function renderRouteBar() {
   if (!state.route.length) {
     routePlaceholderEl.style.display = 'block';
@@ -447,12 +456,18 @@ function renderRouteBar() {
     const r = rideById[stop.rideId];
     if (!r) return;
 
+    const instIdx    = getInstanceIndex(state.route, i);
+    const uniqueKey  = getUniqueKey(stop.rideId, instIdx);
+    const pinEntry   = state.timePinned[uniqueKey];
+    const isLocked   = pinEntry && pinEntry.targetMinutes !== null;
+    const isHighlighted = !!pinEntry;
+
     const wrap = document.createElement('div');
     wrap.className = 'route-stop';
     wrap.draggable = true;
     wrap.dataset.idx = i;
 
-    // ── drag events ──────────────────────────────────
+    // ── drag events ──────────────────────────────────────────────
     wrap.addEventListener('dragstart', e => {
       dragSrcIdx = i;
       wrap.classList.add('dragging');
@@ -461,9 +476,8 @@ function renderRouteBar() {
 
     wrap.addEventListener('dragend', () => {
       dragSrcIdx = null;
-      document.querySelectorAll('.route-stop').forEach(el => {
-        el.classList.remove('dragging', 'drag-over');
-      });
+      document.querySelectorAll('.route-stop').forEach(el =>
+        el.classList.remove('dragging', 'drag-over'));
     });
 
     wrap.addEventListener('dragover', e => {
@@ -482,43 +496,61 @@ function renderRouteBar() {
       wrap.classList.remove('drag-over');
       if (dragSrcIdx === null || dragSrcIdx === i) return;
 
-      // Reorder state.route in place
+      // Capture destination time BEFORE we mutate the array
+      const targetMinutes = state.route[i]?.queueJoinMinutes ?? null;
+
+      // Remove old pin entry for the dragged stop
+      const srcInstIdx = getInstanceIndex(state.route, dragSrcIdx);
+      const oldKey = getUniqueKey(state.route[dragSrcIdx].rideId, srcInstIdx);
+      delete state.timePinned[oldKey];
+
+      // Reorder
       const moved = state.route.splice(dragSrcIdx, 1)[0];
       state.route.splice(i, 0, moved);
+
+      // Set time pin at new position
+      const newInstIdx = getInstanceIndex(state.route, i);
+      const newKey = getUniqueKey(moved.rideId, newInstIdx);
+      state.timePinned[newKey] = {
+        rideId: moved.rideId,
+        instanceIndex: newInstIdx,
+        targetMinutes,
+      };
+
       dragSrcIdx = null;
       renderRouteBar();
     });
 
-    // ── card (pill + chip + remove) ──────────────────
+    // ── card ─────────────────────────────────────────────────────
     const card = document.createElement('div');
     card.className = 'route-stop-card';
 
     const pill = document.createElement('div');
-    pill.className = 'route-pill' + (state.selectedStops.has(stop.rideId) ? ' highlighted' : '');
+    pill.className = 'route-pill'
+      + (isLocked ? ' time-locked' : isHighlighted ? ' highlighted' : '');
 
-    // Click the pill to toggle highlight; suppress if it was a drag
+    // Click pill: toggle cosmetic highlight / remove time-lock
     let pointerMoved = false;
     pill.addEventListener('pointerdown', () => { pointerMoved = false; });
     pill.addEventListener('pointermove', () => { pointerMoved = true; });
     pill.addEventListener('pointerup', () => {
       if (pointerMoved) return;
-      if (state.selectedStops.has(stop.rideId)) {
-        state.selectedStops.delete(stop.rideId);
+      if (pinEntry) {
+        delete state.timePinned[uniqueKey];
       } else {
-        state.selectedStops.add(stop.rideId);
+        state.timePinned[uniqueKey] = {
+          rideId: stop.rideId,
+          instanceIndex: instIdx,
+          targetMinutes: null,   // cosmetic only
+        };
       }
       renderRouteBar();
     });
 
-    // Also highlight when the stop is dropped onto a new position
-    wrap.addEventListener('drop', () => {
-      state.selectedStops.add(stop.rideId);
-    }, { once: true });
-
     const img = document.createElement('img');
     img.src = r.icon;
     img.alt = r.name;
-    img.draggable = false; // let the parent <div> handle dragging
+    img.draggable = false;
     img.onerror = () => { img.remove(); pill.innerHTML = `<span>${r.name.split(' ')[0]}</span>`; };
     pill.appendChild(img);
 
@@ -530,7 +562,10 @@ function renderRouteBar() {
     remove.className = 'stop-remove';
     remove.textContent = '✕';
     remove.addEventListener('click', () => {
-      state.selectedStops.delete(stop.rideId);
+      // Remove all time pins for this rideId (filter removes every instance)
+      for (const key of Object.keys(state.timePinned)) {
+        if (key.startsWith(`${stop.rideId}:`)) delete state.timePinned[key];
+      }
       state.route = state.route.filter(s => s.rideId !== stop.rideId);
       state.visible[stop.rideId] = false;
       state.locked[stop.rideId] = false;
@@ -573,36 +608,38 @@ function renderRouteBar() {
 function extractRideIdAndWait(entry) {
   if (Array.isArray(entry)) {
     return {
-      rideId: entry.length > 0 ? entry[0] : undefined,
-      predictedWait: entry.length > 1 ? entry[1] : null,
+      rideId:            entry.length > 0 ? entry[0] : undefined,
+      predictedWait:     entry.length > 1 ? entry[1] : null,
+      queueJoinMinutes:  entry.length > 2 ? entry[2] : null,
     };
   }
   if (entry && typeof entry === 'object') {
     return {
-      rideId: entry.ride_id ?? entry.id ?? entry.ride,
-      predictedWait: entry.predicted_wait ?? entry.predicted_wait_minutes ?? entry.wait ?? null,
+      rideId:           entry.ride_id ?? entry.id ?? entry.ride,
+      predictedWait:    entry.predicted_wait ?? entry.predicted_wait_minutes ?? entry.wait ?? null,
+      queueJoinMinutes: entry.queue_join_minutes ?? null,
     };
   }
-  // plain ride_id string
-  return { rideId: entry, predictedWait: null };
+  return { rideId: entry, predictedWait: null, queueJoinMinutes: null };
 }
-
 async function generateRoute(triggerBtn) {
   const ride_counts = {};
   RIDES.forEach(r => { if (state.visible[r.id] && state.counts[r.id] > 0) ride_counts[r.id] = state.counts[r.id]; });
 
-  // IMPORTANT: this must be an OBJECT ({ rideId: true, ... }), not an
-  // array. routeOptimizer.py does `ride_locked.get(key)` on this value --
-  // sending an array made every route request throw
-  // AttributeError: 'list' object has no attribute 'get', which is why
-  // "Generate Route" used to hang on "Generating…" forever (the backend
-  // call was failing every time a ride ended up locked, which happens
-  // automatically once its count is bumped above 1).
   const ride_locked = {};
   RIDES.forEach(r => { if (state.locked[r.id]) ride_locked[r.id] = true; });
 
   const closed_ride_keys = RIDES.filter(r => state.liveOpen[r.id] === false).map(r => r.id);
   const breaks = state.breaks.map(b => [b.startMin, b.endMin]);
+
+  // Build time_pinned list — only entries with an actual target time
+  const time_pinned = Object.values(state.timePinned)
+    .filter(p => p.targetMinutes !== null)
+    .map(p => ({
+      ride_key:       p.rideId,
+      instance_index: p.instanceIndex,
+      target_minutes: p.targetMinutes,
+    }));
 
   triggerBtn.classList.add('flash');
   routePlaceholderEl.textContent = 'Generating…';
@@ -617,23 +654,29 @@ async function generateRoute(triggerBtn) {
         ride_counts, ride_locked, closed_ride_keys, breaks,
         start_key: state.selectedStart,
         live_waits: state.liveWaits,
+        time_pinned,
       }),
     });
 
     const data = await res.json().catch(() => null);
-
-    if (!res.ok) {
-      const message = (data && data.error) ? data.error : `route request failed: ${res.status}`;
-      throw new Error(message);
-    }
-    if (!Array.isArray(data)) {
-      throw new Error('Unexpected response from route service.');
-    }
+    if (!res.ok) throw new Error((data && data.error) ? data.error : `route request failed: ${res.status}`);
+    if (!Array.isArray(data)) throw new Error('Unexpected response from route service.');
 
     state.route = data.map(extractRideIdAndWait);
 
+    // Remap timePinned keys to new route's instance indices
+    const newTP = {}, ic = {};
+    for (let idx = 0; idx < state.route.length; idx++) {
+      const rid  = state.route[idx].rideId;
+      const inst = ic[rid] || 0;
+      ic[rid] = inst + 1;
+      const key = getUniqueKey(rid, inst);
+      if (state.timePinned[key]) newTP[key] = { ...state.timePinned[key], instanceIndex: inst };
+    }
+    state.timePinned = newTP;
+
     if (!state.route.length) {
-      routePlaceholderEl.textContent = 'Nothing fit before closing — try uncheck a few rides or start earlier.';
+      routePlaceholderEl.textContent = 'Nothing fit before closing — try unchecking a few rides or starting earlier.';
     }
   } catch (err) {
     console.error(err);

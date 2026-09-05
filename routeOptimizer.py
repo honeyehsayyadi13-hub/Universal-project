@@ -857,10 +857,61 @@ def get_current_waits():
         id_to_key[db_id]: reading
         for db_id, reading in latest_by_db_id.items()
     }
+
+
+
+def _reorder_for_time_pins(order, pin_targets, histories, walk_map, durations,
+                            start_time, closing_time, break_windows, start_db_id,
+                            current_waits=None, historical_now_by_id=None):
+    """
+    pin_targets: { (db_id, instance_index): target_minutes_since_midnight }
+
+    For each pinned stop, tries every insertion position and picks the one
+    where predicted queue-join time is closest to target_minutes, without
+    reducing fits_count. Processes each pin against the already-updated order
+    so multi-pin interactions are handled correctly.
+    """
+    order = list(order)
+    if not order or not pin_targets:
+        return order
+
+    fits_baseline, _, _ = _route_score(
+        order, histories, walk_map, durations, start_time, closing_time,
+        break_windows, start_db_id, current_waits=current_waits,
+        historical_now_by_id=historical_now_by_id,
+    )
+
+    for (db_id, inst_idx), target_minutes in sorted(pin_targets.items()):
+        occurrences = [i for i, x in enumerate(order) if x == db_id]
+        if inst_idx >= len(occurrences):
+            continue
+        src_pos = occurrences[inst_idx]
+
+        order_without = order[:src_pos] + order[src_pos + 1:]
+        best_pos, best_dist = src_pos, float('inf')
+
+        for pos in range(len(order_without) + 1):
+            candidate = order_without[:pos] + [db_id] + order_without[pos:]
+            fits, _, details = _route_score(
+                candidate, histories, walk_map, durations, start_time, closing_time,
+                break_windows, start_db_id, current_waits=current_waits,
+                historical_now_by_id=historical_now_by_id,
+            )
+            if fits < fits_baseline or pos >= len(details):
+                continue
+            qjc = details[pos]['queue_join_clock']
+            dist = abs(qjc.hour * 60 + qjc.minute - target_minutes)
+            if dist < best_dist:
+                best_dist, best_pos = dist, pos
+
+        order = order_without[:best_pos] + [db_id] + order_without[best_pos:]
+
+    return order
+
 # ── public entry point ──────────────────────────────────────────────
 def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None,
                              breaks=None, start_time=None, start_key="entrance",
-                             live_waits=None):
+                             live_waits=None, time_pinned=None):
     """
     ride_counts:      {ride_key: count} for every CHECKED ride. Anything
                        with count 0 (or missing) is treated as unchecked.
@@ -900,7 +951,15 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
         Supabase was unreachable) -- callers should treat None as "no
         change" rather than "empty route".
     """
-    ride_locked = ride_locked or {}
+    ride_locked = dict(ride_locked or {})   # mutable copy
+
+    # Time-pinned rides are force-included (treated as locked)
+    if time_pinned:
+        for pin in time_pinned:
+            key = pin.get('ride_key')
+            if key and key not in ride_locked:
+                ride_locked[key] = True
+
     closed_ride_keys = set(closed_ride_keys or [])
     breaks = breaks or []
 
@@ -1020,6 +1079,21 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
         start_time, closing_time, break_windows, start_db_id,
         current_waits=current_waits, historical_now_by_id=historical_now_by_id
     )
+    # Honor time-pin placement requests
+    if time_pinned:
+        pin_targets = {}
+        for pin in time_pinned:
+            key  = pin.get('ride_key')
+            inst = pin.get('instance_index', 0)
+            tmin = pin.get('target_minutes')
+            if key and key in key_to_id and tmin is not None and key in checked:
+                pin_targets[(key_to_id[key], inst)] = tmin
+        if pin_targets:
+            final_order = _reorder_for_time_pins(
+                final_order, pin_targets, histories, walk_map, durations,
+                start_time, closing_time, break_windows, start_db_id,
+                current_waits=current_waits, historical_now_by_id=historical_now_by_id,
+            )
 
     _, details = _simulate_route(final_order, histories, walk_map, durations, start_time, break_windows, start_db_id,
                                   current_waits=current_waits, historical_now_by_id=historical_now_by_id)
@@ -1080,7 +1154,9 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
     # can render it (e.g. in the top route bar), without needing to know
     # anything about db_ids.
     return [
-        (id_to_key.get(d["db_id"], str(d["db_id"])), d["predicted_wait"])
+        (id_to_key.get(d["db_id"], str(d["db_id"])),
+         d["predicted_wait"],
+         d["queue_join_clock"].hour * 60 + d["queue_join_clock"].minute)
         for d in committed
     ]
 
