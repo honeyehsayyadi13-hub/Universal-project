@@ -354,10 +354,14 @@ input { font-family: inherit; }
 
 .route-cta--compact {
   margin-top: 0;
-  padding: 10px 16px;
-  font-size: 13.5px;
+  padding: 10px 6px;
+  font-size: 13px;
+  line-height: 1.25;
   flex-shrink: 0;
-  white-space: nowrap;
+  white-space: normal;
+  width: 52px;
+  text-align: center;
+  align-self: flex-start;
 }
 
 /* ═══════════════ TOGGLES ═══════════════ */
@@ -413,15 +417,16 @@ input { font-family: inherit; }
 }
 
 #topBar {
-  --topbar-h: 108px;
+  --topbar-h: 50vh;
   height: var(--topbar-h);
   background: var(--paper);
   border-bottom: 2px solid var(--paper-line);
   display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 0 16px;
-  overflow: hidden;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  overflow-y: auto;
+  overflow-x: hidden;
   transition: height 0.28s ease, padding 0.28s ease;
   flex-shrink: 0;
 }
@@ -449,17 +454,19 @@ input { font-family: inherit; }
 
 #routeItems {
   display: none;
-  align-items: center;
-  gap: 20px;
-  padding: 8px 0;
+  width: 100%;
+  padding: 4px 0;
 }
 
-#routeItems.active { display: flex; }
+#routeItems.active {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
 
 .route-stop {
   display: flex;
-  align-items: center;
-  gap: 20px;
+  justify-content: center;
   flex-shrink: 0;
 }
 
@@ -469,11 +476,13 @@ input { font-family: inherit; }
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
+  width: 100%;
 }
 
 .route-pill {
-  width: 58px;
-  height: 58px;
+  width: 100%;
+  aspect-ratio: 1;
+  max-width: 70px;
   border-radius: var(--radius-md);
   background: var(--white);
   border: 1px solid var(--paper-line);

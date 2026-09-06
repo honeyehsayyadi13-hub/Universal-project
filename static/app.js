@@ -671,12 +671,7 @@ function renderRouteBar() {
     card.append(pill, chip, remove);
     wrap.appendChild(card);
 
-    if (i < state.route.length - 1) {
-      const arrow = document.createElement('span');
-      arrow.className = 'route-arrow';
-      arrow.textContent = '→';
-      wrap.appendChild(arrow);
-    }
+
     routeItemsEl.appendChild(wrap);
   });
 }
