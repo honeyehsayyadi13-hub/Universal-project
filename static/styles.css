@@ -421,10 +421,11 @@ input { font-family: inherit; }
   align-items: stretch;
   gap: 8px;
   padding: 10px 12px 12px;
-  overflow: hidden;
   transition: max-height 0.28s ease, padding 0.28s ease;
   flex-shrink: 0;
-  max-height: 80vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  max-height: calc(100vh - 44px); /* 44px = room for the toggle button */
 }
 
 #topBar.collapsed {
@@ -432,6 +433,7 @@ input { font-family: inherit; }
   padding-top: 0;
   padding-bottom: 0;
   border-bottom-width: 0;
+  overflow: hidden;
 }
 
 #routeTrack {
