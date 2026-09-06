@@ -626,11 +626,11 @@ function renderRouteBar() {
       + (isLocked ? ' time-locked' : isHighlighted ? ' highlighted' : '');
 
     // Click pill: toggle cosmetic highlight / remove time-lock
-    let pointerMoved = false;
-    pill.addEventListener('pointerdown', () => { pointerMoved = false; });
-    pill.addEventListener('pointermove', () => { pointerMoved = true; });
-    pill.addEventListener('pointerup', () => {
-      if (pointerMoved) return;
+    let pointerDownX = 0, pointerDownY = 0;
+    pill.addEventListener('pointerdown', e => { pointerDownX = e.clientX; pointerDownY = e.clientY; });
+    pill.addEventListener('pointerup', e => {
+      const dist = Math.hypot(e.clientX - pointerDownX, e.clientY - pointerDownY);
+      if (dist > 8) return;
       if (pinEntry) {
         delete state.timePinned[uniqueKey];
       } else {
