@@ -715,7 +715,16 @@ function extractRideIdAndWait(entry) {
   }
   return { rideId: entry, predictedWait: null, queueJoinMinutes: null };
 }
+
+let routeGenerating = false;
+
 async function generateRoute(triggerBtn) {
+  if (routeGenerating) return;
+  routeGenerating = true;
+
+  const btns = [document.getElementById('getRouteBtn'), document.getElementById('generateRouteBtn')];
+  btns.forEach(b => { if (b) b.disabled = true; });
+
   const ride_counts = {};
   RIDES.forEach(r => { if (state.visible[r.id] && state.counts[r.id] > 0) ride_counts[r.id] = state.counts[r.id]; });
 
@@ -725,7 +734,6 @@ async function generateRoute(triggerBtn) {
   const closed_ride_keys = RIDES.filter(r => state.liveOpen[r.id] === false).map(r => r.id);
   const breaks = state.breaks.map(b => [b.startMin, b.endMin]);
 
-  // Build time_pinned list — only entries with an actual target time
   const time_pinned = Object.values(state.timePinned)
     .filter(p => p.targetMinutes !== null)
     .map(p => ({
@@ -735,9 +743,12 @@ async function generateRoute(triggerBtn) {
     }));
 
   triggerBtn.classList.add('flash');
-  routePlaceholderEl.textContent = 'Generating…';
-  routePlaceholderEl.style.display = state.route.length ? 'none' : 'block';
   setTimeout(() => triggerBtn.classList.remove('flash'), 220);
+
+  // Always show a loading state regardless of whether a route already exists
+  routePlaceholderEl.textContent = 'Generating…';
+  routePlaceholderEl.style.display = 'block';
+  routeItemsEl.classList.remove('active');
 
   try {
     const res = await fetch(`${API_BASE}/api/route`, {
@@ -776,6 +787,8 @@ async function generateRoute(triggerBtn) {
     state.route = [];
     routePlaceholderEl.textContent = `Couldn't generate a route: ${err.message}`;
   } finally {
+    routeGenerating = false;
+    btns.forEach(b => { if (b) b.disabled = false; });
     renderRouteBar();
   }
 }
