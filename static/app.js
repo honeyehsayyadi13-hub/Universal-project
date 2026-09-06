@@ -83,6 +83,42 @@ function getInstanceIndex(route, pos) {
 function getUniqueKey(rideId, instanceIndex) { return `${rideId}:${instanceIndex}`; }
 let breakIdCounter = 0;
 let dragSrcIdx = null;
+let touchDragSrcIdx = null;
+let touchDragClone   = null;
+let touchStartX = 0, touchStartY = 0;
+let touchDragging = false;
+
+function executeDrop(srcIdx, destIdx) {
+  if (srcIdx === null || destIdx === null || srcIdx === destIdx) return;
+
+  // First and last positions get sentinel targetMinutes so _reorder_for_time_pins
+  // always places them at the extreme end of the day, keeping them there.
+  const isFirst = destIdx === 0;
+  const isLast  = destIdx === state.route.length - 1;
+  const targetMinutes = isFirst ? 0
+                      : isLast  ? 1440
+                      : (state.route[destIdx]?.queueJoinMinutes ?? null);
+
+  // Remove stale time-pin for the dragged stop
+  const srcInstIdx = getInstanceIndex(state.route, srcIdx);
+  const oldKey = getUniqueKey(state.route[srcIdx].rideId, srcInstIdx);
+  delete state.timePinned[oldKey];
+
+  // Reorder — moved always lands at index destIdx in the final array
+  const moved = state.route.splice(srcIdx, 1)[0];
+  state.route.splice(destIdx, 0, moved);
+
+  // Attach time-pin at new position
+  const newInstIdx = getInstanceIndex(state.route, destIdx);
+  const newKey = getUniqueKey(moved.rideId, newInstIdx);
+  state.timePinned[newKey] = {
+    rideId:        moved.rideId,
+    instanceIndex: newInstIdx,
+    targetMinutes,
+  };
+
+  renderRouteBar();
+}
 
 const startOptions = [{ id: 'entrance', label: 'Entrance' },
   ...RIDES.map(r => ({ id: r.id, label: r.name }))];
@@ -467,7 +503,7 @@ function renderRouteBar() {
     wrap.draggable = true;
     wrap.dataset.idx = i;
 
-    // ── drag events ──────────────────────────────────────────────
+    // ── mouse drag events ────────────────────────────────────────
     wrap.addEventListener('dragstart', e => {
       dragSrcIdx = i;
       wrap.classList.add('dragging');
@@ -494,31 +530,88 @@ function renderRouteBar() {
     wrap.addEventListener('drop', e => {
       e.preventDefault();
       wrap.classList.remove('drag-over');
-      if (dragSrcIdx === null || dragSrcIdx === i) return;
-
-      // Capture destination time BEFORE we mutate the array
-      const targetMinutes = state.route[i]?.queueJoinMinutes ?? null;
-
-      // Remove old pin entry for the dragged stop
-      const srcInstIdx = getInstanceIndex(state.route, dragSrcIdx);
-      const oldKey = getUniqueKey(state.route[dragSrcIdx].rideId, srcInstIdx);
-      delete state.timePinned[oldKey];
-
-      // Reorder
-      const moved = state.route.splice(dragSrcIdx, 1)[0];
-      state.route.splice(i, 0, moved);
-
-      // Set time pin at new position
-      const newInstIdx = getInstanceIndex(state.route, i);
-      const newKey = getUniqueKey(moved.rideId, newInstIdx);
-      state.timePinned[newKey] = {
-        rideId: moved.rideId,
-        instanceIndex: newInstIdx,
-        targetMinutes,
-      };
-
+      const src = dragSrcIdx;
       dragSrcIdx = null;
-      renderRouteBar();
+      executeDrop(src, i);
+    });
+
+    // ── touch drag events (mobile) ───────────────────────────────
+    wrap.addEventListener('touchstart', e => {
+      const touch = e.touches[0];
+      touchStartX     = touch.clientX;
+      touchStartY     = touch.clientY;
+      touchDragSrcIdx = i;
+      touchDragging   = false;
+    }, { passive: true });
+
+    wrap.addEventListener('touchmove', e => {
+      if (touchDragSrcIdx === null) return;
+      const touch = e.touches[0];
+      const dx = touch.clientX - touchStartX;
+      const dy = touch.clientY - touchStartY;
+
+      if (!touchDragging) {
+        if (Math.hypot(dx, dy) < 8) return;     // below movement threshold — not a drag yet
+        if (Math.abs(dy) > Math.abs(dx)) {       // primarily vertical — let the page scroll
+          touchDragSrcIdx = null;
+          return;
+        }
+        touchDragging = true;
+        wrap.classList.add('dragging');
+
+        // Visual ghost that follows the finger
+        touchDragClone = wrap.cloneNode(true);
+        Object.assign(touchDragClone.style, {
+          position: 'fixed', pointerEvents: 'none', opacity: '0.85',
+          zIndex: '9999', width: wrap.offsetWidth + 'px',
+          transform: 'scale(1.05)', transition: 'none',
+          left: (touch.clientX - wrap.offsetWidth / 2) + 'px',
+          top:  (touch.clientY - 30) + 'px',
+        });
+        document.body.appendChild(touchDragClone);
+      }
+
+      e.preventDefault();   // safe here — listener is passive:false
+
+      touchDragClone.style.left = (touch.clientX - touchDragClone.offsetWidth / 2) + 'px';
+      touchDragClone.style.top  = (touch.clientY - 30) + 'px';
+
+      // Highlight the stop the finger is currently over
+      if (touchDragClone) touchDragClone.style.visibility = 'hidden';
+      const el = document.elementFromPoint(touch.clientX, touch.clientY);
+      if (touchDragClone) touchDragClone.style.visibility = '';
+      const overStop = el?.closest('.route-stop');
+      document.querySelectorAll('.route-stop').forEach(s => s.classList.remove('drag-over'));
+      if (overStop && overStop !== wrap) overStop.classList.add('drag-over');
+
+    }, { passive: false });
+
+    wrap.addEventListener('touchend', e => {
+      if (!touchDragging) {
+        // Was a tap — pill's pointerup handler takes care of highlight toggle
+        touchDragSrcIdx = null;
+        return;
+      }
+
+      const touch = e.changedTouches[0];
+
+      // Hide clone before elementFromPoint so we see what's underneath
+      if (touchDragClone) touchDragClone.style.visibility = 'hidden';
+      const el = document.elementFromPoint(touch.clientX, touch.clientY);
+      touchDragClone?.remove();
+      touchDragClone = null;
+
+      wrap.classList.remove('dragging');
+      document.querySelectorAll('.route-stop').forEach(s => s.classList.remove('drag-over'));
+
+      const overStop = el?.closest('.route-stop');
+      const dropIdx  = overStop ? parseInt(overStop.dataset.idx) : -1;
+
+      const src = touchDragSrcIdx;
+      touchDragSrcIdx = null;
+      touchDragging   = false;
+
+      if (dropIdx >= 0 && dropIdx !== src) executeDrop(src, dropIdx);
     });
 
     // ── card ─────────────────────────────────────────────────────
