@@ -353,15 +353,11 @@ input { font-family: inherit; }
 .route-cta.flash  { background: var(--success) !important; }
 
 .route-cta--compact {
-  margin-top: 0;
-  padding: 10px 6px;
-  font-size: 13px;
-  line-height: 1.25;
-  flex-shrink: 0;
-  white-space: normal;
-  width: 52px;
-  text-align: center;
-  align-self: flex-start;
+  margin-top: 4px;
+  padding: 10px 16px;
+  font-size: 13.5px;
+  align-self: center;
+  white-space: nowrap;
 }
 
 /* ═══════════════ TOGGLES ═══════════════ */
@@ -396,9 +392,11 @@ input { font-family: inherit; }
 #sidebar.collapsed ~ .edge-toggle--left svg { transform: rotate(180deg); }
 
 .edge-toggle--top {
-  left: 50%; top: var(--topbar-h, 108px);
+  left: 50%;
+  top: 0;
   transform: translate(-50%, -50%);
-  width: 58px; height: 22px;
+  width: 58px;
+  height: 22px;
   border-radius: 8px;
   transition: top 0.28s ease;
 }
@@ -417,31 +415,29 @@ input { font-family: inherit; }
 }
 
 #topBar {
-  --topbar-h: 50vh;
-  height: var(--topbar-h);
   background: var(--paper);
   border-bottom: 2px solid var(--paper-line);
   display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 10px 12px;
-  overflow-y: auto;
-  overflow-x: hidden;
-  transition: height 0.28s ease, padding 0.28s ease;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 10px 12px 12px;
+  overflow: hidden;
+  transition: max-height 0.28s ease, padding 0.28s ease;
   flex-shrink: 0;
+  max-height: 80vh;
 }
 
-#topBar.collapsed { height: 0; padding-top: 0; padding-bottom: 0; border-bottom-width: 0; }
+#topBar.collapsed {
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-bottom-width: 0;
+}
 
 #routeTrack {
   flex: 1;
   min-width: 0;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: thin;
 }
 
 #routePlaceholder {
@@ -475,11 +471,11 @@ input { font-family: inherit; }
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  flex-shrink: 0;
   width: 100%;
 }
 
 .route-pill {
+  position: relative;
   width: 100%;
   aspect-ratio: 1;
   max-width: 70px;
@@ -556,7 +552,7 @@ input { font-family: inherit; }
 .stop-remove:hover { background: var(--danger); color: var(--white); }
 
 .route-arrow { color: var(--ink-soft); font-size: 18px; font-weight: 700; flex-shrink: 0; }
-
+.route-arrow { display: none; }
 #mapViewport {
   flex: 1;
   min-height: 0;

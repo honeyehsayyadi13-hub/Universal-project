@@ -477,6 +477,13 @@ document.addEventListener('click', e => {
 });
 
 // ═══════════════ TOP ROUTE BAR ═══════════════
+function updateTopBarToggle() {
+  const toggle = document.getElementById('topBarToggle');
+  if (!toggle) return;
+  const h = topBarEl.classList.contains('collapsed') ? 0 : topBarEl.offsetHeight;
+  toggle.style.top = h + 'px';
+}
+
 function renderRouteBar() {
   if (!state.route.length) {
     routePlaceholderEl.style.display = 'block';
@@ -674,6 +681,7 @@ function renderRouteBar() {
 
     routeItemsEl.appendChild(wrap);
   });
+  requestAnimationFrame(updateTopBarToggle);
 }
 
 // ═══════════════ ROUTE GENERATION ═══════════════
@@ -824,8 +832,10 @@ async function pollStatus() {
 // ═══════════════ COLLAPSE TOGGLES ═══════════════
 
 $('#sidebarToggle').addEventListener('click', () => sidebarEl.classList.toggle('collapsed'));
-$('#topBarToggle').addEventListener('click', () => topBarEl.classList.toggle('collapsed'));
-
+$('#topBarToggle').addEventListener('click', () => {
+  topBarEl.classList.toggle('collapsed');
+  setTimeout(updateTopBarToggle, 300);
+});
 // ═══════════════ INIT ═══════════════
 
 function init() {
@@ -836,7 +846,10 @@ function init() {
   renderRouteBar();
   pollStatus();
   setInterval(pollStatus, STATUS_POLL_MS);
-  window.addEventListener('resize', () => { if (popupState.rideId) hidePopup(); });
+  window.addEventListener('resize', () => {
+  if (popupState.rideId) hidePopup();
+  updateTopBarToggle();
+});
 }
 
 init();
