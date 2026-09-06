@@ -398,7 +398,6 @@ input { font-family: inherit; }
   width: 58px;
   height: 22px;
   border-radius: 8px;
-  transition: top 0.28s ease;
 }
 
 #topBar.collapsed ~ .edge-toggle--top svg { transform: rotate(180deg); }
