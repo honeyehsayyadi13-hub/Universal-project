@@ -71,6 +71,9 @@ const state = {
   liveWaits: {},         // rideId -> minutes|null
   liveOpen: {},           // rideId -> bool|null
   timePinned: {},
+  maxCounts: Object.fromEntries(RIDES.map(r => [r.id, Infinity])),
+  maxBeforeInfinity: Object.fromEntries(RIDES.map(r => [r.id, 0])),
+  maxWasZeroBeforeLock: Object.fromEntries(RIDES.map(r => [r.id, false])),
 };
 
 function getInstanceIndex(route, pos) {
@@ -143,7 +146,10 @@ function addPreset() {
     breaks: JSON.parse(JSON.stringify(state.breaks)),
     selectedStart: state.selectedStart,
     timePinned: JSON.parse(JSON.stringify(state.timePinned)),
-  });
+    maxCounts: Object.fromEntries(Object.entries(state.maxCounts).map(([k,v]) => [k, v === Infinity ? null : v])),
+    maxBeforeInfinity: { ...state.maxBeforeInfinity },
+    maxWasZeroBeforeLock: { ...state.maxWasZeroBeforeLock },
+    });
   selectedPresetId = presetIdCounter;
   savePresets();
   renderPresetDropdown();
@@ -169,6 +175,12 @@ function applyPreset(id) {
   state.breaks = JSON.parse(JSON.stringify(p.breaks));
   state.selectedStart = p.selectedStart;
   state.timePinned = JSON.parse(JSON.stringify(p.timePinned || {}));
+  RIDES.forEach(r => {
+    const savedMax = (p.maxCounts || {})[r.id];
+    state.maxCounts[r.id] = (savedMax === null || savedMax === undefined) ? Infinity : savedMax;
+    state.maxBeforeInfinity[r.id] = (p.maxBeforeInfinity || {})[r.id] ?? 0;
+    state.maxWasZeroBeforeLock[r.id] = (p.maxWasZeroBeforeLock || {})[r.id] ?? false;
+  });
   selectedPresetId = p.id;
   renderStartDropdown();
   renderSidebarList();
@@ -354,6 +366,7 @@ function renderSidebarList() {
     name.className = 'ride-name';
     name.textContent = r.name.replace(/\n/g, ' ');
 
+    // ── min (white) spinner ──────────────────────────────────────
     const spinner = document.createElement('div');
     spinner.className = 'spinner';
 
@@ -365,7 +378,13 @@ function renderSidebarList() {
       const old = state.counts[r.id];
       const next = Math.max(0, old - 1);
       state.counts[r.id] = next;
-      if (old === 2 && next === 1) state.locked[r.id] = state.lockBeforeBump[r.id];
+      if (old === 2 && next === 1) {
+        state.locked[r.id] = state.lockBeforeBump[r.id];
+        if (!state.lockBeforeBump[r.id] && state.maxWasZeroBeforeLock[r.id]) {
+          state.maxCounts[r.id] = 0;
+          state.maxWasZeroBeforeLock[r.id] = false;
+        }
+      }
       if (next === 0 && old > 0) {
         state.lastCount[r.id] = old;
         state.visible[r.id] = false;
@@ -387,13 +406,70 @@ function renderSidebarList() {
       const old = state.counts[r.id];
       state.counts[r.id] = old + 1;
       if (!state.visible[r.id]) state.visible[r.id] = true;
-      if (old === 1) { state.lockBeforeBump[r.id] = state.locked[r.id]; state.locked[r.id] = true; }
+      if (old === 1) {
+        state.lockBeforeBump[r.id] = state.locked[r.id];
+        state.locked[r.id] = true;
+        if (state.maxCounts[r.id] === 0) {
+          state.maxWasZeroBeforeLock[r.id] = true;
+          state.maxCounts[r.id] = 1;
+        } else {
+          state.maxWasZeroBeforeLock[r.id] = false;
+        }
+      }
       renderSidebarList();
       renderPins();
     });
 
     spinner.append(down, count, up);
 
+    // ── max (maroon) spinner ─────────────────────────────────────
+    const maxSpinner = document.createElement('div');
+    maxSpinner.className = 'spinner';
+
+    const maxDown = document.createElement('button');
+    maxDown.className = 'spin-btn max-spin-btn';
+    maxDown.disabled = state.maxCounts[r.id] !== Infinity && (
+      state.maxCounts[r.id] === 0 ||
+      (state.locked[r.id] && state.maxCounts[r.id] <= 1)
+    );
+    maxDown.innerHTML = '<svg viewBox="0 0 10 10"><polygon points="1,2 9,2 5,8"/></svg>';
+    maxDown.addEventListener('click', () => {
+      const floor = state.locked[r.id] ? 1 : 0;
+      if (state.maxCounts[r.id] === Infinity) {
+        state.maxCounts[r.id] = Math.max(floor, state.maxBeforeInfinity[r.id] || 0);
+      } else {
+        state.maxCounts[r.id] = Math.max(floor, state.maxCounts[r.id] - 1);
+      }
+      renderSidebarList();
+    });
+
+    const maxCountEl = document.createElement('span');
+    maxCountEl.className = 'spin-count max-count';
+    maxCountEl.textContent = state.maxCounts[r.id] === Infinity ? '∞' : state.maxCounts[r.id];
+
+    const maxUp = document.createElement('button');
+    maxUp.className = 'spin-btn max-spin-btn';
+    maxUp.innerHTML = '<svg viewBox="0 0 10 10"><polygon points="1,8 9,8 5,2"/></svg>';
+    maxUp.addEventListener('click', () => {
+      if (state.maxCounts[r.id] !== Infinity) state.maxCounts[r.id]++;
+      renderSidebarList();
+    });
+
+    maxSpinner.append(maxDown, maxCountEl, maxUp);
+
+    const infBtn = document.createElement('button');
+    infBtn.className = 'infinity-btn' + (state.maxCounts[r.id] === Infinity ? ' active' : '');
+    infBtn.textContent = '∞';
+    infBtn.title = 'No maximum';
+    infBtn.addEventListener('click', () => {
+      if (state.maxCounts[r.id] !== Infinity) {
+        state.maxBeforeInfinity[r.id] = state.maxCounts[r.id];
+        state.maxCounts[r.id] = Infinity;
+        renderSidebarList();
+      }
+    });
+
+    // ── lock button ──────────────────────────────────────────────
     const lockable = state.visible[r.id] && state.counts[r.id] > 0;
     if (!lockable) state.locked[r.id] = false;
     const lock = document.createElement('button');
@@ -403,11 +479,25 @@ function renderSidebarList() {
       : '<svg viewBox="0 0 14 14"><rect x="3" y="6" width="8" height="6" rx="1"/><path d="M4.5 6V4a2.5 2.5 0 0 1 5 0"/></svg>';
     lock.addEventListener('click', () => {
       if (!lockable) return;
-      state.locked[r.id] = !state.locked[r.id];
+      const newLocked = !state.locked[r.id];
+      state.locked[r.id] = newLocked;
+      if (newLocked) {
+        if (state.maxCounts[r.id] === 0) {
+          state.maxWasZeroBeforeLock[r.id] = true;
+          state.maxCounts[r.id] = 1;
+        } else {
+          state.maxWasZeroBeforeLock[r.id] = false;
+        }
+      } else {
+        if (state.maxWasZeroBeforeLock[r.id]) {
+          state.maxCounts[r.id] = 0;
+          state.maxWasZeroBeforeLock[r.id] = false;
+        }
+      }
       renderSidebarList();
     });
 
-    row.append(cb, name, spinner, lock);
+    row.append(cb, name, spinner, maxSpinner, infBtn, lock);
     sidebarListEl.appendChild(row);
   });
 }
@@ -653,15 +743,20 @@ function renderRouteBar() {
     const remove = document.createElement('button');
     remove.className = 'stop-remove';
     remove.textContent = '✕';
-    remove.addEventListener('click', () => {
-      // Remove all time pins for this rideId (filter removes every instance)
-      for (const key of Object.keys(state.timePinned)) {
-        if (key.startsWith(`${stop.rideId}:`)) delete state.timePinned[key];
+        remove.addEventListener('click', () => {
+      delete state.timePinned[uniqueKey];
+      state.route.splice(i, 1);
+      const remaining = state.route.filter(s => s.rideId === stop.rideId).length;
+      if (remaining > 0) {
+        state.maxBeforeInfinity[stop.rideId] = remaining;
+        state.maxCounts[stop.rideId] = remaining;
+      } else {
+        state.maxCounts[stop.rideId] = Infinity;
+        state.maxBeforeInfinity[stop.rideId] = 0;
+        state.visible[stop.rideId] = false;
+        state.locked[stop.rideId] = false;
+        state.counts[stop.rideId] = 0;
       }
-      state.route = state.route.filter(s => s.rideId !== stop.rideId);
-      state.visible[stop.rideId] = false;
-      state.locked[stop.rideId] = false;
-      state.counts[stop.rideId] = 0;
       renderRouteBar();
       renderSidebarList();
       renderPins();
@@ -753,6 +848,11 @@ async function generateRoute(triggerBtn) {
         start_key: state.selectedStart,
         live_waits: state.liveWaits,
         time_pinned,
+        max_counts: Object.fromEntries(
+          RIDES
+            .filter(r => state.visible[r.id] && state.counts[r.id] > 0)
+            .map(r => [r.id, state.maxCounts[r.id] === Infinity ? null : state.maxCounts[r.id]])
+        ),
       }),
     });
 

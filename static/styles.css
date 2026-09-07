@@ -14,12 +14,14 @@
   --success-dark:#237A50;
   --danger:      #D65C4F;
   --danger-dark: #B4463B;
+  --maroon:      #7A2020;
+  --maroon-dark: #5C1818;
   --white:       #FFFFFF;
   --shadow:      0 4px 14px rgba(16, 32, 47, 0.28);
   --radius-sm:   6px;
   --radius-md:   10px;
   --radius-lg:   16px;
-  --sidebar-w:   270px;
+  --sidebar-w:   360px;
 }
 
 * { box-sizing: border-box; }
@@ -307,7 +309,36 @@ input { font-family: inherit; }
 }
 
 .spin-btn:disabled { opacity: 0.35; cursor: default; }
+.spin-btn.max-spin-btn {
+  background: var(--maroon);
+  border-color: var(--maroon-dark);
+}
+.spin-btn.max-spin-btn svg { fill: var(--white); }
+.spin-btn.max-spin-btn:disabled { opacity: 0.35; cursor: default; }
 
+.max-count { color: #FF9595; }
+
+.infinity-btn {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  border: 1px solid var(--maroon-dark);
+  background: var(--maroon);
+  color: var(--white);
+  font-size: 10px;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+}
+.infinity-btn:hover { background: var(--maroon-dark); }
+.infinity-btn.active {
+  background: var(--maroon-dark);
+  box-shadow: 0 0 0 1.5px #FF9595;
+}
 .spin-btn svg { width: 8px; height: 8px; fill: var(--ink); }
 
 .spin-count {
@@ -384,7 +415,7 @@ input { font-family: inherit; }
 .edge-toggle--left {
   top: 50%; left: var(--sidebar-w);
   transform: translate(0, -50%);
-  width: 38px; height: 73px;
+  width: 36px; height: 70px;
   border-radius: 10px;
   transition: left 0.28s ease;
 }
@@ -395,7 +426,7 @@ input { font-family: inherit; }
 .edge-toggle--top {
   position: relative;
   align-self: center;
-  width: 73px; height: 38px;
+  width: 70px; height: 38px;
   border-radius: 10px;
   flex-shrink: 0;
 }
@@ -639,7 +670,7 @@ input { font-family: inherit; }
 /* ═══════════════ RESPONSIVE ═══════════════ */
 
 @media (max-width: 760px) {
-  :root { --sidebar-w: 84vw; }
+  :root { --sidebar-w: calc(100vw - 36px); }
   #sidebar { position: absolute; inset: 0 auto 0 0; height: 100%; }
   .edge-toggle--left { left: var(--sidebar-w); }
 }

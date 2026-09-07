@@ -51,7 +51,8 @@ def route():
             start_key=payload.get("start_key", "entrance"),
             live_waits=payload.get("live_waits"),
             time_pinned=payload.get("time_pinned"),
-        )
+            max_counts=payload.get("max_counts"),
+            )
     except Exception as e:
         app.logger.exception("route computation failed")
         return jsonify({"error": str(e)}), 500

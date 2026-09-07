@@ -662,7 +662,7 @@ def _insert_optional(base_order, optional_items, histories, walk_map, durations,
 # ── fill remaining daylight (re-ride until close, keeping variety) ────
 def _fill_until_close(order, candidate_ids, weights, histories, walk_map, durations,
                        start_time, closing_time, break_windows, start_db_id,
-                       current_waits=None, historical_now_by_id=None):
+                       current_waits=None, historical_now_by_id=None, max_counts_by_id=None):
     """
     Keeps the plan going after every locked/counted/optional ride has
     already been scheduled once. Rather than stopping the instant the
@@ -738,6 +738,9 @@ def _fill_until_close(order, candidate_ids, weights, histories, walk_map, durati
 
         placed = False
         for db_id in ranked:
+            max_for_db = (max_counts_by_id or {}).get(db_id, float('inf'))
+            if visit_counts[db_id] >= max_for_db:
+                continue  # at or over max for this ride
             candidate = order + [db_id]
             _, cand_details = _simulate_route(
                 candidate, histories, walk_map, durations, start_time, break_windows, start_db_id,
@@ -911,7 +914,7 @@ def _reorder_for_time_pins(order, pin_targets, histories, walk_map, durations,
 # ── public entry point ──────────────────────────────────────────────
 def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None,
                              breaks=None, start_time=None, start_key="entrance",
-                             live_waits=None, time_pinned=None):
+                             live_waits=None, time_pinned=None, max_counts=None):
     """
     ride_counts:      {ride_key: count} for every CHECKED ride. Anything
                        with count 0 (or missing) is treated as unchecked.
@@ -1037,17 +1040,32 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
     if closing_time <= start_time:
         print(f"\nHeads up: it's already past {closing_time.strftime('%I:%M %p')} closing time.\n")
 
+    # Convert max_counts (ride_key → int|None) to db_id keyed dict; None means no limit
+    max_counts_by_id = {}
+    if max_counts:
+        for key, max_val in max_counts.items():
+            if key in key_to_id and key in checked:
+                max_counts_by_id[key_to_id[key]] = float('inf') if max_val is None else float(max_val)
+
     # rule 2: split into forced (locked base + counted-up extras) vs optional
     locked_instances, extra_instances, optional_instances = [], [], []
     for key, count in checked.items():
         db_id = key_to_id[key]
+        max_for_ride = max_counts_by_id.get(db_id, float('inf'))
+        if max_for_ride == 0:
+            continue  # user set max to 0 — exclude entirely
         is_locked = bool(ride_locked.get(key))
         if is_locked:
             locked_instances.append({"db_id": db_id, "ride_key": key, "kind": "locked"})
         else:
             optional_instances.append({"db_id": db_id, "ride_key": key, "kind": "optional"})
-        for _ in range(count - 1):
+        # Extras capped so total visits (1 base + extras) ≤ max_for_ride
+        num_extras = count - 1
+        if max_for_ride != float('inf'):
+            num_extras = min(num_extras, max(0, int(max_for_ride) - 1))
+        for _ in range(num_extras):
             extra_instances.append({"db_id": db_id, "ride_key": key, "kind": "extra"})
+
 
     forced_pool = locked_instances + extra_instances
     kept_forced, dropped_forced, forced_order, _ = _fit_forced(
@@ -1077,7 +1095,8 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
     final_order = _fill_until_close(
         final_order, all_db_ids, fill_weights, histories, walk_map, durations,
         start_time, closing_time, break_windows, start_db_id,
-        current_waits=current_waits, historical_now_by_id=historical_now_by_id
+        current_waits=current_waits, historical_now_by_id=historical_now_by_id,
+        max_counts_by_id=max_counts_by_id,
     )
     # Honor time-pin placement requests
     if time_pinned:
