@@ -384,7 +384,7 @@ input { font-family: inherit; }
 .edge-toggle--left {
   top: 50%; left: var(--sidebar-w);
   transform: translate(0, -50%);
-  width: 40px; height: 40px;
+  width: 30px; height: 58px;
   border-radius: 10px;
   transition: left 0.28s ease;
 }
@@ -395,7 +395,7 @@ input { font-family: inherit; }
 .edge-toggle--top {
   position: relative;
   align-self: center;
-  width: 40px; height: 40px;
+  width: 58px; height: 30px;
   border-radius: 10px;
   flex-shrink: 0;
 }
@@ -421,7 +421,6 @@ input { font-family: inherit; }
   align-items: stretch;
   gap: 8px;
   padding: 10px 12px 12px;
-  transition: max-height 0.28s ease, padding 0.28s ease, border-bottom-width 0.28s ease;
   flex-shrink: 0;
   min-height: 0;
   overflow: hidden;

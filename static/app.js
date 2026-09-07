@@ -824,18 +824,32 @@ async function pollStatus() {
 
 $('#sidebarToggle').addEventListener('click', () => sidebarEl.classList.toggle('collapsed'));
 $('#topBarToggle').addEventListener('click', () => {
-  const collapsing = !topBarEl.classList.contains('collapsed');
-  if (collapsing) {
-    topBarEl.style.maxHeight = topBarEl.scrollHeight + 'px';
-    topBarEl.offsetHeight; // force reflow so the browser locks in that height first
-    topBarEl.classList.add('collapsed');
-  } else {
+  const collapsed = topBarEl.classList.contains('collapsed');
+  if (collapsed) {
+    // Expand: go from 0 to full content height, then clear the inline
+    // style so future content changes (e.g. a longer route) aren't stuck
+    // at a stale fixed height.
     topBarEl.classList.remove('collapsed');
-    topBarEl.style.maxHeight = topBarEl.scrollHeight + 'px';
+    const target = topBarEl.scrollHeight;
+    topBarEl.style.maxHeight = '0px';
+    topBarEl.style.transition = 'none';
+    topBarEl.offsetHeight; // reflow
+    topBarEl.style.transition = 'max-height 0.28s ease';
+    topBarEl.style.maxHeight = target + 'px';
     topBarEl.addEventListener('transitionend', function clear() {
       topBarEl.style.maxHeight = '';
+      topBarEl.style.transition = '';
       topBarEl.removeEventListener('transitionend', clear);
     });
+  } else {
+    // Collapse: lock in the current real height first, then animate to 0.
+    const current = topBarEl.scrollHeight;
+    topBarEl.style.transition = 'none';
+    topBarEl.style.maxHeight = current + 'px';
+    topBarEl.offsetHeight; // reflow
+    topBarEl.style.transition = 'max-height 0.28s ease';
+    topBarEl.style.maxHeight = '0px';
+    topBarEl.classList.add('collapsed');
   }
 });
 // ═══════════════ INIT ═══════════════
