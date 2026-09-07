@@ -384,7 +384,7 @@ input { font-family: inherit; }
 .edge-toggle--left {
   top: 50%; left: var(--sidebar-w);
   transform: translate(0, -50%);
-  width: 30px; height: 58px;
+  width: 38px; height: 73px;
   border-radius: 10px;
   transition: left 0.28s ease;
 }
@@ -395,7 +395,7 @@ input { font-family: inherit; }
 .edge-toggle--top {
   position: relative;
   align-self: center;
-  width: 58px; height: 30px;
+  width: 73px; height: 38px;
   border-radius: 10px;
   flex-shrink: 0;
 }
@@ -442,6 +442,7 @@ input { font-family: inherit; }
 }
 .route-cta--compact {
   flex-shrink: 0;
+  transition: opacity 0.15s ease;
 }
 #routePlaceholder {
   font-family: 'Baloo 2', sans-serif;

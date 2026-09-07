@@ -824,31 +824,31 @@ async function pollStatus() {
 
 $('#sidebarToggle').addEventListener('click', () => sidebarEl.classList.toggle('collapsed'));
 $('#topBarToggle').addEventListener('click', () => {
+  const compactBtn = document.getElementById('generateRouteBtn');
   const collapsed = topBarEl.classList.contains('collapsed');
   if (collapsed) {
-    // Expand: go from 0 to full content height, then clear the inline
-    // style so future content changes (e.g. a longer route) aren't stuck
-    // at a stale fixed height.
     topBarEl.classList.remove('collapsed');
     const target = topBarEl.scrollHeight;
     topBarEl.style.maxHeight = '0px';
+    if (compactBtn) compactBtn.style.opacity = '0';
     topBarEl.style.transition = 'none';
     topBarEl.offsetHeight; // reflow
     topBarEl.style.transition = 'max-height 0.28s ease';
     topBarEl.style.maxHeight = target + 'px';
+    if (compactBtn) compactBtn.style.opacity = '1';
     topBarEl.addEventListener('transitionend', function clear() {
       topBarEl.style.maxHeight = '';
       topBarEl.style.transition = '';
       topBarEl.removeEventListener('transitionend', clear);
     });
   } else {
-    // Collapse: lock in the current real height first, then animate to 0.
     const current = topBarEl.scrollHeight;
     topBarEl.style.transition = 'none';
     topBarEl.style.maxHeight = current + 'px';
     topBarEl.offsetHeight; // reflow
     topBarEl.style.transition = 'max-height 0.28s ease';
     topBarEl.style.maxHeight = '0px';
+    if (compactBtn) compactBtn.style.opacity = '0';
     topBarEl.classList.add('collapsed');
   }
 });
