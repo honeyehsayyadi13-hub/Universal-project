@@ -382,8 +382,8 @@ input { font-family: inherit; }
 
 .edge-toggle--left {
   top: 50%; left: var(--sidebar-w);
-  transform: translate(-50%, -50%);
-  width: 26px; height: 58px;
+  transform: translate(0, -50%);
+    width: 26px; height: 58px;
   border-radius: 8px;
   transition: left 0.28s ease;
 }
