@@ -824,7 +824,19 @@ async function pollStatus() {
 
 $('#sidebarToggle').addEventListener('click', () => sidebarEl.classList.toggle('collapsed'));
 $('#topBarToggle').addEventListener('click', () => {
-  topBarEl.classList.toggle('collapsed');
+  const collapsing = !topBarEl.classList.contains('collapsed');
+  if (collapsing) {
+    topBarEl.style.maxHeight = topBarEl.scrollHeight + 'px';
+    topBarEl.offsetHeight; // force reflow so the browser locks in that height first
+    topBarEl.classList.add('collapsed');
+  } else {
+    topBarEl.classList.remove('collapsed');
+    topBarEl.style.maxHeight = topBarEl.scrollHeight + 'px';
+    topBarEl.addEventListener('transitionend', function clear() {
+      topBarEl.style.maxHeight = '';
+      topBarEl.removeEventListener('transitionend', clear);
+    });
+  }
 });
 // ═══════════════ INIT ═══════════════
 

@@ -229,6 +229,7 @@ input { font-family: inherit; }
   flex-direction: column;
   margin-top: 2px;
   padding-right: 2px;
+  padding-bottom: max(20px, env(safe-area-inset-bottom));
 }
 
 .sidebar-list::-webkit-scrollbar { width: 5px; }
@@ -375,7 +376,7 @@ input { font-family: inherit; }
 }
 
 .edge-toggle svg {
-  width: 16px; height: 16px;
+  width: 20px; height: 20px;
   fill: none; stroke: var(--ink); stroke-width: 2;
   stroke-linecap: round; stroke-linejoin: round;
 }
@@ -383,8 +384,8 @@ input { font-family: inherit; }
 .edge-toggle--left {
   top: 50%; left: var(--sidebar-w);
   transform: translate(0, -50%);
-    width: 26px; height: 58px;
-  border-radius: 8px;
+  width: 40px; height: 40px;
+  border-radius: 10px;
   transition: left 0.28s ease;
 }
 
@@ -394,9 +395,8 @@ input { font-family: inherit; }
 .edge-toggle--top {
   position: relative;
   align-self: center;
-  width: 58px;
-  height: 22px;
-  border-radius: 8px;
+  width: 40px; height: 40px;
+  border-radius: 10px;
   flex-shrink: 0;
 }
 
@@ -425,7 +425,6 @@ input { font-family: inherit; }
   flex-shrink: 0;
   min-height: 0;
   overflow: hidden;
-  max-height: calc(100dvh - 60px);
 }
 
 #topBar.collapsed {
