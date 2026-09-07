@@ -106,6 +106,9 @@ PARK_CLOSE_HOUR = 21             # 9:00 PM (change if your park's hours differ)
 ENTRANCE_DB_ID = 0               # matches the "id" of the entrance row in `rides`
 POST_BREAK_BUFFER_MIN = 2        # time to get moving again after a break ends
 PARK_TIMEZONE = ZoneInfo("America/New_York")  # Universal Orlando is Eastern time
+MAX_DRAG_DRIFT_MIN = 30          # a dragged-and-dropped ride must land within this many
+                                  # minutes of the queue-join time of whatever ride it
+                                  # displaced, whenever a slot like that exists at all
 
 # ── ride "importance" tiers ─────────────────────────────────────────
 RIDE_PRIORITY_WEIGHT = {
@@ -594,14 +597,24 @@ def _reorder_for_time_pins(order, pin_targets, histories, walk_map, durations,
                             current_waits=None, historical_now_by_id=None):
     """
     Reorders rides to honor time-pin targets (from drag-to-slot or click-to-lock).
-    
-    For each pinned stop, tries every insertion position and picks the one
-    where predicted queue-join time is closest to target_minutes, without
-    reducing fits_count.
-    
-    Sentinel values (0 = force first, 1440 = force last) are honored ONLY if
-    they preserve the existing fits_count. If forcing a ride to first/last
-    would push something past closing, falls back to best-effort placement.
+
+    Sentinel values (0 = force first, 1440 = force last) are HARD
+    constraints: a ride pinned first ALWAYS ends up first, and a ride
+    pinned last ALWAYS ends up last (with nothing appended after it,
+    since this reordering pass runs after every other scheduling step).
+    This is enforced unconditionally -- it does not back off even if it
+    costs the route some fits_count, because the whole point of pinning
+    something first/last is that the person wants exactly that.
+
+    For a normal (non-sentinel) pin -- i.e. a ride dragged onto some
+    other ride's slot -- we look at every possible insertion position and
+    require the result to land within MAX_DRAG_DRIFT_MIN minutes of the
+    target time (the queue-join time of whatever ride occupied that slot)
+    whenever any such position exists at all. Among those, we prefer ones
+    that also keep the existing fits_count, but the drift window always
+    wins over fits_count for a normal pin -- only if NO position keeps it
+    within the drift window do we fall back to fits-preserving-but-farther,
+    and only if that's empty too do we fall back to closest-overall.
     """
     order = list(order)
     if not order or not pin_targets:
@@ -620,33 +633,22 @@ def _reorder_for_time_pins(order, pin_targets, histories, walk_map, durations,
         src_pos = occurrences[inst_idx]
         order_without = order[:src_pos] + order[src_pos + 1:]
 
-        # Try sentinel "force first" (0)
+        # Sentinel "force first" (0) -- unconditional, always honored.
         if target_minutes == 0:
-            candidate = [db_id] + order_without
-            fits, _, _ = _route_score(
-                candidate, histories, walk_map, durations, start_time, closing_time,
-                break_windows, start_db_id, current_waits=current_waits,
-                historical_now_by_id=historical_now_by_id,
-            )
-            if fits >= fits_baseline:
-                order = candidate
-                continue
+            order = [db_id] + order_without
+            continue
 
-        # Try sentinel "force last" (1440)
+        # Sentinel "force last" (1440) -- unconditional, always honored.
+        # Because this reordering pass is the last step before the route
+        # is simulated and returned, appending here guarantees nothing
+        # else ever lands after this ride.
         if target_minutes == 1440:
-            candidate = order_without + [db_id]
-            fits, _, _ = _route_score(
-                candidate, histories, walk_map, durations, start_time, closing_time,
-                break_windows, start_db_id, current_waits=current_waits,
-                historical_now_by_id=historical_now_by_id,
-            )
-            if fits >= fits_baseline:
-                order = candidate
-                continue
+            order = order_without + [db_id]
+            continue
 
-        # Best-effort: find position closest to target time without losing fits
-        best_pos, best_dist = src_pos, float('inf')
-
+        # Normal pin: find the insertion position closest to target_minutes,
+        # preferring positions within MAX_DRAG_DRIFT_MIN minutes of it.
+        candidates = []  # (distance_minutes, fits_ok, position)
         for pos in range(len(order_without) + 1):
             candidate = order_without[:pos] + [db_id] + order_without[pos:]
             fits, _, details = _route_score(
@@ -654,13 +656,34 @@ def _reorder_for_time_pins(order, pin_targets, histories, walk_map, durations,
                 break_windows, start_db_id, current_waits=current_waits,
                 historical_now_by_id=historical_now_by_id,
             )
-            if fits < fits_baseline or pos >= len(details):
+            if pos >= len(details):
                 continue
             qjc = details[pos]['queue_join_clock']
             dist = abs(qjc.hour * 60 + qjc.minute - target_minutes)
-            if dist < best_dist:
-                best_dist, best_pos = dist, pos
+            candidates.append((dist, fits >= fits_baseline, pos))
 
+        if not candidates:
+            # Nothing to insert into -- leave this pin's ride where it was.
+            order = order_without[:src_pos] + [db_id] + order_without[src_pos:]
+            continue
+
+        within_and_fits = [c for c in candidates if c[0] <= MAX_DRAG_DRIFT_MIN and c[1]]
+        within_only     = [c for c in candidates if c[0] <= MAX_DRAG_DRIFT_MIN]
+        fits_only       = [c for c in candidates if c[1]]
+
+        if within_and_fits:
+            pool = within_and_fits
+        elif within_only:
+            # Guarantee the drift window even if it costs a fit -- staying
+            # close to the ride that was dropped onto matters more here
+            # than preserving fits_count for a plain (non-sentinel) pin.
+            pool = within_only
+        elif fits_only:
+            pool = fits_only
+        else:
+            pool = candidates
+
+        best_pos = min(pool, key=lambda c: c[0])[2]
         order = order_without[:best_pos] + [db_id] + order_without[best_pos:]
 
     return order
@@ -811,6 +834,9 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
     )
 
     # RULE 6b: Honor time-pin placement requests (drag-to-slot, click-to-lock)
+    # NOTE: this runs LAST, after forced scheduling, optional insertion, and
+    # daylight-filling are all done -- that ordering is what guarantees a
+    # ride pinned "last" truly ends up last with nothing appended after it.
     if time_pinned:
         pin_targets = {}
         for pin in time_pinned:

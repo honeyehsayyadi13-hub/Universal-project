@@ -1,4 +1,5 @@
-/* ════════════════════════════════════════════════════════════════
+/* app.js 
+════════════════════════════════════════════════════════════════
    Universal Route Planner — front end
    ────────────────────────────────────────────────────────────────
    BACKEND CONTRACT (point API_BASE at your Flask app, or leave it as
@@ -92,6 +93,26 @@ let touchDragClone   = null;
 let touchStartX = 0, touchStartY = 0;
 let touchDragging = false;
 
+// Only one stop can ever hold the "force first" (0) or "force last" (1440)
+// sentinel at a time — otherwise the backend would receive two conflicting
+// "put me first" / "put me last" requests and have to pick one arbitrarily,
+// which is exactly what let a stale pin quietly stop being honored before.
+// Whenever a stop newly claims a sentinel, strip that same sentinel off of
+// every other pin first.
+function clearConflictingSentinelPins(sentinelValue, exceptKey) {
+  for (const [key, pin] of Object.entries(state.timePinned)) {
+    if (key === exceptKey) continue;
+    if (pin.targetMinutes === sentinelValue) {
+      delete state.timePinned[key];
+      const anyStillPinned = Object.keys(state.timePinned).some(k => k.startsWith(`${pin.rideId}:`));
+      if (!anyStillPinned && state.pinnedLocked[pin.rideId]) {
+        state.locked[pin.rideId] = false;
+        delete state.pinnedLocked[pin.rideId];
+      }
+    }
+  }
+}
+
 function executeDrop(srcIdx, destIdx) {
   if (srcIdx === null || destIdx === null || srcIdx === destIdx) return;
 
@@ -120,6 +141,12 @@ function executeDrop(srcIdx, destIdx) {
     instanceIndex: newInstIdx,
     targetMinutes,
   };
+
+  // If this drop claims the first or last slot, no other stop is allowed
+  // to keep claiming that same slot — otherwise both stops would tell the
+  // backend "put me first" (or "put me last") and only one request can win.
+  if (isFirst) clearConflictingSentinelPins(0, newKey);
+  if (isLast)  clearConflictingSentinelPins(1440, newKey);
 
   // Auto-lock the dragged ride if not already sidebar-locked
   if (!state.locked[moved.rideId]) {
@@ -747,6 +774,11 @@ function renderRouteBar() {
           instanceIndex: instIdx,
           targetMinutes: isFirst ? 0 : isLast ? 1440 : null,
         };
+        // Same one-sentinel-holder-at-a-time rule as executeDrop: claiming
+        // first/last here must strip that sentinel off anything else that
+        // had it, or the backend gets two "stay last" requests at once.
+        if (isFirst) clearConflictingSentinelPins(0, uniqueKey);
+        if (isLast)  clearConflictingSentinelPins(1440, uniqueKey);
         if (!state.locked[stop.rideId]) {
           state.locked[stop.rideId] = true;
           state.pinnedLocked[stop.rideId] = true;
