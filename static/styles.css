@@ -55,7 +55,7 @@ input { font-family: inherit; }
   color: var(--white);
   display: flex;
   flex-direction: column;
-  padding: 14px 14px 16px;
+  padding: 14px 8px 16px;
   gap: 10px;
   transition: margin-left 0.28s ease;
   position: relative;
@@ -293,7 +293,7 @@ input { font-family: inherit; }
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 1px;
+  gap: 0px;
 }
 
 .spin-btn {
@@ -315,7 +315,7 @@ input { font-family: inherit; }
   width: 13px;
   height: 13px;
 }
-.spin-btn.max-spin-btn svg { fill: #FFCDD2; }
+.spin-btn.max-spin-btn svg { fill: #8B1A1A; }
 .spin-btn.max-spin-btn:disabled { opacity: 0.35; cursor: default; }
 
 .max-count { color: #FFCDD2; width: 16px; }
