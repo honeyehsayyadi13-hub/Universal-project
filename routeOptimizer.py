@@ -891,6 +891,15 @@ def _reorder_for_time_pins(order, pin_targets, histories, walk_map, durations,
         src_pos = occurrences[inst_idx]
 
         order_without = order[:src_pos] + order[src_pos + 1:]
+
+        # Sentinel values force absolute first / last position
+        if target_minutes == 0:
+            order = [db_id] + order_without
+            continue
+        if target_minutes == 1440:
+            order = order_without + [db_id]
+            continue
+
         best_pos, best_dist = src_pos, float('inf')
 
         for pos in range(len(order_without) + 1):

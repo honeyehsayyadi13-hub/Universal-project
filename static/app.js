@@ -953,6 +953,20 @@ $('#topBarToggle').addEventListener('click', () => {
     topBarEl.classList.add('collapsed');
   }
 });
+function updateTogglePositions() {
+  const topToggle     = document.getElementById('topBarToggle');
+  const sidebarToggle = document.getElementById('sidebarToggle');
+  const topH          = topBarEl.offsetHeight;
+  if (topToggle)     topToggle.style.top = topH + 'px';
+  if (sidebarToggle) {
+    const appH   = document.getElementById('app').offsetHeight;
+    const mapMid = topH + (appH - topH) / 2;
+    sidebarToggle.style.top = mapMid + 'px';
+  }
+}
+
+const topBarResizeObserver = new ResizeObserver(updateTogglePositions);
+topBarResizeObserver.observe(topBarEl);
 // ═══════════════ INIT ═══════════════
 
 function init() {
@@ -962,10 +976,11 @@ function init() {
   renderPins();
   renderRouteBar();
   pollStatus();
-  setInterval(pollStatus, STATUS_POLL_MS);
+  updateTogglePositions();
   window.addEventListener('resize', () => {
-  if (popupState.rideId) hidePopup();
-});
+    if (popupState.rideId) hidePopup();
+    updateTogglePositions();
+  });
 }
 
 init();
