@@ -451,7 +451,11 @@ function renderSidebarList() {
     maxUp.className = 'spin-btn max-spin-btn';
     maxUp.innerHTML = '<svg viewBox="0 0 10 10"><polygon points="1,8 9,8 5,2"/></svg>';
     maxUp.addEventListener('click', () => {
-      if (state.maxCounts[r.id] !== Infinity) state.maxCounts[r.id]++;
+      if (state.maxCounts[r.id] === Infinity) {
+        state.maxCounts[r.id] = (state.maxBeforeInfinity[r.id] > 0 ? state.maxBeforeInfinity[r.id] : 0) + 1;
+      } else {
+        state.maxCounts[r.id]++;
+      }
       renderSidebarList();
     });
 
@@ -743,16 +747,13 @@ function renderRouteBar() {
     const remove = document.createElement('button');
     remove.className = 'stop-remove';
     remove.textContent = '✕';
-        remove.addEventListener('click', () => {
+    remove.addEventListener('click', () => {
       delete state.timePinned[uniqueKey];
       state.route.splice(i, 1);
       const remaining = state.route.filter(s => s.rideId === stop.rideId).length;
-      if (remaining > 0) {
-        state.maxBeforeInfinity[stop.rideId] = remaining;
-        state.maxCounts[stop.rideId] = remaining;
-      } else {
-        state.maxCounts[stop.rideId] = Infinity;
-        state.maxBeforeInfinity[stop.rideId] = 0;
+      state.maxBeforeInfinity[stop.rideId] = remaining;
+      state.maxCounts[stop.rideId] = remaining;
+      if (remaining === 0) {
         state.visible[stop.rideId] = false;
         state.locked[stop.rideId] = false;
         state.counts[stop.rideId] = 0;
