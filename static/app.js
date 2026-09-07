@@ -740,10 +740,12 @@ function renderRouteBar() {
           delete state.pinnedLocked[stop.rideId];
         }
       } else {
+        const isFirst = i === 0;
+        const isLast  = i === state.route.length - 1;
         state.timePinned[uniqueKey] = {
           rideId: stop.rideId,
           instanceIndex: instIdx,
-          targetMinutes: null,
+          targetMinutes: isFirst ? 0 : isLast ? 1440 : null,
         };
         if (!state.locked[stop.rideId]) {
           state.locked[stop.rideId] = true;

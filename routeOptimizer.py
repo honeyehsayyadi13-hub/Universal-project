@@ -916,8 +916,11 @@ def _reorder_for_time_pins(order, pin_targets, histories, walk_map, durations,
             if dist < best_dist:
                 best_dist, best_pos = dist, pos
 
-        order = order_without[:best_pos] + [db_id] + order_without[best_pos:]
-
+        TIME_PIN_TOLERANCE_MIN = 30
+        if best_dist <= TIME_PIN_TOLERANCE_MIN:
+            order = order_without[:best_pos] + [db_id] + order_without[best_pos:]
+        else:
+            order = order_without[:src_pos] + [db_id] + order_without[src_pos:]
     return order
 
 # ── public entry point ──────────────────────────────────────────────
