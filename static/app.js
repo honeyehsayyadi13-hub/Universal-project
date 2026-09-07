@@ -850,7 +850,7 @@ async function generateRoute(triggerBtn) {
   const ride_locked = {};
   RIDES.forEach(r => { if (state.locked[r.id]) ride_locked[r.id] = true; });
 
-  const closed_ride_keys = RIDES.filter(r => state.liveOpen[r.id] === false).map(r => r.id);
+  const closed_ride_keys = RIDES.filter(r => state.liveOpen[r.id] !== true).map(r => r.id);
   const breaks = state.breaks.map(b => [b.startMin, b.endMin]);
 
   const time_pinned = Object.values(state.timePinned)
