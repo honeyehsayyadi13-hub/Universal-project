@@ -828,6 +828,9 @@ async function pollStatus() {
 
 $('#sidebarToggle').addEventListener('click', () => sidebarEl.classList.toggle('collapsed'));
 $('#topBarToggle').addEventListener('click', () => {
+  const toggleEl = document.getElementById('topBarToggle');
+  const collapsing = !topBarEl.classList.contains('collapsed');
+  toggleEl.style.top = (collapsing ? 0 : topBarEl.scrollHeight) + 'px';
   topBarEl.classList.toggle('collapsed');
 });
 // ═══════════════ INIT ═══════════════

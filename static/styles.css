@@ -417,14 +417,16 @@ input { font-family: inherit; }
 #topBar {
   background: var(--paper);
   border-bottom: 2px solid var(--paper-line);
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
   gap: 8px;
   padding: 10px 12px 12px;
   transition: max-height 0.28s ease, padding 0.28s ease;
   flex-shrink: 0;
+  min-height: 0;
   overflow: hidden;
-  max-height: calc(100vh - 60px);
+  max-height: calc(100dvh - 60px);
 }
 
 #topBar.collapsed {
@@ -443,7 +445,6 @@ input { font-family: inherit; }
 }
 .route-cta--compact {
   flex-shrink: 0;
-  align-self: end;
 }
 #routePlaceholder {
   font-family: 'Baloo 2', sans-serif;
