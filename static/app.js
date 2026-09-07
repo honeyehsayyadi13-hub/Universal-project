@@ -74,6 +74,7 @@ const state = {
   maxCounts: Object.fromEntries(RIDES.map(r => [r.id, Infinity])),
   maxBeforeInfinity: Object.fromEntries(RIDES.map(r => [r.id, 0])),
   maxWasZeroBeforeLock: Object.fromEntries(RIDES.map(r => [r.id, false])),
+  pinnedLocked: {},  // rideIds locked due to top-bar selection (not sidebar lock)
 };
 
 function getInstanceIndex(route, pos) {
@@ -120,7 +121,14 @@ function executeDrop(srcIdx, destIdx) {
     targetMinutes,
   };
 
+  // Auto-lock the dragged ride if not already sidebar-locked
+  if (!state.locked[moved.rideId]) {
+    state.locked[moved.rideId] = true;
+    state.pinnedLocked[moved.rideId] = true;
+  }
+
   renderRouteBar();
+  renderSidebarList();
 }
 
 const startOptions = [{ id: 'entrance', label: 'Entrance' },
@@ -149,7 +157,8 @@ function addPreset() {
     maxCounts: Object.fromEntries(Object.entries(state.maxCounts).map(([k,v]) => [k, v === Infinity ? null : v])),
     maxBeforeInfinity: { ...state.maxBeforeInfinity },
     maxWasZeroBeforeLock: { ...state.maxWasZeroBeforeLock },
-    });
+    pinnedLocked: { ...state.pinnedLocked },
+  });
   selectedPresetId = presetIdCounter;
   savePresets();
   renderPresetDropdown();
@@ -181,6 +190,7 @@ function applyPreset(id) {
     state.maxBeforeInfinity[r.id] = (p.maxBeforeInfinity || {})[r.id] ?? 0;
     state.maxWasZeroBeforeLock[r.id] = (p.maxWasZeroBeforeLock || {})[r.id] ?? false;
   });
+  state.pinnedLocked = { ...(p.pinnedLocked || {}) };
   selectedPresetId = p.id;
   renderStartDropdown();
   renderSidebarList();
@@ -723,14 +733,25 @@ function renderRouteBar() {
       if (dist > 8) return;
       if (pinEntry) {
         delete state.timePinned[uniqueKey];
+        // Unlock only if we were the one who locked it, and no other instances still pinned
+        const anyStillPinned = Object.keys(state.timePinned).some(k => k.startsWith(`${stop.rideId}:`));
+        if (!anyStillPinned && state.pinnedLocked[stop.rideId]) {
+          state.locked[stop.rideId] = false;
+          delete state.pinnedLocked[stop.rideId];
+        }
       } else {
         state.timePinned[uniqueKey] = {
           rideId: stop.rideId,
           instanceIndex: instIdx,
-          targetMinutes: null,   // cosmetic only
+          targetMinutes: null,
         };
+        if (!state.locked[stop.rideId]) {
+          state.locked[stop.rideId] = true;
+          state.pinnedLocked[stop.rideId] = true;
+        }
       }
       renderRouteBar();
+      renderSidebarList();
     });
 
     const img = document.createElement('img');
@@ -753,10 +774,16 @@ function renderRouteBar() {
       const remaining = state.route.filter(s => s.rideId === stop.rideId).length;
       state.maxBeforeInfinity[stop.rideId] = remaining;
       state.maxCounts[stop.rideId] = remaining;
+      const anyStillPinned = Object.keys(state.timePinned).some(k => k.startsWith(`${stop.rideId}:`));
+      if (!anyStillPinned && state.pinnedLocked[stop.rideId]) {
+        state.locked[stop.rideId] = false;
+        delete state.pinnedLocked[stop.rideId];
+      }
       if (remaining === 0) {
         state.visible[stop.rideId] = false;
         state.locked[stop.rideId] = false;
         state.counts[stop.rideId] = 0;
+        delete state.pinnedLocked[stop.rideId];
       }
       renderRouteBar();
       renderSidebarList();
@@ -954,12 +981,10 @@ $('#topBarToggle').addEventListener('click', () => {
   }
 });
 function updateTogglePositions() {
-  const topToggle     = document.getElementById('topBarToggle');
   const sidebarToggle = document.getElementById('sidebarToggle');
-  const topH          = topBarEl.offsetHeight;
-  if (topToggle)     topToggle.style.top = topH + 'px';
+  const topH = topBarEl.offsetHeight;
   if (sidebarToggle) {
-    const appH   = document.getElementById('app').offsetHeight;
+    const appH = document.getElementById('app').offsetHeight;
     const mapMid = topH + (appH - topH) / 2;
     sidebarToggle.style.top = mapMid + 'px';
   }
