@@ -364,7 +364,7 @@ input { font-family: inherit; }
 
 .edge-toggle {
   position: absolute;
-  z-index: 30;
+  z-index: 15;
   background: var(--white);
   border: 1px solid var(--paper-line);
   box-shadow: var(--shadow);
@@ -394,10 +394,11 @@ input { font-family: inherit; }
 .edge-toggle--top {
   left: 50%;
   top: 0;
-  transform: translate(-50%, -50%);
+  transform: translate(-50%, 0);
   width: 58px;
   height: 22px;
   border-radius: 8px;
+  transition: top 0.28s ease;
 }
 
 #topBar.collapsed ~ .edge-toggle--top svg { transform: rotate(180deg); }
