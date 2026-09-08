@@ -480,6 +480,7 @@ input { font-family: inherit; }
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
+  scrollbar-gutter: stable both-edges;
 }
 .route-cta--compact {
   flex-shrink: 0;
@@ -504,14 +505,14 @@ input { font-family: inherit; }
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  gap: 18px 10px;
+  gap: 16px 8px;
 }
 
 .route-stop {
   display: flex;
   justify-content: center;
   flex-shrink: 0;
-  width: 68px;
+  width: 58px;
 }
 
 .route-stop-card {
@@ -526,7 +527,7 @@ input { font-family: inherit; }
   position: relative;
   width: 100%;
   aspect-ratio: 1;
-  max-width: 60px;
+  max-width: 50px;
   border-radius: var(--radius-md);
   background: var(--white);
   border: 1px solid var(--paper-line);
