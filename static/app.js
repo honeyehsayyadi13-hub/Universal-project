@@ -1086,12 +1086,25 @@ $('#topBarToggle').addEventListener('click', () => {
     updateTogglePositions();
   }
 });
+const MAP_MIN_HEIGHT = 64; // px — keep in sync with #mapViewport's min-height in styles.css
+let bottomBarNaturalH = 0; // captured once at init, before bottomBar is ever minimized
+
 function updateTogglePositions() {
   const sidebarToggle = document.getElementById('sidebarToggle');
+  const bottomBarEl = document.getElementById('bottomBar');
   const topH = topBarEl.offsetHeight;
+  const appH = document.getElementById('app').offsetHeight;
+
+  // Once expanding the top bar would squeeze the map below one row's
+  // worth of height, hide the back button instead of continuing to
+  // shrink the map. The map's floor is #mapViewport's min-height; the
+  // back button's row is what gives way after that.
+  const spaceWithBottomBar = appH - topH - bottomBarNaturalH;
+  bottomBarEl.classList.toggle('minimized', spaceWithBottomBar < MAP_MIN_HEIGHT);
+
   if (sidebarToggle) {
-    const appH = document.getElementById('app').offsetHeight;
-    const mapMid = topH + (appH - topH) / 2;
+    const currentBottomH = bottomBarEl.classList.contains('minimized') ? 0 : bottomBarNaturalH;
+    const mapMid = topH + (appH - topH - currentBottomH) / 2;
     sidebarToggle.style.top = mapMid + 'px';
   }
 }
@@ -1101,6 +1114,7 @@ topBarResizeObserver.observe(topBarEl);
 // ═══════════════ INIT ═══════════════
 
 function init() {
+  bottomBarNaturalH = document.getElementById('bottomBar').offsetHeight;
   renderStartDropdown();
   renderPresetDropdown();
   renderSidebarList();

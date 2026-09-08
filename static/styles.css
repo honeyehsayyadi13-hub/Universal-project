@@ -634,8 +634,12 @@ input { font-family: inherit; }
 }
 #mapViewport {
   flex: 1;
-  min-height: 0;
-    overflow: auto;
+  /* Map won't shrink past roughly one row's worth of height. Once the
+     expanding top bar would push it smaller than that, app.js hides the
+     back button row instead (see updateTogglePositions) so the map
+     never gets crushed to nothing. */
+  min-height: 64px;
+  overflow: auto;
   background: var(--navy);
   display: flex;
   align-items: flex-start;
