@@ -1088,10 +1088,10 @@ const MAP_MIN_HEIGHT_BEFORE_MINIMIZE = 90; // px
 
 function updateTogglePositions() {
   const sidebarToggle = document.getElementById('sidebarToggle');
-  const topH = topBarEl.offsetHeight;
-  if (sidebarToggle) {
-    const appH = document.getElementById('app').offsetHeight;
-    const mapMid = topH + (appH - topH) / 2;
+  const mapViewportEl = document.getElementById('mapViewport');
+  if (sidebarToggle && mapViewportEl) {
+    const topH = topBarEl.offsetHeight;
+    const mapMid = topH + mapViewportEl.offsetHeight / 2;
     sidebarToggle.style.top = mapMid + 'px';
   }
   updateBackButtonSize();

@@ -61,18 +61,13 @@ input { font-family: inherit; }
   background: var(--danger);
   color: var(--white);
   padding-bottom: max(10px, env(safe-area-inset-bottom));
-  transition: padding 0.15s ease, font-size 0.15s ease, min-width 0.15s ease;
 }
 
 #backBtn:hover { background: var(--danger-dark); }
 #backBtn:active { transform: scale(0.98); }
 
-#bottomBar.minimized #backBtn {
-  padding-left: 10px;
-  padding-right: 10px;
-  padding-top: 4px;
-  font-size: 11px;
-  min-width: 90px;
+#bottomBar.minimized {
+  display: none;
 }
 
 /* ═══════════════ SIDEBAR ═══════════════ */
