@@ -49,22 +49,30 @@ input { font-family: inherit; }
 }
 
 #bottomBar {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 25;
+  flex-shrink: 0;
   display: flex;
   justify-content: center;
-  padding: 10px 0 max(10px, env(safe-area-inset-bottom));
-  pointer-events: none;
 }
 
-#bottomBar .route-cta {
-  pointer-events: auto;
+#backBtn {
   width: auto;
   min-width: 160px;
   margin-top: 0;
+  background: var(--danger);
+  color: var(--white);
+  padding-bottom: max(10px, env(safe-area-inset-bottom));
+  transition: padding 0.15s ease, font-size 0.15s ease, min-width 0.15s ease;
+}
+
+#backBtn:hover { background: var(--danger-dark); }
+#backBtn:active { transform: scale(0.98); }
+
+#bottomBar.minimized #backBtn {
+  padding-left: 10px;
+  padding-right: 10px;
+  padding-top: 4px;
+  font-size: 11px;
+  min-width: 90px;
 }
 
 /* ═══════════════ SIDEBAR ═══════════════ */
