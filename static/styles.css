@@ -456,11 +456,12 @@ input { font-family: inherit; }
   padding: 10px 12px 12px;
   flex-shrink: 0;
   min-height: 0;
-  max-height: 45vh;
+  height: calc(100vh - 38px);
   overflow: hidden;
   position: relative;
   z-index: 16;
 }
+
 
 #topBar.collapsed {
   max-height: 0;
