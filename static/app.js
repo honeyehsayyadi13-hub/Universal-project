@@ -924,15 +924,50 @@ async function generateRoute(triggerBtn) {
 
     state.route = data.map(extractRideIdAndWait);
 
-    // Remap timePinned keys to new route's instance indices
-    const newTP = {}, ic = {};
-    for (let idx = 0; idx < state.route.length; idx++) {
+    // Remap timePinned entries onto the freshly-generated route.
+    //
+    // The old approach re-derived each pin's "instance number" by walking
+    // the NEW route left-to-right and re-counting occurrences, then hoping
+    // that count happened to match the OLD instance number the pin was
+    // filed under. That only holds if occurrence order across generations
+    // stays perfectly stable -- it isn't guaranteed to, and when it drifts
+    // the pin silently vanishes (the lookup just misses), which is exactly
+    // why a dragged "stays last" ride could quietly stop staying last after
+    // a regenerate even though the backend honored the pin correctly.
+    //
+    // Instead, anchor directly to what the backend actually guarantees:
+    // a "first" pin (targetMinutes === 0) is state.route[0], a "last" pin
+    // (targetMinutes === 1440) is the final element of state.route -- full
+    // stop, no counting required. A plain (mid-route) pin re-attaches to
+    // whichever occurrence of that ride now has a queue-join time closest
+    // to the original target.
+    const oldPins = Object.values(state.timePinned);
+    const newTP = {};
+
+    function pinAt(idx, targetMinutes) {
+      if (idx < 0 || idx >= state.route.length) return;
       const rid  = state.route[idx].rideId;
-      const inst = ic[rid] || 0;
-      ic[rid] = inst + 1;
-      const key = getUniqueKey(rid, inst);
-      if (state.timePinned[key]) newTP[key] = { ...state.timePinned[key], instanceIndex: inst };
+      const inst = getInstanceIndex(state.route, idx);
+      newTP[getUniqueKey(rid, inst)] = { rideId: rid, instanceIndex: inst, targetMinutes };
     }
+
+    oldPins.forEach(pin => {
+      if (pin.targetMinutes === 0) {
+        pinAt(0, 0);
+      } else if (pin.targetMinutes === 1440) {
+        pinAt(state.route.length - 1, 1440);
+      } else if (pin.targetMinutes !== null) {
+        let bestIdx = -1, bestDist = Infinity;
+        state.route.forEach((stop, idx) => {
+          if (stop.rideId !== pin.rideId) return;
+          const qjm = stop.queueJoinMinutes;
+          const dist = qjm == null ? Infinity : Math.abs(qjm - pin.targetMinutes);
+          if (dist < bestDist) { bestDist = dist; bestIdx = idx; }
+        });
+        if (bestIdx >= 0) pinAt(bestIdx, pin.targetMinutes);
+      }
+    });
+
     state.timePinned = newTP;
 
     if (!state.route.length) {
@@ -990,7 +1025,7 @@ $('#topBarToggle').addEventListener('click', () => {
   const collapsed = topBarEl.classList.contains('collapsed');
   if (collapsed) {
     topBarEl.classList.remove('collapsed');
-    const target = topBarEl.scrollHeight;
+    const target = Math.min(topBarEl.scrollHeight, window.innerHeight * 0.45);
     topBarEl.style.maxHeight = '0px';
     if (compactBtn) compactBtn.style.opacity = '0';
     topBarEl.style.transition = 'none';
@@ -1036,6 +1071,21 @@ function init() {
   renderRouteBar();
   pollStatus();
   updateTogglePositions();
+
+  // On phones the sidebar is `position: absolute` and nearly full-width
+  // (`--sidebar-w: calc(100vw - 36px)`), and it sits ABOVE the map pane
+  // (z-index 20 vs 16). Left un-collapsed, it covers almost the entire
+  // screen on load -- including the route bar up top, which is exactly
+  // where a locked/pinned stop's gold highlighting shows up. So on a
+  // phone you could drag a ride, have it pin correctly, and never see
+  // any indication of it because the sidebar was covering the route bar
+  // the whole time. Start collapsed on narrow screens so the route is
+  // visible without the user first having to know to tap the sidebar
+  // toggle.
+  if (window.matchMedia('(max-width: 760px)').matches) {
+    sidebarEl.classList.add('collapsed');
+  }
+
   window.addEventListener('resize', () => {
     if (popupState.rideId) hidePopup();
     updateTogglePositions();
