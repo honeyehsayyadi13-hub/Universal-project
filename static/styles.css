@@ -458,8 +458,6 @@ input { font-family: inherit; }
   padding: 10px 12px 12px;
   flex-shrink: 0;
   min-height: 0;
-  height: calc(100vh - 38px);
-  height: calc(100dvh - 38px);
   max-height: calc(100vh - 38px);
   max-height: calc(100dvh - 38px);
   overflow: hidden;
@@ -468,7 +466,6 @@ input { font-family: inherit; }
 }
 
 #topBar.collapsed {
-  height: 0;
   max-height: 0;
   padding-top: 0;
   padding-bottom: 0;
