@@ -615,17 +615,19 @@ document.addEventListener('click', e => {
 // element right after it has wrapped to a new line, meaning that arrow
 // is pointing off the edge into nothing. Hide those.
 function hideRowEndArrows() {
-  const ROW_JUMP_THRESHOLD = 20; // px — smaller than any real row-to-row jump,
-                                  // but bigger than the vertical-centering offset
-                                  // between a short arrow and a tall route-stop
+  const ROW_JUMP_THRESHOLD = 20; // px — a real row-to-row jump in vertical
+                                  // center is much bigger than this; same-row
+                                  // items (even at very different heights)
+                                  // share nearly the same center line
+  const centerOf = el => el.offsetTop + el.offsetHeight / 2;
   const children = Array.from(routeItemsEl.children);
   children.forEach((el, idx) => {
     if (!el.classList.contains('route-arrow')) return;
     el.style.visibility = '';
     const prev = children[idx - 1];
     const next = children[idx + 1];
-    const startsRow = prev && (el.offsetTop - prev.offsetTop) > ROW_JUMP_THRESHOLD;
-    const endsRow   = next && (next.offsetTop - el.offsetTop) > ROW_JUMP_THRESHOLD;
+    const startsRow = prev && Math.abs(centerOf(el) - centerOf(prev)) > ROW_JUMP_THRESHOLD;
+    const endsRow   = next && Math.abs(centerOf(el) - centerOf(next)) > ROW_JUMP_THRESHOLD;
     if (startsRow || endsRow) {
       el.style.visibility = 'hidden';
     }
