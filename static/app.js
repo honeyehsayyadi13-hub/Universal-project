@@ -1020,11 +1020,7 @@ async function generateRoute(triggerBtn) {
 $('#getRouteBtn').addEventListener('click', () => generateRoute($('#getRouteBtn')));
 $('#generateRouteBtn').addEventListener('click', () => generateRoute($('#generateRouteBtn')));
 
-$('#backBtn').addEventListener('click', () => {
-  if (window.history.length > 1) {
-    window.history.back();
-  }
-});
+
 
 // ═══════════════ LIVE STATUS POLLING ═══════════════
 
@@ -1088,6 +1084,8 @@ $('#topBarToggle').addEventListener('click', () => {
     topBarEl.classList.add('collapsed');
   }
 });
+const MAP_MIN_HEIGHT_BEFORE_MINIMIZE = 90; // px
+
 function updateTogglePositions() {
   const sidebarToggle = document.getElementById('sidebarToggle');
   const topH = topBarEl.offsetHeight;
@@ -1096,10 +1094,22 @@ function updateTogglePositions() {
     const mapMid = topH + (appH - topH) / 2;
     sidebarToggle.style.top = mapMid + 'px';
   }
+  updateBackButtonSize();
+}
+
+function updateBackButtonSize() {
+  const mapViewportEl = document.getElementById('mapViewport');
+  const bottomBarEl = document.getElementById('bottomBar');
+  if (!mapViewportEl || !bottomBarEl) return;
+  const tight = mapViewportEl.offsetHeight < MAP_MIN_HEIGHT_BEFORE_MINIMIZE;
+  bottomBarEl.classList.toggle('minimized', tight);
 }
 
 const topBarResizeObserver = new ResizeObserver(updateTogglePositions);
 topBarResizeObserver.observe(topBarEl);
+
+const mapViewportResizeObserver = new ResizeObserver(updateBackButtonSize);
+mapViewportResizeObserver.observe(document.getElementById('mapViewport'));
 // ═══════════════ INIT ═══════════════
 
 function init() {
