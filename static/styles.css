@@ -34,6 +34,7 @@ html, body {
   font-family: 'Inter', system-ui, sans-serif;
   color: var(--ink);
   background: var(--white);
+  color-scheme: light;
 }
 
 button { font-family: inherit; cursor: pointer; }

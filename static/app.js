@@ -1085,8 +1085,11 @@ $('#topBarToggle').addEventListener('click', () => {
   }
 });
 const MAP_MIN_HEIGHT_BEFORE_MINIMIZE = 90; // px
+let backBtnHeight = null; // measured once, cached — see note below
 
 function updateTogglePositions() {
+  updateBackButtonSize();
+
   const sidebarToggle = document.getElementById('sidebarToggle');
   const mapViewportEl = document.getElementById('mapViewport');
   if (sidebarToggle && mapViewportEl) {
@@ -1094,14 +1097,33 @@ function updateTogglePositions() {
     const mapMid = topH + mapViewportEl.offsetHeight / 2;
     sidebarToggle.style.top = mapMid + 'px';
   }
-  updateBackButtonSize();
 }
 
+// Decides whether the back button fits without squeezing the map below its
+// minimum usable height. Crucially, this computes the map's height AS IF
+// the button were shown, rather than reading the map's current (possibly
+// already-collapsed-or-expanded) height -- reading the current height would
+// create a feedback loop: hiding the button changes the map's height, which
+// could flip the decision back, which re-shows the button, etc. Computing
+// against a fixed, independent quantity (mapPane height minus topBar height
+// minus the button's own natural height) breaks that loop entirely.
 function updateBackButtonSize() {
-  const mapViewportEl = document.getElementById('mapViewport');
+  const mapPaneEl = document.getElementById('mapPane');
   const bottomBarEl = document.getElementById('bottomBar');
-  if (!mapViewportEl || !bottomBarEl) return;
-  const tight = mapViewportEl.offsetHeight < MAP_MIN_HEIGHT_BEFORE_MINIMIZE;
+  if (!mapPaneEl || !bottomBarEl) return;
+
+  // Cache the button's natural (shown) height the first time we see it
+  // rendered, since we can't measure it while it's display:none.
+  if (backBtnHeight === null && !bottomBarEl.classList.contains('minimized')) {
+    backBtnHeight = bottomBarEl.offsetHeight;
+  }
+  if (backBtnHeight === null) return;
+
+  const topH = topBarEl.offsetHeight;
+  const availableForMapAndBar = mapPaneEl.offsetHeight - topH;
+  const mapHeightIfShown = availableForMapAndBar - backBtnHeight;
+
+  const tight = mapHeightIfShown < MAP_MIN_HEIGHT_BEFORE_MINIMIZE;
   bottomBarEl.classList.toggle('minimized', tight);
 }
 
