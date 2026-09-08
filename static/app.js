@@ -1020,6 +1020,12 @@ async function generateRoute(triggerBtn) {
 $('#getRouteBtn').addEventListener('click', () => generateRoute($('#getRouteBtn')));
 $('#generateRouteBtn').addEventListener('click', () => generateRoute($('#generateRouteBtn')));
 
+$('#backBtn').addEventListener('click', () => {
+  if (window.history.length > 1) {
+    window.history.back();
+  }
+});
+
 // ═══════════════ LIVE STATUS POLLING ═══════════════
 
 async function pollStatus() {
