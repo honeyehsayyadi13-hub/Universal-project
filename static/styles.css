@@ -503,14 +503,15 @@ input { font-family: inherit; }
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 14px 6px;
+  justify-content: center;
+  gap: 18px 10px;
 }
 
 .route-stop {
   display: flex;
   justify-content: center;
   flex-shrink: 0;
-  width: 56px;
+  width: 68px;
 }
 
 .route-stop-card {
@@ -525,7 +526,7 @@ input { font-family: inherit; }
   position: relative;
   width: 100%;
   aspect-ratio: 1;
-  max-width: 48px;
+  max-width: 60px;
   border-radius: var(--radius-md);
   background: var(--white);
   border: 1px solid var(--paper-line);
