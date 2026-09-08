@@ -500,15 +500,17 @@ input { font-family: inherit; }
 }
 
 #routeItems.active {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px 6px;
 }
 
 .route-stop {
   display: flex;
   justify-content: center;
   flex-shrink: 0;
+  width: 56px;
 }
 
 .route-stop-card {
@@ -523,7 +525,7 @@ input { font-family: inherit; }
   position: relative;
   width: 100%;
   aspect-ratio: 1;
-  max-width: 70px;
+  max-width: 48px;
   border-radius: var(--radius-md);
   background: var(--white);
   border: 1px solid var(--paper-line);
@@ -596,8 +598,14 @@ input { font-family: inherit; }
 
 .stop-remove:hover { background: var(--danger); color: var(--white); }
 
-.route-arrow { color: var(--ink-soft); font-size: 18px; font-weight: 700; flex-shrink: 0; }
-.route-arrow { display: none; }
+.route-arrow {
+  color: var(--ink-soft);
+  font-size: 14px;
+  font-weight: 700;
+  flex-shrink: 0;
+  align-self: center;
+  opacity: 0.6;
+}
 #mapViewport {
   flex: 1;
   min-height: 0;

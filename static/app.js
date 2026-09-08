@@ -829,6 +829,13 @@ function renderRouteBar() {
 
 
     routeItemsEl.appendChild(wrap);
+
+    if (i < state.route.length - 1) {
+      const arrow = document.createElement('span');
+      arrow.className = 'route-arrow';
+      arrow.textContent = '→';
+      routeItemsEl.appendChild(arrow);
+    }
   });
 }
 
