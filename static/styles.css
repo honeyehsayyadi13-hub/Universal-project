@@ -435,7 +435,7 @@ input { font-family: inherit; }
   flex-shrink: 0;
 }
 
-#topBar.collapsed ~ .edge-toggle--top svg { transform: rotate(180deg); }
+#topBar:not(.collapsed) ~ .edge-toggle--top svg { transform: rotate(180deg); }
 
 /* ═══════════════ MAP PANE ═══════════════ */
 
@@ -472,7 +472,7 @@ input { font-family: inherit; }
   border-bottom-width: 0;
 }
 
-#topBar.collapsed + #topBarToggle svg { transform: rotate(180deg); }
+#topBar:not(.collapsed) + #topBarToggle svg { transform: rotate(180deg); }
 
 #routeTrack {
   flex: 1;
