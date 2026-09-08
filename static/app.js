@@ -1060,6 +1060,7 @@ $('#topBarToggle').addEventListener('click', () => {
   const collapsed = topBarEl.classList.contains('collapsed');
   if (collapsed) {
     topBarEl.classList.remove('collapsed');
+    updateTogglePositions();
     const target = Math.min(topBarEl.scrollHeight, window.innerHeight - 38);
     topBarEl.style.maxHeight = '0px';
     if (compactBtn) compactBtn.style.opacity = '0';
@@ -1072,6 +1073,7 @@ $('#topBarToggle').addEventListener('click', () => {
       topBarEl.style.maxHeight = '';
       topBarEl.style.transition = '';
       topBarEl.removeEventListener('transitionend', clear);
+      updateTogglePositions();
     });
   } else {
     const current = topBarEl.scrollHeight;
@@ -1082,6 +1084,7 @@ $('#topBarToggle').addEventListener('click', () => {
     topBarEl.style.maxHeight = '0px';
     if (compactBtn) compactBtn.style.opacity = '0';
     topBarEl.classList.add('collapsed');
+        updateTogglePositions();
   }
 });
 const MAP_MIN_HEIGHT_BEFORE_MINIMIZE = 90; // px
