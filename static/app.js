@@ -1025,7 +1025,7 @@ $('#topBarToggle').addEventListener('click', () => {
   const collapsed = topBarEl.classList.contains('collapsed');
   if (collapsed) {
     topBarEl.classList.remove('collapsed');
-    const target = Math.min(topBarEl.scrollHeight, window.innerHeight * 0.45);
+    const target = Math.min(topBarEl.scrollHeight, window.innerHeight - 38);
     topBarEl.style.maxHeight = '0px';
     if (compactBtn) compactBtn.style.opacity = '0';
     topBarEl.style.transition = 'none';
