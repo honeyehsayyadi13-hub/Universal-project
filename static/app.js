@@ -1061,7 +1061,8 @@ $('#topBarToggle').addEventListener('click', () => {
   if (collapsed) {
     topBarEl.classList.remove('collapsed');
     updateTogglePositions();
-    const target = Math.min(topBarEl.scrollHeight, window.innerHeight - 38 - MAP_MIN_HEIGHT_BEFORE_MINIMIZE);    
+    const mapPaneEl = document.getElementById('mapPane');
+    const target = Math.min(topBarEl.scrollHeight, mapPaneEl.offsetHeight - MAP_MIN_HEIGHT);    
     topBarEl.style.maxHeight = '0px';
     if (compactBtn) compactBtn.style.opacity = '0';
     topBarEl.style.transition = 'none';
@@ -1087,54 +1088,60 @@ $('#topBarToggle').addEventListener('click', () => {
         updateTogglePositions();
   }
 });
-const MAP_MIN_HEIGHT_BEFORE_MINIMIZE = 90; // px
-let backBtnHeight = null; // measured once, cached — see note below
+const MAP_MIN_HEIGHT = 90; // px — the map is never allowed to shrink past this
+let backBtnHeight = null;  // measured once from the button's natural (shown) size
 
-function updateTogglePositions() {
-  updateBackButtonSize();
-
-  const sidebarToggle = document.getElementById('sidebarToggle');
+// The single source of truth for how much space the top bar, map, and back
+// button each get. Runs top-to-bottom every time anything could have
+// changed the top bar's content height (more/fewer route stops, expand/
+// collapse, window resize):
+//
+//   1. Figure out how tall the top bar WANTS to be (its content height),
+//      then clamp that against "however much room is left once the map
+//      has taken its minimum" -- this is a hard ceiling set directly on
+//      the top bar, not a hope that something downstream saves the map.
+//   2. With the top bar's real height now known, see if there's still
+//      room for the back button on top of the map's minimum. If yes,
+//      show it. If not, hide it so the map gets that space back instead.
+//
+// Because the top bar's cap is computed independently of whether the back
+// button is shown, there's no feedback loop -- each quantity is derived
+// once, in order, from a fixed total (the map pane's height).
+function layoutMapPane() {
+  const mapPaneEl = document.getElementById('mapPane');
   const mapViewportEl = document.getElementById('mapViewport');
-  if (sidebarToggle && mapViewportEl) {
-    const topH = topBarEl.offsetHeight;
+  const bottomBarEl = document.getElementById('bottomBar');
+  const sidebarToggle = document.getElementById('sidebarToggle');
+  if (!mapPaneEl || !mapViewportEl || !bottomBarEl || !topBarEl) return;
+
+  if (backBtnHeight === null && !bottomBarEl.classList.contains('minimized')) {
+    backBtnHeight = bottomBarEl.offsetHeight;
+  }
+  const knownBackBtnHeight = backBtnHeight || 0;
+
+  const paneH = mapPaneEl.offsetHeight;
+
+  // Let the browser tell us how tall the top bar's content actually wants
+  // to be, unclamped, then cap it so at least MAP_MIN stays for the map.
+  const wantedTopH = topBarEl.scrollHeight;
+  const maxAllowedTopH = Math.max(0, paneH - MAP_MIN_HEIGHT);
+  const topH = Math.min(wantedTopH, maxAllowedTopH);
+  topBarEl.style.maxHeight = topH + 'px';
+
+  const spaceBelowTopBar = paneH - topH;
+  const showBackBtn = spaceBelowTopBar - knownBackBtnHeight >= MAP_MIN_HEIGHT;
+  bottomBarEl.classList.toggle('minimized', !showBackBtn);
+
+  if (sidebarToggle) {
     const mapMid = topH + mapViewportEl.offsetHeight / 2;
     sidebarToggle.style.top = mapMid + 'px';
   }
 }
 
-// Decides whether the back button fits without squeezing the map below its
-// minimum usable height. Crucially, this computes the map's height AS IF
-// the button were shown, rather than reading the map's current (possibly
-// already-collapsed-or-expanded) height -- reading the current height would
-// create a feedback loop: hiding the button changes the map's height, which
-// could flip the decision back, which re-shows the button, etc. Computing
-// against a fixed, independent quantity (mapPane height minus topBar height
-// minus the button's own natural height) breaks that loop entirely.
-function updateBackButtonSize() {
-  const mapPaneEl = document.getElementById('mapPane');
-  const bottomBarEl = document.getElementById('bottomBar');
-  if (!mapPaneEl || !bottomBarEl) return;
+function updateTogglePositions() { layoutMapPane(); }
 
-  // Cache the button's natural (shown) height the first time we see it
-  // rendered, since we can't measure it while it's display:none.
-  if (backBtnHeight === null && !bottomBarEl.classList.contains('minimized')) {
-    backBtnHeight = bottomBarEl.offsetHeight;
-  }
-  if (backBtnHeight === null) return;
-
-  const topH = topBarEl.offsetHeight;
-  const availableForMapAndBar = mapPaneEl.offsetHeight - topH;
-  const mapHeightIfShown = availableForMapAndBar - backBtnHeight;
-
-  const tight = mapHeightIfShown < MAP_MIN_HEIGHT_BEFORE_MINIMIZE;
-  bottomBarEl.classList.toggle('minimized', tight);
-}
-
-const topBarResizeObserver = new ResizeObserver(updateTogglePositions);
+const topBarResizeObserver = new ResizeObserver(layoutMapPane);
 topBarResizeObserver.observe(topBarEl);
-
-const mapViewportResizeObserver = new ResizeObserver(updateBackButtonSize);
-mapViewportResizeObserver.observe(document.getElementById('mapViewport'));
 // ═══════════════ INIT ═══════════════
 
 function init() {
