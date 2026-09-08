@@ -482,8 +482,8 @@ input { font-family: inherit; }
   padding: 10px 12px 12px;
   flex-shrink: 0;
   min-height: 0;
-  max-height: calc(100vh - 38px);
-  max-height: calc(100dvh - 38px);
+  max-height: calc(100vh - 38px - 90px);
+  max-height: calc(100dvh - 38px - 90px);
   overflow: hidden;
   position: relative;
   z-index: 16;
@@ -634,7 +634,7 @@ input { font-family: inherit; }
 }
 #mapViewport {
   flex: 1;
-  min-height: 0;
+  min-height: 90px;
   overflow: auto;
   background: var(--navy);
   display: flex;
