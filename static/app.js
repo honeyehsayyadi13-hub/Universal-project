@@ -609,6 +609,22 @@ document.addEventListener('click', e => {
 
 // ═══════════════ TOP ROUTE BAR ═══════════════
 
+// Flex-wrap breaks rows based on available width, so we can't know in
+// advance which arrow ends up at the right edge of a line — only the
+// browser knows that after layout. An arrow whose own top sits above the
+// element right after it has wrapped to a new line, meaning that arrow
+// is pointing off the edge into nothing. Hide those.
+function hideRowEndArrows() {
+  const children = Array.from(routeItemsEl.children);
+  children.forEach((el, idx) => {
+    if (!el.classList.contains('route-arrow')) return;
+    el.style.visibility = '';
+    const next = children[idx + 1];
+    if (next && next.offsetTop > el.offsetTop) {
+      el.style.visibility = 'hidden';
+    }
+  });
+}
 
 function renderRouteBar() {
   if (!state.route.length) {
@@ -837,6 +853,8 @@ function renderRouteBar() {
       routeItemsEl.appendChild(arrow);
     }
   });
+
+  hideRowEndArrows();
 }
 
 // ═══════════════ ROUTE GENERATION ═══════════════
