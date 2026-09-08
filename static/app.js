@@ -619,8 +619,11 @@ function hideRowEndArrows() {
   children.forEach((el, idx) => {
     if (!el.classList.contains('route-arrow')) return;
     el.style.visibility = '';
+    const prev = children[idx - 1];
     const next = children[idx + 1];
-    if (next && next.offsetTop > el.offsetTop) {
+    const startsRow = prev && el.offsetTop > prev.offsetTop;
+    const endsRow   = next && next.offsetTop > el.offsetTop;
+    if (startsRow || endsRow) {
       el.style.visibility = 'hidden';
     }
   });
