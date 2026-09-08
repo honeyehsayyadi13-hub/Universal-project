@@ -1056,6 +1056,7 @@ async function pollStatus() {
 
 $('#sidebarToggle').addEventListener('click', () => sidebarEl.classList.toggle('collapsed'));
 $('#topBarToggle').addEventListener('click', () => {
+  topBarAnimating = true;
   const compactBtn = document.getElementById('generateRouteBtn');
   const collapsed = topBarEl.classList.contains('collapsed');
   if (collapsed) {
@@ -1074,6 +1075,7 @@ $('#topBarToggle').addEventListener('click', () => {
       topBarEl.style.maxHeight = '';
       topBarEl.style.transition = '';
       topBarEl.removeEventListener('transitionend', clear);
+      topBarAnimating = false;
       updateTogglePositions();
     });
   } else {
@@ -1085,7 +1087,8 @@ $('#topBarToggle').addEventListener('click', () => {
     topBarEl.style.maxHeight = '0px';
     if (compactBtn) compactBtn.style.opacity = '0';
     topBarEl.classList.add('collapsed');
-        updateTogglePositions();
+    topBarAnimating = false;
+    updateTogglePositions();
   }
 });
 const MAP_MIN_HEIGHT = 90; // px — the map is never allowed to shrink past this
@@ -1107,12 +1110,15 @@ let backBtnHeight = null;  // measured once from the button's natural (shown) si
 // Because the top bar's cap is computed independently of whether the back
 // button is shown, there's no feedback loop -- each quantity is derived
 // once, in order, from a fixed total (the map pane's height).
+let topBarAnimating = false;
+
 function layoutMapPane() {
   const mapPaneEl = document.getElementById('mapPane');
   const mapViewportEl = document.getElementById('mapViewport');
   const bottomBarEl = document.getElementById('bottomBar');
   const sidebarToggle = document.getElementById('sidebarToggle');
   if (!mapPaneEl || !mapViewportEl || !bottomBarEl || !topBarEl) return;
+  if (topBarAnimating) return; // the toggle button's own animation owns maxHeight right now
 
   if (backBtnHeight === null && !bottomBarEl.classList.contains('minimized')) {
     backBtnHeight = bottomBarEl.offsetHeight;
@@ -1140,8 +1146,13 @@ function layoutMapPane() {
 
 function updateTogglePositions() { layoutMapPane(); }
 
+// Watch the CONTENT inside the top bar (routeTrack), not topBar itself --
+// topBar's own height is something we set from JS, so observing it directly
+// would trigger this callback every time we write to it, forming an
+// infinite resize loop.
 const topBarResizeObserver = new ResizeObserver(layoutMapPane);
-topBarResizeObserver.observe(topBarEl);
+topBarResizeObserver.observe(document.getElementById('routeTrack'));
+window.addEventListener('resize', layoutMapPane);
 // ═══════════════ INIT ═══════════════
 
 function init() {
