@@ -1087,7 +1087,12 @@ $('#topBarToggle').addEventListener('click', () => {
     topBarEl.style.maxHeight = '0px';
     if (compactBtn) compactBtn.style.opacity = '0';
     topBarEl.classList.add('collapsed');
-    updateTogglePositions();
+    // Recalc after the shrink finishes, not immediately — offsetHeight
+    // read right now would still reflect the pre-collapse (tall) size.
+    topBarEl.addEventListener('transitionend', function clear() {
+      topBarEl.removeEventListener('transitionend', clear);
+      updateTogglePositions();
+    });
   }
 });
 const MAP_MIN_HEIGHT = 64; // px — keep in sync with #mapViewport's min-height in styles.css
@@ -1098,25 +1103,19 @@ function updateTogglePositions() {
   const bottomBarEl = document.getElementById('bottomBar');
   const topBarToggleEl = document.getElementById('topBarToggle');
   const topH = topBarEl.offsetHeight;
-  const toggleH = topBarToggleEl.offsetHeight; // the arrow button between topBar and the map — was missing from this calc entirely
+  const toggleH = topBarToggleEl.offsetHeight;
   const appH = document.getElementById('app').offsetHeight;
   const available = appH - topH - toggleH;
 
-  // Once expanding the top bar would squeeze the map below one row's
-  // worth of height even with the back button gone, hide the back
-  // button instead of continuing to shrink the map. #mapViewport's
-  // height is set explicitly below (not via flex) so it never
-  // rebounds back up just because the back button disappeared —
-  // that freed space goes to the top bar, not the map.
-  const minimized = (available - bottomBarNaturalH) < MAP_MIN_HEIGHT;
-  bottomBarEl.classList.toggle('minimized', minimized);
-
-  const bottomH = minimized ? 0 : bottomBarNaturalH;
-  const mapHeight = Math.max(MAP_MIN_HEIGHT, available - bottomH);
-  mapViewportEl.style.height = mapHeight + 'px';
+  // #mapViewport already has flex:1 + min-height:64px in CSS, so it
+  // naturally shrinks to that floor on its own as topBar grows — no JS
+  // needs to set its height. This only decides whether the back button
+  // still fits in whatever's left over.
+  bottomBarEl.classList.toggle('minimized', (available - bottomBarNaturalH) < MAP_MIN_HEIGHT);
 
   if (sidebarToggle) {
-    const mapMid = topH + toggleH + mapHeight / 2;
+    const mapH = mapViewportEl.offsetHeight; // reflects layout post class-toggle, since display:none is instant
+    const mapMid = topH + toggleH + mapH / 2;
     sidebarToggle.style.top = mapMid + 'px';
   }
 }

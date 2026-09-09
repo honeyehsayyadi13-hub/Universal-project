@@ -470,12 +470,6 @@ input { font-family: inherit; }
   display: flex;
   flex-direction: column;
   background: var(--navy);
-  /* Safety net: with mapViewport's height now set explicitly by JS
-     (see updateTogglePositions), a stale calc from a mid-transition
-     frame could momentarily ask for more total height than mapPane
-     has. Clipping here means that shows as nothing (a frame skipped)
-     instead of the back button visibly sliding off the bottom. */
-  overflow: hidden;
 }
 
 #topBar {
@@ -639,12 +633,11 @@ input { font-family: inherit; }
   opacity: 0.6;
 }
 #mapViewport {
-  /* Height is set explicitly by app.js (updateTogglePositions), not by
-     flex-grow — flex-basis:0% (what "flex: 1" implies) would ignore
-     that inline height and recompute its own size from flex-grow,
-     undoing the floor the JS is trying to enforce. flex: 0 0 auto lets
-     the inline height set by JS actually stick. */
-  flex: 0 0 auto;
+  /* min-height is an absolute floor even with flex:1 — browsers always
+     honor min-height on a flex item regardless of flex-basis. That's
+     the actual mechanism holding the map at ~one row; nothing else
+     needs to touch its height in JS. */
+  flex: 1;
   min-height: 64px;
   overflow: auto;
   background: var(--navy);
