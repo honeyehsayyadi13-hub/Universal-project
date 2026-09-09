@@ -636,7 +636,9 @@ input { font-family: inherit; }
   color: var(--danger);
   font-size: 10px;
   line-height: 1;
+  padding: 0;
   display: flex; align-items: center; justify-content: center;
+  align-self: center;
 }
 
 .stop-remove:hover { background: var(--danger); color: var(--white); }
