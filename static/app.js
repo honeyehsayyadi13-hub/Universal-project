@@ -628,19 +628,29 @@ function renderRouteBar() {
   routeItemsEl.classList.add('active');
   routeItemsEl.innerHTML = '';
 
-  // Alternating row sizes: bigger row first (4-3-4-3 on mobile, 6-5-6-5 on desktop)
   const isMobile = window.matchMedia('(max-width: 760px)').matches;
   const bigRow   = isMobile ? 4 : 6;
   const smallRow = isMobile ? 3 : 5;
+  const total    = state.route.length;
 
-  // Slice route into row groups
   const rows = [];
-  let cursor = 0, parity = 0;
-  while (cursor < state.route.length) {
-    const size = parity % 2 === 0 ? bigRow : smallRow;
-    rows.push({ start: cursor, end: Math.min(cursor + size, state.route.length) });
-    cursor += size;
-    parity++;
+  if (total <= bigRow) {
+    // Single row — everything fits
+    rows.push({ start: 0, end: total });
+  } else if (total <= bigRow + smallRow) {
+    // Exactly 2 rows — split evenly instead of staggering
+    const half = Math.ceil(total / 2);
+    rows.push({ start: 0,    end: half  });
+    rows.push({ start: half, end: total });
+  } else {
+    // 3+ rows — alternating x+1 / x pattern
+    let cursor = 0, parity = 0;
+    while (cursor < total) {
+      const size = parity % 2 === 0 ? bigRow : smallRow;
+      rows.push({ start: cursor, end: Math.min(cursor + size, total) });
+      cursor += size;
+      parity++;
+    }
   }
 
   rows.forEach(({ start, end }) => {
