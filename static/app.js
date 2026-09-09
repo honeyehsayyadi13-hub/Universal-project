@@ -615,25 +615,7 @@ document.addEventListener('click', e => {
 // browser knows that after layout. An arrow whose own top sits above the
 // element right after it has wrapped to a new line, meaning that arrow
 // is pointing off the edge into nothing. Hide those.
-function hideRowEndArrows() {
-  const ROW_JUMP_THRESHOLD = 20; // px — a real row-to-row jump in vertical
-                                  // center is much bigger than this; same-row
-                                  // items (even at very different heights)
-                                  // share nearly the same center line
-  const centerOf = el => el.offsetTop + el.offsetHeight / 2;
-  const children = Array.from(routeItemsEl.children);
-  children.forEach((el, idx) => {
-    if (!el.classList.contains('route-arrow')) return;
-    el.style.visibility = '';
-    const prev = children[idx - 1];
-    const next = children[idx + 1];
-    const startsRow = prev && Math.abs(centerOf(el) - centerOf(prev)) > ROW_JUMP_THRESHOLD;
-    const endsRow   = next && Math.abs(centerOf(el) - centerOf(next)) > ROW_JUMP_THRESHOLD;
-    if (startsRow || endsRow) {
-      el.style.visibility = 'hidden';
-    }
-  });
-}
+
 
 function renderRouteBar() {
   if (!state.route.length) {
@@ -646,224 +628,225 @@ function renderRouteBar() {
   routeItemsEl.classList.add('active');
   routeItemsEl.innerHTML = '';
 
-  state.route.forEach((stop, i) => {
-    const r = rideById[stop.rideId];
-    if (!r) return;
+  // Alternating row sizes: bigger row first (4-3-4-3 on mobile, 6-5-6-5 on desktop)
+  const isMobile = window.matchMedia('(max-width: 760px)').matches;
+  const bigRow   = isMobile ? 4 : 6;
+  const smallRow = isMobile ? 3 : 5;
 
-    const instIdx    = getInstanceIndex(state.route, i);
-    const uniqueKey  = getUniqueKey(stop.rideId, instIdx);
-    const pinEntry   = state.timePinned[uniqueKey];
-    const isLocked   = pinEntry && pinEntry.targetMinutes !== null;
-    const isHighlighted = !!pinEntry;
+  // Slice route into row groups
+  const rows = [];
+  let cursor = 0, parity = 0;
+  while (cursor < state.route.length) {
+    const size = parity % 2 === 0 ? bigRow : smallRow;
+    rows.push({ start: cursor, end: Math.min(cursor + size, state.route.length) });
+    cursor += size;
+    parity++;
+  }
 
-    const wrap = document.createElement('div');
-    wrap.className = 'route-stop';
-    wrap.draggable = true;
-    wrap.dataset.idx = i;
+  rows.forEach(({ start, end }) => {
+    const rowEl = document.createElement('div');
+    rowEl.className = 'route-row';
 
-    // ── mouse drag events ────────────────────────────────────────
-    wrap.addEventListener('dragstart', e => {
-      dragSrcIdx = i;
-      wrap.classList.add('dragging');
-      e.dataTransfer.effectAllowed = 'move';
-    });
+    for (let i = start; i < end; i++) {
+      const stop = state.route[i];
+      const r = rideById[stop.rideId];
+      if (!r) continue;
 
-    wrap.addEventListener('dragend', () => {
-      dragSrcIdx = null;
-      document.querySelectorAll('.route-stop').forEach(el =>
-        el.classList.remove('dragging', 'drag-over'));
-    });
+      const instIdx    = getInstanceIndex(state.route, i);
+      const uniqueKey  = getUniqueKey(stop.rideId, instIdx);
+      const pinEntry   = state.timePinned[uniqueKey];
+      const isLocked   = pinEntry && pinEntry.targetMinutes !== null;
+      const isHighlighted = !!pinEntry;
 
-    wrap.addEventListener('dragover', e => {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'move';
-      if (dragSrcIdx !== null && dragSrcIdx !== i) {
-        document.querySelectorAll('.route-stop').forEach(el => el.classList.remove('drag-over'));
-        wrap.classList.add('drag-over');
-      }
-    });
+      const wrap = document.createElement('div');
+      wrap.className = 'route-stop';
+      wrap.draggable = true;
+      wrap.dataset.idx = i;
 
-    wrap.addEventListener('dragleave', () => wrap.classList.remove('drag-over'));
-
-    wrap.addEventListener('drop', e => {
-      e.preventDefault();
-      wrap.classList.remove('drag-over');
-      const src = dragSrcIdx;
-      dragSrcIdx = null;
-      executeDrop(src, i);
-    });
-
-    // ── touch drag events (mobile) ───────────────────────────────
-    wrap.addEventListener('touchstart', e => {
-      const touch = e.touches[0];
-      touchStartX     = touch.clientX;
-      touchStartY     = touch.clientY;
-      touchDragSrcIdx = i;
-      touchDragging   = false;
-    }, { passive: true });
-
-    wrap.addEventListener('touchmove', e => {
-      if (touchDragSrcIdx === null) return;
-      const touch = e.touches[0];
-      const dx = touch.clientX - touchStartX;
-      const dy = touch.clientY - touchStartY;
-
-      if (!touchDragging) {
-        if (Math.hypot(dx, dy) < 8) return;     // below movement threshold — not a drag yet
-
-        touchDragging = true;
+      // ── mouse drag ───────────────────────────────────────────
+      wrap.addEventListener('dragstart', e => {
+        dragSrcIdx = i;
         wrap.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+      });
 
-        // Visual ghost that follows the finger
-        touchDragClone = wrap.cloneNode(true);
-        Object.assign(touchDragClone.style, {
-          position: 'fixed', pointerEvents: 'none', opacity: '0.85',
-          zIndex: '9999', width: wrap.offsetWidth + 'px',
-          transform: 'scale(1.05)', transition: 'none',
-          left: (touch.clientX - wrap.offsetWidth / 2) + 'px',
-          top:  (touch.clientY - 30) + 'px',
-        });
-        document.body.appendChild(touchDragClone);
-      }
+      wrap.addEventListener('dragend', () => {
+        dragSrcIdx = null;
+        document.querySelectorAll('.route-stop').forEach(el =>
+          el.classList.remove('dragging', 'drag-over'));
+      });
 
-      e.preventDefault();   // safe here — listener is passive:false
+      wrap.addEventListener('dragover', e => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        if (dragSrcIdx !== null && dragSrcIdx !== i) {
+          document.querySelectorAll('.route-stop').forEach(el => el.classList.remove('drag-over'));
+          wrap.classList.add('drag-over');
+        }
+      });
 
-      touchDragClone.style.left = (touch.clientX - touchDragClone.offsetWidth / 2) + 'px';
-      touchDragClone.style.top  = (touch.clientY - 30) + 'px';
+      wrap.addEventListener('dragleave', () => wrap.classList.remove('drag-over'));
 
-      // Highlight the stop the finger is currently over
-      if (touchDragClone) touchDragClone.style.visibility = 'hidden';
-      const el = document.elementFromPoint(touch.clientX, touch.clientY);
-      if (touchDragClone) touchDragClone.style.visibility = '';
-      const overStop = el?.closest('.route-stop');
-      document.querySelectorAll('.route-stop').forEach(s => s.classList.remove('drag-over'));
-      if (overStop && overStop !== wrap) overStop.classList.add('drag-over');
+      wrap.addEventListener('drop', e => {
+        e.preventDefault();
+        wrap.classList.remove('drag-over');
+        const src = dragSrcIdx;
+        dragSrcIdx = null;
+        executeDrop(src, i);
+      });
 
-    }, { passive: false });
+      // ── touch drag ───────────────────────────────────────────
+      wrap.addEventListener('touchstart', e => {
+        const touch = e.touches[0];
+        touchStartX     = touch.clientX;
+        touchStartY     = touch.clientY;
+        touchDragSrcIdx = i;
+        touchDragging   = false;
+      }, { passive: true });
 
-    wrap.addEventListener('touchend', e => {
-      if (!touchDragging) {
-        // Was a tap — pill's pointerup handler takes care of highlight toggle
+      wrap.addEventListener('touchmove', e => {
+        if (touchDragSrcIdx === null) return;
+        const touch = e.touches[0];
+        const dx = touch.clientX - touchStartX;
+        const dy = touch.clientY - touchStartY;
+
+        if (!touchDragging) {
+          if (Math.hypot(dx, dy) < 8) return;
+          touchDragging = true;
+          wrap.classList.add('dragging');
+          touchDragClone = wrap.cloneNode(true);
+          Object.assign(touchDragClone.style, {
+            position: 'fixed', pointerEvents: 'none', opacity: '0.85',
+            zIndex: '9999', width: wrap.offsetWidth + 'px',
+            transform: 'scale(1.05)', transition: 'none',
+            left: (touch.clientX - wrap.offsetWidth / 2) + 'px',
+            top:  (touch.clientY - 30) + 'px',
+          });
+          document.body.appendChild(touchDragClone);
+        }
+
+        e.preventDefault();
+        touchDragClone.style.left = (touch.clientX - touchDragClone.offsetWidth / 2) + 'px';
+        touchDragClone.style.top  = (touch.clientY - 30) + 'px';
+
+        if (touchDragClone) touchDragClone.style.visibility = 'hidden';
+        const el = document.elementFromPoint(touch.clientX, touch.clientY);
+        if (touchDragClone) touchDragClone.style.visibility = '';
+        const overStop = el?.closest('.route-stop');
+        document.querySelectorAll('.route-stop').forEach(s => s.classList.remove('drag-over'));
+        if (overStop && overStop !== wrap) overStop.classList.add('drag-over');
+      }, { passive: false });
+
+      wrap.addEventListener('touchend', e => {
+        if (!touchDragging) {
+          touchDragSrcIdx = null;
+          return;
+        }
+        const touch = e.changedTouches[0];
+        if (touchDragClone) touchDragClone.style.visibility = 'hidden';
+        const el = document.elementFromPoint(touch.clientX, touch.clientY);
+        touchDragClone?.remove();
+        touchDragClone = null;
+        wrap.classList.remove('dragging');
+        document.querySelectorAll('.route-stop').forEach(s => s.classList.remove('drag-over'));
+        const overStop = el?.closest('.route-stop');
+        const dropIdx  = overStop ? parseInt(overStop.dataset.idx) : -1;
+        const src = touchDragSrcIdx;
         touchDragSrcIdx = null;
-        return;
-      }
+        touchDragging   = false;
+        if (dropIdx >= 0 && dropIdx !== src) executeDrop(src, dropIdx);
+      });
 
-      const touch = e.changedTouches[0];
+      // ── card ─────────────────────────────────────────────────
+      const card = document.createElement('div');
+      card.className = 'route-stop-card';
 
-      // Hide clone before elementFromPoint so we see what's underneath
-      if (touchDragClone) touchDragClone.style.visibility = 'hidden';
-      const el = document.elementFromPoint(touch.clientX, touch.clientY);
-      touchDragClone?.remove();
-      touchDragClone = null;
+      const pill = document.createElement('div');
+      pill.className = 'route-pill'
+        + (isLocked ? ' time-locked' : isHighlighted ? ' highlighted' : '');
 
-      wrap.classList.remove('dragging');
-      document.querySelectorAll('.route-stop').forEach(s => s.classList.remove('drag-over'));
+      let pointerDownX = 0, pointerDownY = 0;
+      pill.addEventListener('pointerdown', e => { pointerDownX = e.clientX; pointerDownY = e.clientY; });
+      pill.addEventListener('pointerup', e => {
+        const dist = Math.hypot(e.clientX - pointerDownX, e.clientY - pointerDownY);
+        if (dist > 8) return;
+        if (pinEntry) {
+          delete state.timePinned[uniqueKey];
+          const anyStillPinned = Object.keys(state.timePinned).some(k => k.startsWith(`${stop.rideId}:`));
+          if (!anyStillPinned && state.pinnedLocked[stop.rideId]) {
+            state.locked[stop.rideId] = false;
+            delete state.pinnedLocked[stop.rideId];
+          }
+        } else {
+          const isFirst = i === 0;
+          const isLast  = i === state.route.length - 1;
+          state.timePinned[uniqueKey] = {
+            rideId: stop.rideId,
+            instanceIndex: instIdx,
+            targetMinutes: isFirst ? 0 : isLast ? 1440 : null,
+          };
+          if (isFirst) clearConflictingSentinelPins(0, uniqueKey);
+          if (isLast)  clearConflictingSentinelPins(1440, uniqueKey);
+          if (!state.locked[stop.rideId]) {
+            state.locked[stop.rideId] = true;
+            state.pinnedLocked[stop.rideId] = true;
+          }
+        }
+        renderRouteBar();
+        renderSidebarList();
+      });
 
-      const overStop = el?.closest('.route-stop');
-      const dropIdx  = overStop ? parseInt(overStop.dataset.idx) : -1;
+      const img = document.createElement('img');
+      img.src = r.icon;
+      img.alt = r.name;
+      img.draggable = false;
+      img.onerror = () => { img.remove(); pill.innerHTML = `<span>${r.name.split(' ')[0]}</span>`; };
+      pill.appendChild(img);
 
-      const src = touchDragSrcIdx;
-      touchDragSrcIdx = null;
-      touchDragging   = false;
+      const chip = document.createElement('span');
+      chip.className = 'wait-chip';
+      chip.textContent = stop.predictedWait == null ? '--' : `${Math.round(stop.predictedWait)}m`;
 
-      if (dropIdx >= 0 && dropIdx !== src) executeDrop(src, dropIdx);
-    });
-
-    // ── card ─────────────────────────────────────────────────────
-    const card = document.createElement('div');
-    card.className = 'route-stop-card';
-
-    const pill = document.createElement('div');
-    pill.className = 'route-pill'
-      + (isLocked ? ' time-locked' : isHighlighted ? ' highlighted' : '');
-
-    // Click pill: toggle cosmetic highlight / remove time-lock
-    let pointerDownX = 0, pointerDownY = 0;
-    pill.addEventListener('pointerdown', e => { pointerDownX = e.clientX; pointerDownY = e.clientY; });
-    pill.addEventListener('pointerup', e => {
-      const dist = Math.hypot(e.clientX - pointerDownX, e.clientY - pointerDownY);
-      if (dist > 8) return;
-      if (pinEntry) {
+      const remove = document.createElement('button');
+      remove.className = 'stop-remove';
+      remove.textContent = '✕';
+      remove.addEventListener('click', () => {
         delete state.timePinned[uniqueKey];
-        // Unlock only if we were the one who locked it, and no other instances still pinned
+        state.route.splice(i, 1);
+        const remaining = state.route.filter(s => s.rideId === stop.rideId).length;
+        state.maxBeforeInfinity[stop.rideId] = remaining;
+        state.maxCounts[stop.rideId] = remaining;
         const anyStillPinned = Object.keys(state.timePinned).some(k => k.startsWith(`${stop.rideId}:`));
         if (!anyStillPinned && state.pinnedLocked[stop.rideId]) {
           state.locked[stop.rideId] = false;
           delete state.pinnedLocked[stop.rideId];
         }
-      } else {
-        const isFirst = i === 0;
-        const isLast  = i === state.route.length - 1;
-        state.timePinned[uniqueKey] = {
-          rideId: stop.rideId,
-          instanceIndex: instIdx,
-          targetMinutes: isFirst ? 0 : isLast ? 1440 : null,
-        };
-        // Same one-sentinel-holder-at-a-time rule as executeDrop: claiming
-        // first/last here must strip that sentinel off anything else that
-        // had it, or the backend gets two "stay last" requests at once.
-        if (isFirst) clearConflictingSentinelPins(0, uniqueKey);
-        if (isLast)  clearConflictingSentinelPins(1440, uniqueKey);
-        if (!state.locked[stop.rideId]) {
-          state.locked[stop.rideId] = true;
-          state.pinnedLocked[stop.rideId] = true;
+        if (remaining === 0) {
+          state.visible[stop.rideId] = false;
+          state.locked[stop.rideId] = false;
+          state.counts[stop.rideId] = 0;
+          delete state.pinnedLocked[stop.rideId];
         }
+        renderRouteBar();
+        renderSidebarList();
+        renderPins();
+      });
+
+      card.append(pill, chip, remove);
+      wrap.appendChild(card);
+      rowEl.appendChild(wrap);
+
+      // Arrow between stops within this row only (not after the last in the row)
+      if (i < end - 1) {
+        const arrow = document.createElement('span');
+        arrow.className = 'route-arrow';
+        arrow.textContent = '→';
+        rowEl.appendChild(arrow);
       }
-      renderRouteBar();
-      renderSidebarList();
-    });
-
-    const img = document.createElement('img');
-    img.src = r.icon;
-    img.alt = r.name;
-    img.draggable = false;
-    img.onerror = () => { img.remove(); pill.innerHTML = `<span>${r.name.split(' ')[0]}</span>`; };
-    pill.appendChild(img);
-
-    const chip = document.createElement('span');
-    chip.className = 'wait-chip';
-    chip.textContent = stop.predictedWait == null ? '--' : `${Math.round(stop.predictedWait)}m`;
-
-    const remove = document.createElement('button');
-    remove.className = 'stop-remove';
-    remove.textContent = '✕';
-    remove.addEventListener('click', () => {
-      delete state.timePinned[uniqueKey];
-      state.route.splice(i, 1);
-      const remaining = state.route.filter(s => s.rideId === stop.rideId).length;
-      state.maxBeforeInfinity[stop.rideId] = remaining;
-      state.maxCounts[stop.rideId] = remaining;
-      const anyStillPinned = Object.keys(state.timePinned).some(k => k.startsWith(`${stop.rideId}:`));
-      if (!anyStillPinned && state.pinnedLocked[stop.rideId]) {
-        state.locked[stop.rideId] = false;
-        delete state.pinnedLocked[stop.rideId];
-      }
-      if (remaining === 0) {
-        state.visible[stop.rideId] = false;
-        state.locked[stop.rideId] = false;
-        state.counts[stop.rideId] = 0;
-        delete state.pinnedLocked[stop.rideId];
-      }
-      renderRouteBar();
-      renderSidebarList();
-      renderPins();
-    });
-
-    card.append(pill, chip, remove);
-    wrap.appendChild(card);
-
-
-    routeItemsEl.appendChild(wrap);
-
-    if (i < state.route.length - 1) {
-      const arrow = document.createElement('span');
-      arrow.className = 'route-arrow';
-      arrow.textContent = '→';
-      routeItemsEl.appendChild(arrow);
     }
-  });
 
-  hideRowEndArrows();
+    routeItemsEl.appendChild(rowEl);
+  });
 }
 
 // ═══════════════ ROUTE GENERATION ═══════════════
