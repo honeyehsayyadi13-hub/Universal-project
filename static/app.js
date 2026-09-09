@@ -792,7 +792,7 @@ function renderRouteBar() {
           state.timePinned[uniqueKey] = {
             rideId: stop.rideId,
             instanceIndex: instIdx,
-            targetMinutes: isFirst ? 0 : isLast ? 1440 : null,
+            targetMinutes: isFirst ? 0 : isLast ? 1440 : (stop.queueJoinMinutes ?? null),
           };
           if (isFirst) clearConflictingSentinelPins(0, uniqueKey);
           if (isLast)  clearConflictingSentinelPins(1440, uniqueKey);
