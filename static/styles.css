@@ -535,7 +535,7 @@ input { font-family: inherit; }
 
 .route-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   gap: 5px;
   flex-wrap: nowrap;
@@ -545,14 +545,14 @@ input { font-family: inherit; }
   display: flex;
   justify-content: center;
   flex-shrink: 0;
-  width: 62px;
+  width: 72px;
 }
 
 .route-pill {
   position: relative;
   width: 100%;
   aspect-ratio: 1;
-  max-width: 54px;
+  max-width: 64px;
   border-radius: var(--radius-md);
   background: var(--white);
   border: 1px solid var(--paper-line);
