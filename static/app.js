@@ -637,13 +637,12 @@ function renderRouteBar() {
   if (total <= bigRow) {
     // Single row — everything fits
     rows.push({ start: 0, end: total });
-  } else if (total <= bigRow + smallRow) {
-    // Exactly 2 rows — split evenly instead of staggering
-    const half = Math.ceil(total / 2);
-    rows.push({ start: 0,    end: half  });
-    rows.push({ start: half, end: total });
+  } else if (total <= bigRow * 2) {
+    // Two rows — first fills to bigRow, second gets the rest, no alternating
+    rows.push({ start: 0,      end: bigRow });
+    rows.push({ start: bigRow, end: total  });
   } else {
-    // 3+ rows — alternating x+1 / x pattern
+    // 3+ rows — alternating bigRow / smallRow pattern
     let cursor = 0, parity = 0;
     while (cursor < total) {
       const size = parity % 2 === 0 ? bigRow : smallRow;
