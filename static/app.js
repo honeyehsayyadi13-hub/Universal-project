@@ -232,6 +232,7 @@ const sidebarListEl     = $('#sidebarList');
 const popupEl           = $('#popup');
 const pinLayerEl        = $('#pinLayer');
 const mapImageEl        = $('#mapImage');
+const mapViewportEl     = $('#mapViewport');
 const routeItemsEl      = $('#routeItems');
 const routePlaceholderEl= $('#routePlaceholder');
 
@@ -1060,7 +1061,10 @@ $('#topBarToggle').addEventListener('click', () => {
   const collapsed = topBarEl.classList.contains('collapsed');
   if (collapsed) {
     topBarEl.classList.remove('collapsed');
-    const target = Math.min(topBarEl.scrollHeight, window.innerHeight - 38);
+    // Reserve room for both the toggle button (38px) and the map's floor
+    // height, so expanding the top bar can never squeeze the map (even
+    // with the back button already hidden) below MAP_MIN_HEIGHT.
+    const target = Math.min(topBarEl.scrollHeight, window.innerHeight - 38 - MAP_MIN_HEIGHT);
     topBarEl.style.maxHeight = '0px';
     if (compactBtn) compactBtn.style.opacity = '0';
     topBarEl.style.transition = 'none';
@@ -1094,17 +1098,23 @@ function updateTogglePositions() {
   const bottomBarEl = document.getElementById('bottomBar');
   const topH = topBarEl.offsetHeight;
   const appH = document.getElementById('app').offsetHeight;
+  const available = appH - topH;
 
   // Once expanding the top bar would squeeze the map below one row's
-  // worth of height, hide the back button instead of continuing to
-  // shrink the map. The map's floor is #mapViewport's min-height; the
-  // back button's row is what gives way after that.
-  const spaceWithBottomBar = appH - topH - bottomBarNaturalH;
-  bottomBarEl.classList.toggle('minimized', spaceWithBottomBar < MAP_MIN_HEIGHT);
+  // worth of height even with the back button gone, hide the back
+  // button instead of continuing to shrink the map. #mapViewport's
+  // height is set explicitly below (not via flex) so it never
+  // rebounds back up just because the back button disappeared —
+  // that freed space goes to the top bar, not the map.
+  const minimized = (available - bottomBarNaturalH) < MAP_MIN_HEIGHT;
+  bottomBarEl.classList.toggle('minimized', minimized);
+
+  const bottomH = minimized ? 0 : bottomBarNaturalH;
+  const mapHeight = Math.max(MAP_MIN_HEIGHT, available - bottomH);
+  mapViewportEl.style.height = mapHeight + 'px';
 
   if (sidebarToggle) {
-    const currentBottomH = bottomBarEl.classList.contains('minimized') ? 0 : bottomBarNaturalH;
-    const mapMid = topH + (appH - topH - currentBottomH) / 2;
+    const mapMid = topH + mapHeight / 2;
     sidebarToggle.style.top = mapMid + 'px';
   }
 }
