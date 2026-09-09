@@ -86,6 +86,16 @@ function getInstanceIndex(route, pos) {
 }
 
 function getUniqueKey(rideId, instanceIndex) { return `${rideId}:${instanceIndex}`; }
+
+function minsToTime(mins) {
+  if (mins == null) return '--';
+  const total = Math.round(mins) % 1440;
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  const period = h >= 12 ? 'PM' : 'AM';
+  const hour = h % 12 || 12;
+  return `${hour}:${String(m).padStart(2, '0')} ${period}`;
+}
 let breakIdCounter = 0;
 let dragSrcIdx = null;
 let touchDragSrcIdx = null;
@@ -816,6 +826,13 @@ function renderRouteBar() {
       chip.className = 'wait-chip';
       chip.textContent = stop.predictedWait == null ? '--' : `${Math.round(stop.predictedWait)}m`;
 
+      const boardMinutes = stop.queueJoinMinutes != null && stop.predictedWait != null
+        ? stop.queueJoinMinutes + Math.round(stop.predictedWait)
+        : null;
+      const timeChip = document.createElement('span');
+      timeChip.className = 'time-chip';
+      timeChip.textContent = minsToTime(boardMinutes);
+
       const remove = document.createElement('button');
       remove.className = 'stop-remove';
       remove.textContent = '✕';
@@ -841,7 +858,7 @@ function renderRouteBar() {
         renderPins();
       });
 
-      card.append(pill, chip, remove);
+      card.append(pill, chip, timeChip, remove);
       wrap.appendChild(card);
       rowEl.appendChild(wrap);
 
@@ -913,11 +930,17 @@ async function generateRoute(triggerBtn) {
 
   const time_pinned = Object.values(state.timePinned)
     .filter(p => p.targetMinutes !== null)
-    .map(p => ({
-      ride_key:       p.rideId,
-      instance_index: p.instanceIndex,
-      target_minutes: p.targetMinutes,
-    }));
+    .map(p => {
+      const routeIdx = state.route.findIndex((stop, idx) =>
+        stop.rideId === p.rideId && getInstanceIndex(state.route, idx) === p.instanceIndex
+      );
+      return {
+        ride_key:       p.rideId,
+        instance_index: p.instanceIndex,
+        target_minutes: p.targetMinutes,
+        route_index:    routeIdx,
+      };
+    });
 
   triggerBtn.classList.add('flash');
   setTimeout(() => triggerBtn.classList.remove('flash'), 220);

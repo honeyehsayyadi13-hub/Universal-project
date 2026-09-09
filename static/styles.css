@@ -612,6 +612,13 @@ input { font-family: inherit; }
   padding: 1px 8px;
 }
 
+.time-chip {
+  font-size: 9.5px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  text-align: center;
+}
+
 .stop-remove {
   width: 15px; height: 15px;
   border-radius: 4px;
