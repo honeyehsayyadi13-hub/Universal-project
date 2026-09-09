@@ -548,6 +548,14 @@ input { font-family: inherit; }
   width: 62px;
 }
 
+.route-stop-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+}
+
 .route-pill {
   position: relative;
   width: 100%;
