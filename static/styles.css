@@ -470,6 +470,12 @@ input { font-family: inherit; }
   display: flex;
   flex-direction: column;
   background: var(--navy);
+  /* Safety net: with mapViewport's height now set explicitly by JS
+     (see updateTogglePositions), a stale calc from a mid-transition
+     frame could momentarily ask for more total height than mapPane
+     has. Clipping here means that shows as nothing (a frame skipped)
+     instead of the back button visibly sliding off the bottom. */
+  overflow: hidden;
 }
 
 #topBar {

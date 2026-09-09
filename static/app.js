@@ -1096,9 +1096,11 @@ let bottomBarNaturalH = 0; // captured once at init, before bottomBar is ever mi
 function updateTogglePositions() {
   const sidebarToggle = document.getElementById('sidebarToggle');
   const bottomBarEl = document.getElementById('bottomBar');
+  const topBarToggleEl = document.getElementById('topBarToggle');
   const topH = topBarEl.offsetHeight;
+  const toggleH = topBarToggleEl.offsetHeight; // the arrow button between topBar and the map — was missing from this calc entirely
   const appH = document.getElementById('app').offsetHeight;
-  const available = appH - topH;
+  const available = appH - topH - toggleH;
 
   // Once expanding the top bar would squeeze the map below one row's
   // worth of height even with the back button gone, hide the back
@@ -1114,7 +1116,7 @@ function updateTogglePositions() {
   mapViewportEl.style.height = mapHeight + 'px';
 
   if (sidebarToggle) {
-    const mapMid = topH + mapHeight / 2;
+    const mapMid = topH + toggleH + mapHeight / 2;
     sidebarToggle.style.top = mapMid + 'px';
   }
 }
