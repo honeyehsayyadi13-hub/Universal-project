@@ -858,7 +858,10 @@ function renderRouteBar() {
         renderPins();
       });
 
-      card.append(pill, chip, timeChip, remove);
+      const chipGroup = document.createElement('div');
+      chipGroup.className = 'chip-group';
+      chipGroup.append(chip, timeChip);
+      card.append(pill, chipGroup, remove);
       wrap.appendChild(card);
       rowEl.appendChild(wrap);
 

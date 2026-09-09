@@ -612,6 +612,14 @@ input { font-family: inherit; }
   padding: 1px 8px;
 }
 
+.chip-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+}
+
 .time-chip {
   font-size: 9.5px;
   font-weight: 600;
