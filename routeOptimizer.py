@@ -592,7 +592,45 @@ def _fill_until_close(order, candidate_ids, weights, histories, walk_map, durati
 
     return order
 
+def _or_opt_refine(order, forced_db_ids, histories, walk_map, durations,
+                    start_time, closing_time, break_windows, start_db_id,
+                    current_waits=None, historical_now_by_id=None, max_passes=3):
+    """Single-stop relocation local search. Only moves stops NOT in
+    forced_db_ids (locked/extra), so it never disturbs guaranteed visits."""
+    order = list(order)
+    forced_set = set(forced_db_ids)
 
+    for _ in range(max_passes):
+        improved = False
+        for i in range(len(order)):
+            if order[i] in forced_set:
+                continue
+            item = order[i]
+            without = order[:i] + order[i+1:]
+
+            base_fits, base_total, _ = _route_score(
+                order, histories, walk_map, durations, start_time, closing_time,
+                break_windows, start_db_id, current_waits=current_waits,
+                historical_now_by_id=historical_now_by_id
+            )
+
+            best = (base_fits, base_total, i)
+            for pos in range(len(without) + 1):
+                candidate = without[:pos] + [item] + without[pos:]
+                fits, total, _ = _route_score(
+                    candidate, histories, walk_map, durations, start_time, closing_time,
+                    break_windows, start_db_id, current_waits=current_waits,
+                    historical_now_by_id=historical_now_by_id
+                )
+                if _better((fits, total), (best[0], best[1])):
+                    best = (fits, total, pos)
+
+            if best[2] != i:
+                order = without[:best[2]] + [item] + without[best[2]:]
+                improved = True
+        if not improved:
+            break
+    return order
 # ── time-pin reordering ──────────────────────────────────────────────
 def _reorder_for_time_pins(order, pin_targets, histories, walk_map, durations,
                             start_time, closing_time, break_windows, start_db_id,
@@ -889,6 +927,15 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
         start_time, closing_time, break_windows, start_db_id,
         current_waits=current_waits, historical_now_by_id=historical_now_by_id,
         max_counts_by_id=max_counts_by_id,
+    )
+    
+    # Local search refinement — reduces sensitivity to small input
+    # differences by pulling the greedy result toward a real local optimum.
+    forced_ids = [it["db_id"] for it in kept_forced]
+    final_order = _or_opt_refine(
+        final_order, forced_ids, histories, walk_map, durations,
+        start_time, closing_time, break_windows, start_db_id,
+        current_waits=current_waits, historical_now_by_id=historical_now_by_id,
     )
 
     # RULE 6b: Honor time-pin placement requests (drag-to-slot, click-to-lock)

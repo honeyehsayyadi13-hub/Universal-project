@@ -49,7 +49,7 @@ def route():
             closed_ride_keys=payload.get("closed_ride_keys"),
             breaks=payload.get("breaks"),
             start_key=payload.get("start_key", "entrance"),
-            live_waits=payload.get("live_waits"),
+            live_waits={k: v["waittime"] for k, v in Data.get_live_wait_times().items() if v.get("waittime") is not None},
             time_pinned=payload.get("time_pinned"),
             max_counts=payload.get("max_counts"),
             )
