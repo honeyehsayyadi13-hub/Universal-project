@@ -63,12 +63,14 @@ import itertools
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from collections import defaultdict
+from data import get_park_hours   # add at the top of the file if not already there
+
 
 from supabase import create_client, Client
 
 
-SUPABASE_URL = "https://azbjjemtcpaeqfqauzod.supabase.co"
-SUPABASE_KEY = "sb_publishable_4oD2QwAuB39Sd9KInIRnsw_jEMOY7pK"
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://azbjjemtcpaeqfqauzod.supabase.co")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "sb_publishable_4oD2QwAuB39Sd9KInIRnsw_jEMOY7pK")
 
 _supabase_client = None
 
@@ -102,7 +104,8 @@ DEFAULT_WAIT_MIN = 30            # fallback if a ride has zero usable history
 DEFAULT_WALK_MIN = 10            # fallback if a ride pair has no walk_times row
 DEFAULT_RIDE_DURATION_MIN = 3    # fallback if a ride has no ride_duration row
 BRUTE_FORCE_LIMIT = 8            # exact solve (permutations) up to this many stops
-PARK_CLOSE_HOUR = 21             # 9:00 PM (change if your park's hours differ)
+PARK_OPEN_HOUR  = 9              # 9:00 AM fallback (overridden by live API hours)
+PARK_CLOSE_HOUR = 20             # 8:00 PM fallback (overridden by live API hours)
 ENTRANCE_DB_ID = 0               # matches the "id" of the entrance row in `rides`
 POST_BREAK_BUFFER_MIN = 2        # time to get moving again after a break ends
 PARK_TIMEZONE = ZoneInfo("America/New_York")  # Universal Orlando is Eastern time
@@ -678,9 +681,9 @@ def _reorder_for_time_pins(order, pin_targets, histories, walk_map, durations,
             # close to the ride that was dropped onto matters more here
             # than preserving fits_count for a plain (non-sentinel) pin.
             pool = within_only
-        elif fits_only:
-            pool = fits_only
         else:
+            # No position lands within 30 min -- get as close as possible.
+            # fits_count is never a reason to move further from the target.
             pool = candidates
 
         best_pos = min(pool, key=lambda c: c[0])[2]
@@ -689,10 +692,57 @@ def _reorder_for_time_pins(order, pin_targets, histories, walk_map, durations,
     return order
 
 
+# ── pin relative-order enforcement ───────────────────────────────────
+def _enforce_pin_order(order, pin_items):
+    """
+    Guarantees pinned rides appear in the same relative order as they did
+    in the route when the user pinned them (tracked via route_index).
+
+    After _reorder_for_time_pins places each pin near its target time, two
+    pins could end up swapped -- e.g. the user pinned Hagrid's (slot 2)
+    then Hulk (slot 5), but time-proximity logic placed Hulk before Hagrid's.
+    This pass fixes that by re-assigning pinned positions to match the
+    original route_index ranking, without touching non-pinned rides.
+
+    pin_items: list of (db_id, instance_index, original_route_index)
+    """
+    if len(pin_items) < 2:
+        return order
+
+    order = list(order)
+    pin_set = {(db_id, inst): orig_idx for db_id, inst, orig_idx in pin_items}
+
+    # Walk order and locate each pinned (db_id, instance_index)
+    occurrence = {}
+    pinned_at = []  # (position, db_id, instance_index, original_route_index)
+    for pos, db_id in enumerate(order):
+        inst = occurrence.get(db_id, 0)
+        occurrence[db_id] = inst + 1
+        key = (db_id, inst)
+        if key in pin_set:
+            pinned_at.append((pos, db_id, inst, pin_set[key]))
+
+    if len(pinned_at) < 2:
+        return order
+
+    # Slots the pinned rides currently occupy, ascending
+    positions = sorted(p[0] for p in pinned_at)
+
+    # Rides sorted by original_route_index = desired relative order
+    rides_in_order = sorted(pinned_at, key=lambda p: p[3])
+
+    # Re-assign each ride to the next slot in position order
+    for (_, db_id, _, _), pos in zip(rides_in_order, positions):
+        order[pos] = db_id
+
+    return order
+
+
 # ── public entry point ──────────────────────────────────────────────
 def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None,
                              breaks=None, start_time=None, start_key="entrance",
-                             live_waits=None, time_pinned=None, max_counts=None):
+                             live_waits=None, time_pinned=None, max_counts=None,
+                             park_open_minutes=None, park_close_minutes=None):
     """
     Main entry point for route computation.
 
@@ -728,6 +778,13 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
         start_time = datetime.now(PARK_TIMEZONE).replace(tzinfo=None)
     elif start_time.tzinfo is not None:
         start_time = start_time.astimezone(PARK_TIMEZONE).replace(tzinfo=None)
+        
+    # Never start before the park opens
+    open_h = (park_open_minutes // 60) if park_open_minutes is not None else PARK_OPEN_HOUR
+    open_m = (park_open_minutes %  60) if park_open_minutes is not None else 0
+    park_open_dt = start_time.replace(hour=open_h, minute=open_m, second=0, microsecond=0)
+    if start_time < park_open_dt:
+        start_time = park_open_dt
 
     checked = {k: c for k, c in ride_counts.items() if c and c > 0}
     if not checked:
@@ -781,7 +838,9 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
     start_db_id = ENTRANCE_DB_ID if start_key == "entrance" else key_to_id.get(start_key, ENTRANCE_DB_ID)
     break_windows = _resolve_break_windows(breaks, start_time.date())
 
-    closing_time = start_time.replace(hour=PARK_CLOSE_HOUR, minute=0, second=0, microsecond=0)
+    close_h = (park_close_minutes // 60) if park_close_minutes is not None else PARK_CLOSE_HOUR
+    close_m = (park_close_minutes %  60) if park_close_minutes is not None else 0
+    closing_time = start_time.replace(hour=close_h, minute=close_m, second=0, microsecond=0)
     if closing_time <= start_time:
         print(f"\nHeads up: it's already past {closing_time.strftime('%I:%M %p')} closing time.\n")
 
@@ -839,18 +898,28 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
     # ride pinned "last" truly ends up last with nothing appended after it.
     if time_pinned:
         pin_targets = {}
+        pin_sequence = []  # (db_id, instance_index, route_index) for order enforcement
         for pin in time_pinned:
-            key  = pin.get('ride_key')
-            inst = pin.get('instance_index', 0)
-            tmin = pin.get('target_minutes')
+            key       = pin.get('ride_key')
+            inst      = pin.get('instance_index', 0)
+            tmin      = pin.get('target_minutes')
+            route_idx = pin.get('route_index', -1)
             if key and key in key_to_id and tmin is not None and key in checked:
-                pin_targets[(key_to_id[key], inst)] = tmin
+                db_id = key_to_id[key]
+                pin_targets[(db_id, inst)] = tmin
+                # Sentinel pins (first/last) are already unconditionally
+                # placed by _reorder_for_time_pins -- exclude them from
+                # relative-order enforcement to avoid interfering with that.
+                if tmin not in (0, 1440) and route_idx >= 0:
+                    pin_sequence.append((db_id, inst, route_idx))
         if pin_targets:
             final_order = _reorder_for_time_pins(
                 final_order, pin_targets, histories, walk_map, durations,
                 start_time, closing_time, break_windows, start_db_id,
                 current_waits=current_waits, historical_now_by_id=historical_now_by_id,
             )
+        if len(pin_sequence) >= 2:
+            final_order = _enforce_pin_order(final_order, pin_sequence)
 
     _, details = _simulate_route(final_order, histories, walk_map, durations, start_time, break_windows, start_db_id,
                                   current_waits=current_waits, historical_now_by_id=historical_now_by_id)
@@ -914,11 +983,14 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
 
 
 if __name__ == "__main__":
+    hours = get_park_hours()
     result = compute_and_print_route(
         ride_counts={"hulk": 2, "spiderMan": 1, "doctorDoom": 1, "stormForce": 1},
         ride_locked={"spiderMan": True},
         closed_ride_keys={"riverAdventure"},
         breaks=[(12 * 60, 13 * 60)],
         live_waits={"hulk": 45, "spiderMan": 20, "doctorDoom": 15, "stormForce": 5},
+        park_open_minutes=hours["open_min"],
+        park_close_minutes=hours["close_min"],
     )
     print("Returned route:", result)

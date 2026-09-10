@@ -15,6 +15,7 @@ import time
 
 _cache: dict = {}          # last successful payload
 _cache_ts: float = 0.0     # unix timestamp of that fetch
+_park_hours_cache: dict = {}   # {"open_min": int, "close_min": int}
 CACHE_TTL = 30             # seconds before we re-hit queue-times.com
 
 RIDE_NAME_MAP = {
@@ -72,7 +73,31 @@ def get_live_wait_times() -> dict:
     except ValueError as e:
         print(f"[data] JSON parse failed: {e}")
         return _cache
-
+    try:
+        import re
+        def _parse_time(raw):
+            if raw is None:
+                return None
+            s = str(raw).strip()
+            if 'T' in s:           # ISO-8601 — grab the HH:MM portion
+                try:
+                    tp = s.split('T')[1][:5]
+                    return int(tp[:2]) * 60 + int(tp[3:5])
+                except Exception:
+                    return None
+            m = re.match(r'(\d{1,2}):(\d{2})\s*(am|pm)?', s, re.IGNORECASE)
+            if m:
+                h, mn, p = int(m.group(1)), int(m.group(2)), (m.group(3) or '').upper()
+                if p == 'PM' and h != 12: h += 12
+                if p == 'AM' and h == 12: h = 0
+                return h * 60 + mn
+            return None
+        open_v  = _parse_time(data.get('opening_time') or data.get('open_time'))
+        close_v = _parse_time(data.get('closing_time') or data.get('close_time'))
+        if open_v  is not None: _park_hours_cache['open_min']  = open_v
+        if close_v is not None: _park_hours_cache['close_min'] = close_v
+    except Exception as e:
+        print(f"[data] park hours parse error: {e}")
     result: dict = {}
     for land in data.get("lands", []):
         for ride in land.get("rides", []):
@@ -116,6 +141,13 @@ def _sync_legacy_dicts(payload: dict) -> None:
         ride_waits[ride_id] = info["waittime"]
         ride_open[ride_id]  = info["is_open"]
 
+def get_park_hours() -> dict:
+    """Return {"open_min": int, "close_min": int} in minutes since midnight.
+    Falls back to 9 AM / 9 PM if the live API has not provided hours yet."""
+    return {
+        "open_min":  _park_hours_cache.get("open_min",   9 * 60),
+        "close_min": _park_hours_cache.get("close_min", 21 * 60),
+    }
 
 def update_backend():
     """
