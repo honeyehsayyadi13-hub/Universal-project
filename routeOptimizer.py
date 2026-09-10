@@ -63,8 +63,7 @@ import itertools
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from collections import defaultdict
-from data import get_park_hours   # add at the top of the file if not already there
-
+from Data import get_park_hours   # add at the top of the file if not already there
 
 from supabase import create_client, Client
 
