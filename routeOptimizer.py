@@ -483,11 +483,27 @@ def _fit_forced(forced_items, histories, walk_map, durations, start_time, closin
         if fits >= len(forced_items):
             return forced_items, dropped, order, details
 
-        drop_kind = "extra" if any(it["kind"] == "extra" for it in forced_items) else "locked"
-        for i, it in enumerate(forced_items):
-            if it["kind"] == drop_kind:
-                dropped.append(forced_items.pop(i))
+        # Prefer dropping extras before locked, and within each kind
+        # prefer dropping NON-pinned items first -- a time-pinned ride
+        # (first / last / within-30-min target) is the last thing ever
+        # sacrificed for capacity.
+        drop_idx = None
+        for kind in ("extra", "locked"):
+            for i, it in enumerate(forced_items):
+                if it["kind"] == kind and not it.get("pinned"):
+                    drop_idx = i
+                    break
+            if drop_idx is not None:
                 break
+        if drop_idx is None:
+            for kind in ("extra", "locked"):
+                for i, it in enumerate(forced_items):
+                    if it["kind"] == kind:
+                        drop_idx = i
+                        break
+                if drop_idx is not None:
+                    break
+        dropped.append(forced_items.pop(drop_idx))
 
     return [], dropped, [], []
 
@@ -638,23 +654,21 @@ def _reorder_for_time_pins(order, pin_targets, histories, walk_map, durations,
     """
     Reorders rides to honor time-pin targets (from drag-to-slot or click-to-lock).
 
-    Sentinel values (0 = force first, 1440 = force last) are HARD
-    constraints: a ride pinned first ALWAYS ends up first, and a ride
-    pinned last ALWAYS ends up last (with nothing appended after it,
-    since this reordering pass runs after every other scheduling step).
-    This is enforced unconditionally -- it does not back off even if it
-    costs the route some fits_count, because the whole point of pinning
-    something first/last is that the person wants exactly that.
+    Sentinel pins (0 = force first, 1440 = force last) are applied FIRST
+    and unconditionally, then their slots are RESERVED: a normal
+    (non-sentinel) pin's search space explicitly excludes position 0
+    when something is pinned first, and excludes the final slot when
+    something is pinned last. This guarantees a sentinel-pinned ride can
+    never get bumped out of first/last place by a later normal pin's
+    "closest time" search landing on that same slot.
 
-    For a normal (non-sentinel) pin -- i.e. a ride dragged onto some
-    other ride's slot -- we look at every possible insertion position and
-    require the result to land within MAX_DRAG_DRIFT_MIN minutes of the
-    target time (the queue-join time of whatever ride occupied that slot)
-    whenever any such position exists at all. Among those, we prefer ones
-    that also keep the existing fits_count, but the drift window always
-    wins over fits_count for a normal pin -- only if NO position keeps it
-    within the drift window do we fall back to fits-preserving-but-farther,
-    and only if that's empty too do we fall back to closest-overall.
+    For a normal pin, we look at every remaining valid insertion position
+    and require the result to land within MAX_DRAG_DRIFT_MIN minutes of
+    the target time whenever any such position exists at all. Among
+    those, we prefer ones that also keep the existing fits_count, but the
+    drift window always wins over fits_count -- only if NO position keeps
+    it within the drift window do we fall back to fits-preserving-but-
+    farther, and only if that's empty too do we fall back to closest-overall.
     """
     order = list(order)
     if not order or not pin_targets:
@@ -666,30 +680,47 @@ def _reorder_for_time_pins(order, pin_targets, histories, walk_map, durations,
         historical_now_by_id=historical_now_by_id,
     )
 
-    for (db_id, inst_idx), target_minutes in sorted(pin_targets.items()):
-        occurrences = [i for i, x in enumerate(order) if x == db_id]
-        if inst_idx >= len(occurrences):
-            continue
-        src_pos = occurrences[inst_idx]
-        order_without = order[:src_pos] + order[src_pos + 1:]
+    sentinel_items = sorted(
+        [(k, v) for k, v in pin_targets.items() if v in (0, 1440)],
+        key=lambda kv: kv[1]
+    )
+    normal_items = sorted(
+        [(k, v) for k, v in pin_targets.items() if v not in (0, 1440)]
+    )
 
-        # Sentinel "force first" (0) -- unconditional, always honored.
+    has_first = False
+    has_last = False
+
+    for (db_id, inst_idx), target_minutes in sentinel_items:
+        occurrences = [i for i, x in enumerate(order) if x == db_id]
+        if not occurrences:
+            continue
+        src_pos = occurrences[min(inst_idx, len(occurrences) - 1)]
+        order_without = order[:src_pos] + order[src_pos + 1:]
         if target_minutes == 0:
             order = [db_id] + order_without
-            continue
-
-        # Sentinel "force last" (1440) -- unconditional, always honored.
-        # Because this reordering pass is the last step before the route
-        # is simulated and returned, appending here guarantees nothing
-        # else ever lands after this ride.
-        if target_minutes == 1440:
+            has_first = True
+        else:  # 1440
             order = order_without + [db_id]
-            continue
+            has_last = True
 
-        # Normal pin: find the insertion position closest to target_minutes,
-        # preferring positions within MAX_DRAG_DRIFT_MIN minutes of it.
-        candidates = []  # (distance_minutes, fits_ok, position)
-        for pos in range(len(order_without) + 1):
+    for (db_id, inst_idx), target_minutes in normal_items:
+        occurrences = [i for i, x in enumerate(order) if x == db_id]
+        if not occurrences:
+            continue
+        src_pos = occurrences[min(inst_idx, len(occurrences) - 1)]
+        order_without = order[:src_pos] + order[src_pos + 1:]
+
+        # Reserve the sentinel slots so a normal pin can never land
+        # exactly at position 0 (forced-first) or at the very end
+        # (forced-last).
+        lo = 1 if has_first else 0
+        hi = (len(order_without) - 1) if has_last else len(order_without)
+        if hi < lo:
+            hi = lo
+
+        candidates = []
+        for pos in range(lo, hi + 1):
             candidate = order_without[:pos] + [db_id] + order_without[pos:]
             fits, _, details = _route_score(
                 candidate, histories, walk_map, durations, start_time, closing_time,
@@ -703,32 +734,23 @@ def _reorder_for_time_pins(order, pin_targets, histories, walk_map, durations,
             candidates.append((dist, fits >= fits_baseline, pos))
 
         if not candidates:
-            # Nothing to insert into -- leave this pin's ride where it was.
             order = order_without[:src_pos] + [db_id] + order_without[src_pos:]
             continue
 
         within_and_fits = [c for c in candidates if c[0] <= MAX_DRAG_DRIFT_MIN and c[1]]
         within_only     = [c for c in candidates if c[0] <= MAX_DRAG_DRIFT_MIN]
-        fits_only       = [c for c in candidates if c[1]]
 
         if within_and_fits:
             pool = within_and_fits
         elif within_only:
-            # Guarantee the drift window even if it costs a fit -- staying
-            # close to the ride that was dropped onto matters more here
-            # than preserving fits_count for a plain (non-sentinel) pin.
             pool = within_only
         else:
-            # No position lands within 30 min -- get as close as possible.
-            # fits_count is never a reason to move further from the target.
             pool = candidates
 
         best_pos = min(pool, key=lambda c: c[0])[2]
         order = order_without[:best_pos] + [db_id] + order_without[best_pos:]
 
     return order
-
-
 # ── pin relative-order enforcement ───────────────────────────────────
 def _enforce_pin_order(order, pin_items):
     """
@@ -801,12 +823,17 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
     """
     ride_locked = dict(ride_locked or {})
 
-    # Time-pinned rides are force-included (treated as locked)
+    # Time-pinned rides are force-included (treated as locked), and
+    # tracked separately so _fit_forced knows never to sacrifice them
+    # for capacity reasons unless literally nothing else can be dropped.
+    pinned_ride_keys = set()
     if time_pinned:
         for pin in time_pinned:
             key = pin.get('ride_key')
-            if key and key not in ride_locked:
-                ride_locked[key] = True
+            if key:
+                pinned_ride_keys.add(key)
+                if key not in ride_locked:
+                    ride_locked[key] = True
 
     closed_ride_keys = set(closed_ride_keys or [])
     breaks = breaks or []
@@ -895,15 +922,16 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
         if max_for_ride == 0:
             continue
         is_locked = bool(ride_locked.get(key))
+        is_pinned = key in pinned_ride_keys
         if is_locked:
-            locked_instances.append({"db_id": db_id, "ride_key": key, "kind": "locked"})
+            locked_instances.append({"db_id": db_id, "ride_key": key, "kind": "locked", "pinned": is_pinned})
         else:
             optional_instances.append({"db_id": db_id, "ride_key": key, "kind": "optional"})
         num_extras = count - 1
         if max_for_ride != float('inf'):
             num_extras = min(num_extras, max(0, int(max_for_ride) - 1))
         for _ in range(num_extras):
-            extra_instances.append({"db_id": db_id, "ride_key": key, "kind": "extra"})
+            extra_instances.append({"db_id": db_id, "ride_key": key, "kind": "extra", "pinned": False})
 
     forced_pool = locked_instances + extra_instances
     kept_forced, dropped_forced, forced_order, _ = _fit_forced(
