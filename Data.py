@@ -16,7 +16,10 @@ import time
 _cache: dict = {}          # last successful payload
 _cache_ts: float = 0.0     # unix timestamp of that fetch
 _park_hours_cache: dict = {}   # {"open_min": int, "close_min": int}
+_park_hours_ts: float = 0.0    # unix timestamp of last successful hours fetch
 CACHE_TTL = 30             # seconds before we re-hit queue-times.com
+PARK_HOURS_CACHE_TTL = 6 * 3600   # hours change rarely -- refetch every 6h
+THEMEPARKS_ENTITY_ID = "267615cc-8943-4c2a-ae2c-5da728ca591f"  # Islands of Adventure
 
 RIDE_NAME_MAP = {
     "The Incredible Hulk Coaster®":                    "hulk",
@@ -141,12 +144,55 @@ def _sync_legacy_dicts(payload: dict) -> None:
         ride_waits[ride_id] = info["waittime"]
         ride_open[ride_id]  = info["is_open"]
 
+def _fetch_park_hours():
+    """Fetch today's operating hours from the ThemeParks.wiki API and
+    populate _park_hours_cache. Cheap on-demand fetch, cached for
+    PARK_HOURS_CACHE_TTL seconds since hours don't change intraday."""
+    global _park_hours_ts
+    now = time.time()
+    if _park_hours_cache and (now - _park_hours_ts) < PARK_HOURS_CACHE_TTL:
+        return
+
+    url = f"https://api.themeparks.wiki/v1/entity/{THEMEPARKS_ENTITY_ID}/schedule"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (compatible; UniversalRoutePlanner/1.0; +https://universal-project.onrender.com)",
+        "Accept": "application/json",
+    }
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"[data] park hours fetch failed: {e!r}")
+        return
+    except ValueError as e:
+        print(f"[data] park hours JSON parse failed: {e}")
+        return
+
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    for entry in data.get("schedule", []):
+        if entry.get("date") == today_str and entry.get("type") == "OPERATING":
+            try:
+                open_dt = datetime.fromisoformat(entry["openingTime"])
+                close_dt = datetime.fromisoformat(entry["closingTime"])
+            except (KeyError, ValueError) as e:
+                print(f"[data] couldn't parse today's schedule entry: {e}")
+                return
+            _park_hours_cache["open_min"] = open_dt.hour * 60 + open_dt.minute
+            _park_hours_cache["close_min"] = close_dt.hour * 60 + close_dt.minute
+            _park_hours_ts = now
+            return
+
+    print("[data] no OPERATING schedule entry found for today -- using fallback hours")
+
+
 def get_park_hours() -> dict:
     """Return {"open_min": int, "close_min": int} in minutes since midnight.
-    Falls back to 9 AM / 9 PM if the live API has not provided hours yet."""
+    Falls back to 9 AM / 8 PM if the live API has not provided hours yet."""
+    _fetch_park_hours()
     return {
         "open_min":  _park_hours_cache.get("open_min",   9 * 60),
-        "close_min": _park_hours_cache.get("close_min", 21 * 60),
+        "close_min": _park_hours_cache.get("close_min", 20 * 60),
     }
 
 def update_backend():
