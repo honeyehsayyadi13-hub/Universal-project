@@ -865,9 +865,19 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
     )
 
     # RULE 6: Fill remaining daylight with weighted round-robin
+    # Weight fill priority by the ride's importance tier ALONE, not by how
+    # many visits were requested/pinned. The requested count already gets
+    # its guaranteed visits via forced scheduling above -- multiplying by
+    # count here as well double-counts that preference: pinning a ride
+    # twice (or manually setting count=2) would double its weight, and
+    # since visit_counts also starts at that same doubled number, the
+    # ratio used for round-robin fairness (visit_counts / weight) came out
+    # unchanged, meaning the ride kept its same claim on EXTRA daylight
+    # slots instead of yielding to less-visited rides -- which is what
+    # produced an unwanted 3rd/4th visit right after pinning 2.
     fill_weights = {
-        key_to_id[k]: count * RIDE_PRIORITY_WEIGHT.get(k, 1.0)
-        for k, count in checked.items()
+        key_to_id[k]: RIDE_PRIORITY_WEIGHT.get(k, 1.0)
+        for k in checked
     }
     final_order = _fill_until_close(
         final_order, all_db_ids, fill_weights, histories, walk_map, durations,
