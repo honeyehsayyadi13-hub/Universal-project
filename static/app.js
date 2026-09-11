@@ -826,12 +826,9 @@ function renderRouteBar() {
       chip.className = 'wait-chip';
       chip.textContent = stop.predictedWait == null ? '--' : `${Math.round(stop.predictedWait)}m`;
 
-      const boardMinutes = stop.queueJoinMinutes != null && stop.predictedWait != null
-        ? stop.queueJoinMinutes + Math.round(stop.predictedWait)
-        : null;
       const timeChip = document.createElement('span');
       timeChip.className = 'time-chip';
-      timeChip.textContent = minsToTime(boardMinutes);
+      timeChip.textContent = minsToTime(stop.queueJoinMinutes);
 
       const remove = document.createElement('button');
       remove.className = 'stop-remove';

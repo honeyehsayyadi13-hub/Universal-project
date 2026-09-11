@@ -102,7 +102,8 @@ DEFAULT_WAIT_MIN = 30            # fallback if a ride has zero usable history
 DEFAULT_WALK_MIN = 10            # fallback if a ride pair has no walk_times row
 DEFAULT_RIDE_DURATION_MIN = 3    # fallback if a ride has no ride_duration row
 BRUTE_FORCE_LIMIT = 8            # exact solve (permutations) up to this many stops
-PARK_CLOSE_HOUR = 21             # 9:00 PM (change if your park's hours differ)
+DEFAULT_PARK_CLOSE_HOUR = 20     # 8:00 PM -- fallback used only when live park hours can't be fetched
+DEFAULT_PARK_CLOSE_MINUTE = 0
 ENTRANCE_DB_ID = 0               # matches the "id" of the entrance row in `rides`
 POST_BREAK_BUFFER_MIN = 2        # time to get moving again after a break ends
 PARK_TIMEZONE = ZoneInfo("America/New_York")  # Universal Orlando is Eastern time
@@ -692,7 +693,8 @@ def _reorder_for_time_pins(order, pin_targets, histories, walk_map, durations,
 # ── public entry point ──────────────────────────────────────────────
 def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None,
                              breaks=None, start_time=None, start_key="entrance",
-                             live_waits=None, time_pinned=None, max_counts=None):
+                             live_waits=None, time_pinned=None, max_counts=None,
+                             close_hour=None, close_minute=None):
     """
     Main entry point for route computation.
 
@@ -781,7 +783,11 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
     start_db_id = ENTRANCE_DB_ID if start_key == "entrance" else key_to_id.get(start_key, ENTRANCE_DB_ID)
     break_windows = _resolve_break_windows(breaks, start_time.date())
 
-    closing_time = start_time.replace(hour=PARK_CLOSE_HOUR, minute=0, second=0, microsecond=0)
+    # Use the real park close time if the caller has it (e.g. fetched live
+    # from Data.get_park_close_time()); otherwise fall back to 8 PM.
+    close_hour = close_hour if close_hour is not None else DEFAULT_PARK_CLOSE_HOUR
+    close_minute = close_minute if close_minute is not None else DEFAULT_PARK_CLOSE_MINUTE
+    closing_time = start_time.replace(hour=close_hour, minute=close_minute, second=0, microsecond=0)
     if closing_time <= start_time:
         print(f"\nHeads up: it's already past {closing_time.strftime('%I:%M %p')} closing time.\n")
 

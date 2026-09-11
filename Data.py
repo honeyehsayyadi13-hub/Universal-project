@@ -135,6 +135,114 @@ def update_backend():
 
 
 # ---------------------------------------------------------------------------
+# Park operating hours (Islands of Adventure), via ThemeParks.wiki.
+# queue-times.com (used above for live waits) doesn't expose park hours at
+# all, so this hits a separate free public API. Cached per-calendar-date so
+# a route request doesn't refetch the whole schedule every time.
+# ---------------------------------------------------------------------------
+
+THEMEPARKS_API_BASE = "https://api.themeparks.wiki/v1"
+PARK_HOURS_CACHE_TTL = 3600     # re-check once an hour; hours rarely change intra-day
+
+_ioa_entity_id_cache: str | None = None
+_park_hours_cache: dict = {}
+_park_hours_cache_ts: float = 0.0
+
+
+def _themeparks_headers():
+    return {
+        "User-Agent": "Mozilla/5.0 (compatible; UniversalRoutePlanner/1.0; +https://universal-project.onrender.com)",
+        "Accept": "application/json",
+    }
+
+
+def _resolve_ioa_entity_id():
+    """Look up Universal's Islands of Adventure's entityID from the
+    ThemeParks.wiki destinations list. Cached in-process -- this practically
+    never changes, so one lookup per server lifetime is plenty."""
+    global _ioa_entity_id_cache
+    if _ioa_entity_id_cache:
+        return _ioa_entity_id_cache
+
+    try:
+        resp = requests.get(f"{THEMEPARKS_API_BASE}/destinations", headers=_themeparks_headers(), timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+    except (requests.exceptions.RequestException, ValueError) as e:
+        print(f"[data] themeparks.wiki destinations fetch failed: {e!r}")
+        return None
+
+    for destination in data.get("destinations", []):
+        for park in destination.get("parks", []):
+            if "islands of adventure" in park.get("name", "").lower():
+                _ioa_entity_id_cache = park["id"]
+                return _ioa_entity_id_cache
+
+    print("[data] could not find Islands of Adventure in themeparks.wiki destinations")
+    return None
+
+
+def get_park_close_time(for_date=None):
+    """
+    Return (hour, minute) that Islands of Adventure closes on `for_date`
+    (defaults to today), fetched live from ThemeParks.wiki.
+
+    Returns None if it couldn't be determined -- unreachable API, park not
+    found, or no OPERATING schedule entry for that date -- in which case
+    the caller should fall back to a hardcoded default close time instead.
+    """
+    global _park_hours_cache, _park_hours_cache_ts
+
+    target_date = (for_date or datetime.now()).date()
+    now = time.time()
+
+    if (
+        _park_hours_cache.get("date") == target_date.isoformat()
+        and (now - _park_hours_cache_ts) < PARK_HOURS_CACHE_TTL
+    ):
+        return _park_hours_cache["close_hour"], _park_hours_cache["close_minute"]
+
+    entity_id = _resolve_ioa_entity_id()
+    if not entity_id:
+        return None
+
+    try:
+        resp = requests.get(
+            f"{THEMEPARKS_API_BASE}/entity/{entity_id}/schedule",
+            headers=_themeparks_headers(),
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except (requests.exceptions.RequestException, ValueError) as e:
+        print(f"[data] themeparks.wiki schedule fetch failed: {e!r}")
+        return None
+
+    for entry in data.get("schedule", []):
+        if entry.get("date") != target_date.isoformat():
+            continue
+        if entry.get("type") != "OPERATING":
+            continue
+        closing_raw = entry.get("closingTime")
+        if not closing_raw:
+            continue
+        try:
+            closing_dt = datetime.fromisoformat(closing_raw)
+        except ValueError:
+            continue
+        _park_hours_cache = {
+            "date": target_date.isoformat(),
+            "close_hour": closing_dt.hour,
+            "close_minute": closing_dt.minute,
+        }
+        _park_hours_cache_ts = now
+        return closing_dt.hour, closing_dt.minute
+
+    print(f"[data] no OPERATING schedule entry found for Islands of Adventure on {target_date}")
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Convenience: log current day/time (matches original module-level prints)
 # ---------------------------------------------------------------------------
 _now = datetime.now()
