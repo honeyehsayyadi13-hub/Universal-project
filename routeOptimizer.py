@@ -869,6 +869,36 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
         else:
             break
     skipped_details = details[len(committed):]
+
+    # RULE 6b (cont.): a ride pinned "first" or "last" is a HARD constraint
+    # (see _reorder_for_time_pins) -- that has to hold even if the pinned
+    # ride's queue-join time technically lands after closing. Without this,
+    # a "force last" pin would get silently cut the moment the schedule ran
+    # tight, instead of showing up right where the person dragged it.
+    forced_last_db_id = None
+    forced_first_db_id = None
+    if time_pinned:
+        for pin in time_pinned:
+            key = pin.get('ride_key')
+            tmin = pin.get('target_minutes')
+            if key in key_to_id and key in checked:
+                if tmin == 1440:
+                    forced_last_db_id = key_to_id[key]
+                elif tmin == 0:
+                    forced_first_db_id = key_to_id[key]
+
+    if (forced_last_db_id is not None and details
+            and details[-1]["db_id"] == forced_last_db_id
+            and len(committed) < len(details)):
+        committed.append(details[-1])
+        skipped_details = skipped_details[:-1]
+
+    if (forced_first_db_id is not None and details
+            and details[0]["db_id"] == forced_first_db_id
+            and not committed):
+        committed.append(details[0])
+        skipped_details = skipped_details[1:] if skipped_details else skipped_details
+
     committed_total = sum(d["walk_from_prev"] + d["predicted_wait"] + d["ride_duration"] for d in committed)
 
     start_label = "Entrance" if start_key == "entrance" else id_to_key.get(start_db_id, start_key)

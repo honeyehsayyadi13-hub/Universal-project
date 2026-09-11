@@ -1002,9 +1002,14 @@ async function generateRoute(triggerBtn) {
 
     oldPins.forEach(pin => {
       if (pin.targetMinutes === 0) {
-        pinAt(0, 0);
+        // Only relabel slot 0 as "pinned first" if the ride actually
+        // sitting there is the one that was pinned -- otherwise we'd
+        // hand the first-slot highlight to some unrelated ride just
+        // because it happened to land at index 0.
+        if (state.route[0]?.rideId === pin.rideId) pinAt(0, 0);
       } else if (pin.targetMinutes === 1440) {
-        pinAt(state.route.length - 1, 1440);
+        const lastIdx = state.route.length - 1;
+        if (state.route[lastIdx]?.rideId === pin.rideId) pinAt(lastIdx, 1440);
       } else if (pin.targetMinutes !== null) {
         let bestIdx = -1, bestDist = Infinity;
         state.route.forEach((stop, idx) => {
@@ -1018,6 +1023,19 @@ async function generateRoute(triggerBtn) {
     });
 
     state.timePinned = newTP;
+
+    // A pin that didn't survive the regenerate (its ride got dropped, or
+    // the backend genuinely couldn't seat it) shouldn't leave behind a
+    // lock the user never asked for. Only pins that carried over above are
+    // in newTP now, so anything pin-locked that isn't referenced there
+    // anymore should release its lock.
+    const stillPinnedRideIds = new Set(Object.values(newTP).map(p => p.rideId));
+    Object.keys(state.pinnedLocked).forEach(rideId => {
+      if (!stillPinnedRideIds.has(rideId)) {
+        state.locked[rideId] = false;
+        delete state.pinnedLocked[rideId];
+      }
+    });
 
     if (!state.route.length) {
       routePlaceholderEl.textContent = 'Nothing fit before closing — try unchecking a few rides or starting earlier.';
