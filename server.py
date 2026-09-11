@@ -42,6 +42,7 @@ def rides():
 @app.route("/api/route", methods=["POST"])
 def route():
     payload = request.json or {}
+    hours = Data.get_park_hours()
     try:
         result = compute_and_print_route(
             payload.get("ride_counts", {}),
@@ -52,6 +53,8 @@ def route():
             live_waits={k: v["waittime"] for k, v in Data.get_live_wait_times().items() if v.get("waittime") is not None},
             time_pinned=payload.get("time_pinned"),
             max_counts=payload.get("max_counts"),
+            park_open_minutes=hours["open_min"],
+            park_close_minutes=hours["close_min"],
             )
     except Exception as e:
         app.logger.exception("route computation failed")

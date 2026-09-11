@@ -38,6 +38,17 @@ Rules this version enforces:
      has been visited once -- it keeps cycling back through every
      selected ride, for as long as there's still daylight left, so the
      schedule runs all the way to park close instead of stopping early.
+  8. A ride counts as "fitting" as long as you'd be IN LINE (queue_join_clock)
+     before the park's closing time -- matching how real parks work,
+     where the queue is cut off at close but everyone already in line
+     still gets to ride. The predicted wait (and therefore the time you
+     actually board) can push past closing; that's expected and correct.
+  9. The optimizer never lets a ride appear twice in a row just because
+     walking from a ride to itself is "free" (0 minutes). Every search
+     step (2-opt, single-stop relocation, and the daylight-filling
+     round robin) treats back-to-back repeats of the same ride as a
+     tie-breaking penalty, second only to fits_count, so repeat visits
+     to a ride get spread out across the day instead of clustering.
 
 Call `compute_and_print_route(...)` from a button press on the
 frontend. Results print to the terminal AND are returned as a list of
@@ -404,32 +415,67 @@ def _better(score_a, score_b):
     return total_a < total_b - 1e-6
 
 
+def _adjacency_penalty(order):
+    """Counts how many times the same ride appears back-to-back. Used as a
+    tie-breaker so the optimizer doesn't stack repeat visits to the same
+    ride consecutively just because walking ride-to-itself costs 0 min."""
+    return sum(1 for i in range(1, len(order)) if order[i] == order[i - 1])
+
+
+def _score3(order, histories, walk_map, durations, start_time, closing_time, break_windows, start_db_id,
+            current_waits=None, historical_now_by_id=None):
+    """Like _route_score but also returns the adjacency penalty of the
+    COMMITTED (fits-before-close) portion of the route."""
+    fits, total, details = _route_score(
+        order, histories, walk_map, durations, start_time, closing_time, break_windows, start_db_id,
+        current_waits=current_waits, historical_now_by_id=historical_now_by_id
+    )
+    committed_order = [d["db_id"] for d in details[:fits]]
+    adj = _adjacency_penalty(committed_order)
+    return fits, adj, total, details
+
+
+def _better3(score_a, score_b):
+    """True if score_a (fits_count, adjacency_penalty, total_minutes) beats
+    score_b. Maximize fits_count, then minimize back-to-back repeats of the
+    same ride, then minimize total committed time."""
+    fits_a, adj_a, total_a = score_a
+    fits_b, adj_b, total_b = score_b
+    if fits_a != fits_b:
+        return fits_a > fits_b
+    if adj_a != adj_b:
+        return adj_a < adj_b
+    return total_a < total_b - 1e-6
+
+
 def _solve_order(db_ids, histories, walk_map, durations, start_time, closing_time, break_windows, start_db_id,
                   current_waits=None, historical_now_by_id=None):
     """Find the best visiting order for the given (possibly-repeated) list of db_ids.
-    Exact brute force for small lists, nearest-neighbor + 2-opt for larger ones."""
+    Exact brute force for small lists, nearest-neighbor + 2-opt for larger ones.
+    Scoring (RULE 9): maximize fits_count, then minimize back-to-back
+    repeat visits to the same ride, then minimize total time."""
     if len(db_ids) == 0:
         return [], 0.0, []
 
     if len(db_ids) == 1:
         order = list(db_ids)
-        _, total, details = _route_score(order, histories, walk_map, durations, start_time, closing_time, break_windows, start_db_id,
-                                          current_waits=current_waits, historical_now_by_id=historical_now_by_id)
+        _, _, total, details = _score3(order, histories, walk_map, durations, start_time, closing_time, break_windows, start_db_id,
+                                        current_waits=current_waits, historical_now_by_id=historical_now_by_id)
         return order, total, details
 
     if len(db_ids) <= BRUTE_FORCE_LIMIT:
         best_order, best_details = None, None
-        best_score = (-1, math.inf)
+        best_score = (-1, math.inf, math.inf)
         seen = set()
         for perm in itertools.permutations(db_ids):
             if perm in seen:
                 continue
             seen.add(perm)
-            fits, total, details = _route_score(list(perm), histories, walk_map, durations, start_time, closing_time, break_windows, start_db_id,
-                                                  current_waits=current_waits, historical_now_by_id=historical_now_by_id)
-            if _better((fits, total), best_score):
-                best_order, best_score, best_details = list(perm), (fits, total), details
-        return best_order, best_score[1], best_details
+            fits, adj, total, details = _score3(list(perm), histories, walk_map, durations, start_time, closing_time, break_windows, start_db_id,
+                                                 current_waits=current_waits, historical_now_by_id=historical_now_by_id)
+            if _better3((fits, adj, total), best_score):
+                best_order, best_score, best_details = list(perm), (fits, adj, total), details
+        return best_order, best_score[2], best_details
 
     # Nearest-neighbor construction, then 2-opt improvement
     remaining = list(db_ids)
@@ -441,9 +487,9 @@ def _solve_order(db_ids, histories, walk_map, durations, start_time, closing_tim
         remaining.remove(nxt)
         last = nxt
 
-    fits, total, details = _route_score(order, histories, walk_map, durations, start_time, closing_time, break_windows, start_db_id,
-                                          current_waits=current_waits, historical_now_by_id=historical_now_by_id)
-    score = (fits, total)
+    fits, adj, total, details = _score3(order, histories, walk_map, durations, start_time, closing_time, break_windows, start_db_id,
+                                         current_waits=current_waits, historical_now_by_id=historical_now_by_id)
+    score = (fits, adj, total)
 
     improved = True
     while improved:
@@ -451,14 +497,14 @@ def _solve_order(db_ids, histories, walk_map, durations, start_time, closing_tim
         for i in range(len(order) - 1):
             for j in range(i + 1, len(order)):
                 candidate = order[:i] + order[i:j + 1][::-1] + order[j + 1:]
-                cand_fits, cand_total, cand_details = _route_score(
+                cand_fits, cand_adj, cand_total, cand_details = _score3(
                     candidate, histories, walk_map, durations, start_time, closing_time, break_windows, start_db_id,
                     current_waits=current_waits, historical_now_by_id=historical_now_by_id
                 )
-                if _better((cand_fits, cand_total), score):
-                    order, score, details = candidate, (cand_fits, cand_total), cand_details
+                if _better3((cand_fits, cand_adj, cand_total), score):
+                    order, score, details = candidate, (cand_fits, cand_adj, cand_total), cand_details
                     improved = True
-    return order, score[1], details
+    return order, score[2], details
 
 
 # ── forced (locked + counted-up) scheduling ───────────────────────────
@@ -514,8 +560,10 @@ def _insert_optional(base_order, optional_items, histories, walk_map, durations,
                       current_waits=None, historical_now_by_id=None):
     """
     Greedily inserts optional (unlocked, single-count) rides into the
-    already-fixed forced schedule, one at a time, always taking whichever
-    remaining ride + position adds the least time.
+    already-fixed forced schedule, one at a time, taking whichever
+    remaining ride + position adds the least time -- but (RULE 9) a
+    position that would put this ride directly next to another visit
+    of itself is only used if literally no other valid position exists.
     """
     order = list(base_order)
     included, remaining = [], list(optional_items)
@@ -524,20 +572,29 @@ def _insert_optional(base_order, optional_items, histories, walk_map, durations,
     changed = True
     while remaining and changed:
         changed = False
-        best = None
+        best, best_adjacent = None, None
         for item in remaining:
+            db_id = item["db_id"]
             for pos in range(len(order) + 1):
-                candidate = order[:pos] + [item["db_id"]] + order[pos:]
+                candidate = order[:pos] + [db_id] + order[pos:]
                 _, details = _simulate_route(candidate, histories, walk_map, durations, start_time, break_windows, start_db_id,
                                               current_waits=current_waits, historical_now_by_id=historical_now_by_id)
                 fits = sum(1 for d in details if d["queue_join_clock"] <= closing_time)
                 if fits < must_fit + 1:
                     continue
                 added = details[pos]["walk_from_prev"] + details[pos]["predicted_wait"] + details[pos]["ride_duration"]
-                if best is None or added < best[0]:
-                    best = (added, candidate, item)
-        if best is not None:
-            _, candidate, item = best
+                neighbor_before = candidate[pos - 1] if pos > 0 else None
+                neighbor_after  = candidate[pos + 1] if pos + 1 < len(candidate) else None
+                is_adjacent_dupe = (neighbor_before == db_id) or (neighbor_after == db_id)
+                if is_adjacent_dupe:
+                    if best_adjacent is None or added < best_adjacent[0]:
+                        best_adjacent = (added, candidate, item)
+                else:
+                    if best is None or added < best[0]:
+                        best = (added, candidate, item)
+        chosen = best if best is not None else best_adjacent
+        if chosen is not None:
+            _, candidate, item = chosen
             order = candidate
             included.append(item)
             remaining.remove(item)
@@ -576,6 +633,7 @@ def _fill_until_close(order, candidate_ids, weights, histories, walk_map, durati
         ranked = sorted(
             candidate_ids,
             key=lambda db_id: (
+                1 if (order and db_id == order[-1]) else 0,  # RULE 9: try any alternative before repeating the last ride
                 visit_counts[db_id] / weights.get(db_id, 1),
                 last_visit_step[db_id],
                 historical_now_by_id.get(db_id) if historical_now_by_id.get(db_id) is not None else DEFAULT_WAIT_MIN,
@@ -612,7 +670,9 @@ def _or_opt_refine(order, forced_db_ids, histories, walk_map, durations,
                     start_time, closing_time, break_windows, start_db_id,
                     current_waits=None, historical_now_by_id=None, max_passes=3):
     """Single-stop relocation local search. Only moves stops NOT in
-    forced_db_ids (locked/extra), so it never disturbs guaranteed visits."""
+    forced_db_ids (locked/extra), so it never disturbs guaranteed visits.
+    Scoring (RULE 9): fits_count first, then fewest back-to-back repeats
+    of the same ride, then lowest total time."""
     order = list(order)
     forced_set = set(forced_db_ids)
 
@@ -624,25 +684,25 @@ def _or_opt_refine(order, forced_db_ids, histories, walk_map, durations,
             item = order[i]
             without = order[:i] + order[i+1:]
 
-            base_fits, base_total, _ = _route_score(
+            base_fits, base_adj, base_total, _ = _score3(
                 order, histories, walk_map, durations, start_time, closing_time,
                 break_windows, start_db_id, current_waits=current_waits,
                 historical_now_by_id=historical_now_by_id
             )
 
-            best = (base_fits, base_total, i)
+            best = (base_fits, base_adj, base_total, i)
             for pos in range(len(without) + 1):
                 candidate = without[:pos] + [item] + without[pos:]
-                fits, total, _ = _route_score(
+                fits, adj, total, _ = _score3(
                     candidate, histories, walk_map, durations, start_time, closing_time,
                     break_windows, start_db_id, current_waits=current_waits,
                     historical_now_by_id=historical_now_by_id
                 )
-                if _better((fits, total), (best[0], best[1])):
-                    best = (fits, total, pos)
+                if _better3((fits, adj, total), (best[0], best[1], best[2])):
+                    best = (fits, adj, total, pos)
 
-            if best[2] != i:
-                order = without[:best[2]] + [item] + without[best[2]:]
+            if best[3] != i:
+                order = without[:best[3]] + [item] + without[best[3]:]
                 improved = True
         if not improved:
             break
@@ -994,6 +1054,37 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
             )
         if len(pin_sequence) >= 2:
             final_order = _enforce_pin_order(final_order, pin_sequence)
+
+        # SAFETY NET: absolutely guarantee "force first" / "force last"
+        # pins landed correctly, no matter what any pass above did. This
+        # runs LAST, after every other reordering step, so nothing can
+        # ever undo it afterward -- a ride pinned last is moved to the
+        # true final index of final_order if it isn't already there, and
+        # same for a ride pinned first.
+        forced_first_db_id = None
+        forced_last_db_id = None
+        for pin in time_pinned:
+            key = pin.get('ride_key')
+            tmin = pin.get('target_minutes')
+            if key in key_to_id and key in checked:
+                if tmin == 0:
+                    forced_first_db_id = key_to_id[key]
+                elif tmin == 1440:
+                    forced_last_db_id = key_to_id[key]
+
+        if forced_last_db_id is not None and forced_last_db_id in final_order:
+            if final_order[-1] != forced_last_db_id:
+                # Move the LAST occurrence of this ride (in case it's a
+                # repeat visit) to the true final slot.
+                idx = len(final_order) - 1 - final_order[::-1].index(forced_last_db_id)
+                final_order.pop(idx)
+                final_order.append(forced_last_db_id)
+
+        if forced_first_db_id is not None and forced_first_db_id in final_order:
+            if final_order[0] != forced_first_db_id:
+                idx = final_order.index(forced_first_db_id)
+                final_order.pop(idx)
+                final_order.insert(0, forced_first_db_id)
 
     _, details = _simulate_route(final_order, histories, walk_map, durations, start_time, break_windows, start_db_id,
                                   current_waits=current_waits, historical_now_by_id=historical_now_by_id)
