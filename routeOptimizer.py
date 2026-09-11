@@ -627,7 +627,17 @@ def _reorder_for_time_pins(order, pin_targets, histories, walk_map, durations,
         historical_now_by_id=historical_now_by_id,
     )
 
-    for (db_id, inst_idx), target_minutes in sorted(pin_targets.items()):
+    # Process pins in the order they're meant to occur through the day --
+    # forced-first, then ascending target time, then forced-last -- not by
+    # (db_id, instance), which is arbitrary with respect to time. Sorting
+    # by db_id could process a later-intended pin before an earlier one,
+    # letting the earlier ride get displaced by whichever pin happened to
+    # go first.
+    ordered_pins = sorted(
+        pin_targets.items(),
+        key=lambda kv: (0 if kv[1] == 0 else 2 if kv[1] == 1440 else 1, kv[1]),
+    )
+    for (db_id, inst_idx), target_minutes in ordered_pins:
         occurrences = [i for i, x in enumerate(order) if x == db_id]
         if inst_idx >= len(occurrences):
             continue
@@ -686,6 +696,33 @@ def _reorder_for_time_pins(order, pin_targets, histories, walk_map, durations,
 
         best_pos = min(pool, key=lambda c: c[0])[2]
         order = order_without[:best_pos] + [db_id] + order_without[best_pos:]
+
+    # ── enforce relative sequence, regardless of where times land ──
+    # The loop above places each pin close to its own target clock time,
+    # independently of the others. That's usually enough to also keep them
+    # in the intended sequence, since target times increase through the
+    # day -- but if predicted wait times shift between two route
+    # generations, two independently-placed pins can end up swapped even
+    # though the person picked them in a specific order (e.g. Hulk, then
+    # Spider-Man, then Doctor Doom) and expects that order to hold no
+    # matter how the clock times move around.
+    #
+    # This finds every stop that came from a pin, in the sequence the
+    # person intended, finds which array slots those stops currently
+    # occupy (wherever the loop above put them), and reassigns them into
+    # those same slots in the intended sequence -- so the *set* of
+    # positions used doesn't change, only who ends up in which one.
+    occupied_slots, seq_db_ids = [], []
+    for (db_id, inst_idx), _ in ordered_pins:
+        occurrences = [i for i, x in enumerate(order) if x == db_id]
+        if inst_idx >= len(occurrences):
+            continue
+        occupied_slots.append(occurrences[inst_idx])
+        seq_db_ids.append(db_id)
+
+    if len(occupied_slots) > 1:
+        for slot, db_id in zip(sorted(occupied_slots), seq_db_ids):
+            order[slot] = db_id
 
     return order
 

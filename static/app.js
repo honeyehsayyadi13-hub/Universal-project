@@ -87,6 +87,23 @@ function getInstanceIndex(route, pos) {
 
 function getUniqueKey(rideId, instanceIndex) { return `${rideId}:${instanceIndex}`; }
 
+// If a ride ends up pinned/selected at more distinct spots in the top bar
+// than its sidebar count currently allows, bump that count up to match --
+// otherwise the sidebar would be asking for fewer visits than the person
+// just told the route to guarantee by pinning them.
+function ensureMinCountMatchesPinnedInstances(rideId) {
+  const pinnedInstanceCount = Object.keys(state.timePinned)
+    .filter(k => k.startsWith(`${rideId}:`)).length;
+  if (pinnedInstanceCount > state.counts[rideId]) {
+    state.counts[rideId] = pinnedInstanceCount;
+    state.lastCount[rideId] = pinnedInstanceCount;
+    if (!state.visible[rideId]) state.visible[rideId] = true;
+    if (state.maxCounts[rideId] !== Infinity && state.maxCounts[rideId] < pinnedInstanceCount) {
+      state.maxCounts[rideId] = pinnedInstanceCount;
+    }
+  }
+}
+
 function minsToTime(mins) {
   if (mins == null) return '--';
   const total = Math.round(mins) % 1440;
@@ -113,12 +130,13 @@ function clearConflictingSentinelPins(sentinelValue, exceptKey) {
   for (const [key, pin] of Object.entries(state.timePinned)) {
     if (key === exceptKey) continue;
     if (pin.targetMinutes === sentinelValue) {
-      delete state.timePinned[key];
-      const anyStillPinned = Object.keys(state.timePinned).some(k => k.startsWith(`${pin.rideId}:`));
-      if (!anyStillPinned && state.pinnedLocked[pin.rideId]) {
-        state.locked[pin.rideId] = false;
-        delete state.pinnedLocked[pin.rideId];
-      }
+      // Downgrade rather than delete: only one stop can hold "always
+      // first" (or "always last") at a time, but the ride that just lost
+      // that slot should still read as selected/highlighted -- deleting
+      // its pin outright used to clear both its highlight AND its lock,
+      // making it look fully deselected instead of merely bumped from
+      // that one slot.
+      pin.targetMinutes = null;
     }
   }
 }
@@ -163,6 +181,8 @@ function executeDrop(srcIdx, destIdx) {
     state.locked[moved.rideId] = true;
     state.pinnedLocked[moved.rideId] = true;
   }
+
+  ensureMinCountMatchesPinnedInstances(moved.rideId);
 
   renderRouteBar();
   renderSidebarList();
@@ -810,6 +830,7 @@ function renderRouteBar() {
             state.locked[stop.rideId] = true;
             state.pinnedLocked[stop.rideId] = true;
           }
+          ensureMinCountMatchesPinnedInstances(stop.rideId);
         }
         renderRouteBar();
         renderSidebarList();
@@ -1019,6 +1040,17 @@ async function generateRoute(triggerBtn) {
           if (dist < bestDist) { bestDist = dist; bestIdx = idx; }
         });
         if (bestIdx >= 0) pinAt(bestIdx, pin.targetMinutes);
+      } else {
+        // targetMinutes === null: a "just selected" pin with no forced
+        // position (e.g. one that just got bumped off first/last by
+        // another drop). Keep it highlighted on the closest surviving
+        // instance of that ride instead of losing the selection.
+        const occurrences = [];
+        state.route.forEach((stop, idx) => { if (stop.rideId === pin.rideId) occurrences.push(idx); });
+        if (occurrences.length) {
+          const idx = occurrences[Math.min(pin.instanceIndex, occurrences.length - 1)];
+          pinAt(idx, null);
+        }
       }
     });
 
