@@ -33,8 +33,18 @@ html, body {
   overflow: hidden;
   font-family: 'Inter', system-ui, sans-serif;
   color: var(--ink);
-  background: var(--white);
-  color-scheme: light;
+  background-color: var(--white);
+  color-scheme: light only;
+}
+
+/* Belt-and-suspenders against browsers' automatic dark-mode repainting:
+   some "force dark" implementations look specifically for background-color
+   (not the shorthand) on html/body, and can otherwise ignore an explicit
+   light design and paint their own dark background underneath it. */
+@media (prefers-color-scheme: dark) {
+  html, body {
+    background-color: #FFFFFF !important;
+  }
 }
 
 button { font-family: inherit; cursor: pointer; }
@@ -545,7 +555,7 @@ input { font-family: inherit; }
   display: flex;
   justify-content: center;
   flex-shrink: 0;
-  width: 62px;
+  width: 68px;
 }
 
 .route-stop-card {
@@ -560,7 +570,7 @@ input { font-family: inherit; }
   position: relative;
   width: 100%;
   aspect-ratio: 1;
-  max-width: 54px;
+  max-width: 59px;
   border-radius: var(--radius-md);
   background: var(--white);
   border: 1px solid var(--paper-line);
