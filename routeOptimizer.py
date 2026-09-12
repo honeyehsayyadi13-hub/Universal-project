@@ -637,6 +637,16 @@ def _reorder_for_time_pins(order, pin_targets, histories, walk_map, durations,
         pin_targets.items(),
         key=lambda kv: (0 if kv[1] == 0 else 2 if kv[1] == 1440 else 1, kv[1]),
     )
+    # `last_anchor_index` tracks the exact index (in the current `order`
+    # list) that the most recently placed pin ended up at. Because pins
+    # are processed in ascending target-time order, every later pin's
+    # search is restricted to positions after this one -- that's what
+    # actually keeps the intended sequence intact, rather than letting
+    # each pin optimize purely for its own drift window and then trying
+    # to patch the order afterward (which was silently detaching rides
+    # from their own target time whenever a patch-up swap fired).
+    last_anchor_index = -1
+
     for (db_id, inst_idx), target_minutes in ordered_pins:
         occurrences = [i for i, x in enumerate(order) if x == db_id]
         if inst_idx >= len(occurrences):
@@ -644,9 +654,18 @@ def _reorder_for_time_pins(order, pin_targets, histories, walk_map, durations,
         src_pos = occurrences[inst_idx]
         order_without = order[:src_pos] + order[src_pos + 1:]
 
+        # Translate the anchor's index into order_without's index space
+        # (removing src_pos shifts everything after it down by one).
+        anchor_in_without = None
+        if last_anchor_index >= 0:
+            anchor_in_without = (
+                last_anchor_index - 1 if last_anchor_index > src_pos else last_anchor_index
+            )
+
         # Sentinel "force first" (0) -- unconditional, always honored.
         if target_minutes == 0:
             order = [db_id] + order_without
+            last_anchor_index = 0
             continue
 
         # Sentinel "force last" (1440) -- unconditional, always honored.
@@ -655,12 +674,18 @@ def _reorder_for_time_pins(order, pin_targets, histories, walk_map, durations,
         # else ever lands after this ride.
         if target_minutes == 1440:
             order = order_without + [db_id]
+            last_anchor_index = len(order) - 1
             continue
 
         # Normal pin: find the insertion position closest to target_minutes,
-        # preferring positions within MAX_DRAG_DRIFT_MIN minutes of it.
+        # preferring positions within MAX_DRAG_DRIFT_MIN minutes of it --
+        # but never before the anchor, so this pin can't leapfrog an
+        # earlier-in-sequence one just because some earlier slot happens
+        # to land numerically close to this pin's own target time.
+        min_pos = anchor_in_without + 1 if anchor_in_without is not None else 0
+
         candidates = []  # (distance_minutes, fits_ok, position)
-        for pos in range(len(order_without) + 1):
+        for pos in range(min_pos, len(order_without) + 1):
             candidate = order_without[:pos] + [db_id] + order_without[pos:]
             fits, _, details = _route_score(
                 candidate, histories, walk_map, durations, start_time, closing_time,
@@ -674,8 +699,11 @@ def _reorder_for_time_pins(order, pin_targets, histories, walk_map, durations,
             candidates.append((dist, fits >= fits_baseline, pos))
 
         if not candidates:
-            # Nothing to insert into -- leave this pin's ride where it was.
-            order = order_without[:src_pos] + [db_id] + order_without[src_pos:]
+            # Nothing valid past the anchor -- place it right after the
+            # anchor rather than losing the sequence constraint.
+            pos = min_pos
+            order = order_without[:pos] + [db_id] + order_without[pos:]
+            last_anchor_index = pos
             continue
 
         within_and_fits = [c for c in candidates if c[0] <= MAX_DRAG_DRIFT_MIN and c[1]]
@@ -696,33 +724,7 @@ def _reorder_for_time_pins(order, pin_targets, histories, walk_map, durations,
 
         best_pos = min(pool, key=lambda c: c[0])[2]
         order = order_without[:best_pos] + [db_id] + order_without[best_pos:]
-
-    # ── enforce relative sequence, regardless of where times land ──
-    # The loop above places each pin close to its own target clock time,
-    # independently of the others. That's usually enough to also keep them
-    # in the intended sequence, since target times increase through the
-    # day -- but if predicted wait times shift between two route
-    # generations, two independently-placed pins can end up swapped even
-    # though the person picked them in a specific order (e.g. Hulk, then
-    # Spider-Man, then Doctor Doom) and expects that order to hold no
-    # matter how the clock times move around.
-    #
-    # This finds every stop that came from a pin, in the sequence the
-    # person intended, finds which array slots those stops currently
-    # occupy (wherever the loop above put them), and reassigns them into
-    # those same slots in the intended sequence -- so the *set* of
-    # positions used doesn't change, only who ends up in which one.
-    occupied_slots, seq_db_ids = [], []
-    for (db_id, inst_idx), _ in ordered_pins:
-        occurrences = [i for i, x in enumerate(order) if x == db_id]
-        if inst_idx >= len(occurrences):
-            continue
-        occupied_slots.append(occurrences[inst_idx])
-        seq_db_ids.append(db_id)
-
-    if len(occupied_slots) > 1:
-        for slot, db_id in zip(sorted(occupied_slots), seq_db_ids):
-            order[slot] = db_id
+        last_anchor_index = best_pos
 
     return order
 
