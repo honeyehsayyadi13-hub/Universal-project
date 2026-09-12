@@ -683,7 +683,12 @@ input { font-family: inherit; }
   justify-content: center;
   position: relative;   /* anchors .map-zoom-controls to the viewport, not the page */
   cursor: grab;
-  touch-action: pan-x pan-y;  /* let one-finger scroll through; we handle pinch ourselves */
+  /* Hand ALL touch gestures to our own JS. Letting the browser natively
+     handle panning here (e.g. "pan-x pan-y") meant it would try to scroll
+     the viewport on its own during a pinch, at the same time our zoom code
+     was repositioning it -- those two competing scroll writes per frame
+     is what showed up as the view drifting sideways during a pinch. */
+  touch-action: none;
 }
 
 #mapViewport.panning { cursor: grabbing; }

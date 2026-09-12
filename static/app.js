@@ -738,12 +738,24 @@ function endMapPan(e) {
 mapViewportEl.addEventListener('pointerup', endMapPan);
 mapViewportEl.addEventListener('pointercancel', endMapPan);
 
-// ── two-finger pinch-to-zoom (touch) ──
+// ── touch: single-finger pan, two-finger pinch-to-zoom ──
+// touch-action is now "none" on #mapViewport (see styles.css), so the
+// browser no longer does ANY of this natively -- both gestures below are
+// fully JS-driven, which is what stops native panning from fighting our
+// own scroll assignments during a pinch.
+let touchPanStartX = 0, touchPanStartY = 0, touchPanStartScrollLeft = 0, touchPanStartScrollTop = 0;
 let pinchStartDist = null;
 let pinchStartZoom = 1;
 
 mapViewportEl.addEventListener('touchstart', e => {
-  if (e.touches.length === 2) {
+  if (e.touches.length === 1) {
+    const t = e.touches[0];
+    touchPanStartX = t.clientX;
+    touchPanStartY = t.clientY;
+    touchPanStartScrollLeft = mapViewportEl.scrollLeft;
+    touchPanStartScrollTop  = mapViewportEl.scrollTop;
+    pinchStartDist = null;
+  } else if (e.touches.length === 2) {
     const [t1, t2] = e.touches;
     pinchStartDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
     pinchStartZoom = mapZoom;
@@ -751,22 +763,26 @@ mapViewportEl.addEventListener('touchstart', e => {
 }, { passive: true });
 
 mapViewportEl.addEventListener('touchmove', e => {
-  if (e.touches.length === 2 && pinchStartDist) {
+  if (e.touches.length === 1 && !pinchStartDist) {
+    if (e.target.closest('.pin') || e.target.closest('.popup')) return;
+    e.preventDefault();
+    const t = e.touches[0];
+    mapViewportEl.scrollLeft = touchPanStartScrollLeft - (t.clientX - touchPanStartX);
+    mapViewportEl.scrollTop  = touchPanStartScrollTop  - (t.clientY - touchPanStartY);
+  } else if (e.touches.length === 2 && pinchStartDist) {
     e.preventDefault();
     const [t1, t2] = e.touches;
     const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
-    // Anchor to the viewport's own center rather than the two fingers'
-    // midpoint. A real pinch rarely moves both fingers perfectly
-    // symmetrically, so the midpoint drifts a little every frame -- and
-    // since that midpoint was being used as the zoom anchor, the view got
-    // dragged along with that drift instead of just zooming in place.
+    // Anchored to the viewport's own center, not the fingers' midpoint --
+    // a real pinch rarely moves both fingers perfectly symmetrically, so
+    // that midpoint wanders frame to frame.
     zoomMapAt(pinchStartZoom * (dist / pinchStartDist));
   }
 }, { passive: false });
 
 mapViewportEl.addEventListener('touchend', e => {
   if (e.touches.length < 2) pinchStartDist = null;
-});
+}, { passive: true });
 
 // ═══════════════ TOP ROUTE BAR ═══════════════
 
