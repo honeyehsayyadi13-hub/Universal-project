@@ -684,15 +684,6 @@ function zoomMapAt(newZoom, clientX, clientY) {
 
   mapViewportEl.scrollLeft = contentX * ratio - px;
   mapViewportEl.scrollTop  = contentY * ratio - py;
-
-  updateZoomControlsState();
-}
-
-function updateZoomControlsState() {
-  const outBtn = document.getElementById('zoomOutBtn');
-  const inBtn  = document.getElementById('zoomInBtn');
-  if (outBtn) outBtn.disabled = mapZoom <= MIN_MAP_ZOOM + 0.001;
-  if (inBtn)  inBtn.disabled  = mapZoom >= MAX_MAP_ZOOM - 0.001;
 }
 
 // Wheel / trackpad zoom, centered on the cursor
@@ -706,10 +697,6 @@ mapViewportEl.addEventListener('wheel', e => {
 mapImageEl.addEventListener('dblclick', e => {
   zoomMapAt(mapZoom >= MAX_MAP_ZOOM - 0.001 ? MIN_MAP_ZOOM : mapZoom + ZOOM_STEP * 2, e.clientX, e.clientY);
 });
-
-document.getElementById('zoomInBtn')?.addEventListener('click', () => zoomMapAt(mapZoom + ZOOM_STEP));
-document.getElementById('zoomOutBtn')?.addEventListener('click', () => zoomMapAt(mapZoom - ZOOM_STEP));
-document.getElementById('zoomResetBtn')?.addEventListener('click', () => zoomMapAt(MIN_MAP_ZOOM));
 
 // ── mouse drag-to-pan (touch already pans natively via overflow:auto) ──
 let panPointerId = null;
@@ -768,9 +755,12 @@ mapViewportEl.addEventListener('touchmove', e => {
     e.preventDefault();
     const [t1, t2] = e.touches;
     const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
-    const midX = (t1.clientX + t2.clientX) / 2;
-    const midY = (t1.clientY + t2.clientY) / 2;
-    zoomMapAt(pinchStartZoom * (dist / pinchStartDist), midX, midY);
+    // Anchor to the viewport's own center rather than the two fingers'
+    // midpoint. A real pinch rarely moves both fingers perfectly
+    // symmetrically, so the midpoint drifts a little every frame -- and
+    // since that midpoint was being used as the zoom anchor, the view got
+    // dragged along with that drift instead of just zooming in place.
+    zoomMapAt(pinchStartZoom * (dist / pinchStartDist));
   }
 }, { passive: false });
 
