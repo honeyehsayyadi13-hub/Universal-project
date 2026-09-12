@@ -746,6 +746,7 @@ mapViewportEl.addEventListener('pointercancel', endMapPan);
 let touchPanStartX = 0, touchPanStartY = 0, touchPanStartScrollLeft = 0, touchPanStartScrollTop = 0;
 let pinchStartDist = null;
 let pinchStartZoom = 1;
+let pinchAnchorX = 0, pinchAnchorY = 0;
 
 mapViewportEl.addEventListener('touchstart', e => {
   if (e.touches.length === 1) {
@@ -759,6 +760,14 @@ mapViewportEl.addEventListener('touchstart', e => {
     const [t1, t2] = e.touches;
     pinchStartDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
     pinchStartZoom = mapZoom;
+    // Lock the zoom anchor to wherever the pinch actually started, and
+    // keep using that SAME point for the whole gesture. Recomputing the
+    // midpoint every touchmove frame was the actual source of the drift:
+    // two fingers pinching almost never keep a perfectly steady midpoint,
+    // so re-anchoring to a slightly different point each frame accumulated
+    // into a visible sideways slide.
+    pinchAnchorX = (t1.clientX + t2.clientX) / 2;
+    pinchAnchorY = (t1.clientY + t2.clientY) / 2;
   }
 }, { passive: true });
 
@@ -773,10 +782,7 @@ mapViewportEl.addEventListener('touchmove', e => {
     e.preventDefault();
     const [t1, t2] = e.touches;
     const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
-    // Anchored to the viewport's own center, not the fingers' midpoint --
-    // a real pinch rarely moves both fingers perfectly symmetrically, so
-    // that midpoint wanders frame to frame.
-    zoomMapAt(pinchStartZoom * (dist / pinchStartDist));
+    zoomMapAt(pinchStartZoom * (dist / pinchStartDist), pinchAnchorX, pinchAnchorY);
   }
 }, { passive: false });
 
