@@ -479,7 +479,7 @@ input { font-family: inherit; }
   min-width: 0;
   display: flex;
   flex-direction: column;
-  background: var(--navy);
+  background: var(--white);
 }
 
 #topBar {
@@ -677,11 +677,47 @@ input { font-family: inherit; }
   flex: 1;
   min-height: 64px;
   overflow: auto;
-  background: var(--navy);
+  background: var(--white);
   display: flex;
   align-items: flex-start;
   justify-content: center;
+  position: relative;   /* anchors .map-zoom-controls to the viewport, not the page */
+  cursor: grab;
+  touch-action: pan-x pan-y;  /* let one-finger scroll through; we handle pinch ourselves */
 }
+
+#mapViewport.panning { cursor: grabbing; }
+
+.map-zoom-controls {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 10;
+}
+
+.map-zoom-btn {
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 8px;
+  background: var(--white);
+  color: var(--ink);
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: var(--shadow);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.map-zoom-btn:hover  { background: #EEF3F6; }
+.map-zoom-btn:active { transform: scale(0.95); }
+.map-zoom-btn:disabled { opacity: 0.4; cursor: default; }
 
 #mapInner {
   position: relative;

@@ -638,6 +638,146 @@ document.addEventListener('click', e => {
   if (!e.target.closest('.pin') && !e.target.closest('.popup')) hidePopup();
 });
 
+// ═══════════════ MAP ZOOM & PAN ═══════════════
+
+const MIN_MAP_ZOOM = 1;
+const MAX_MAP_ZOOM = 4;
+const ZOOM_STEP = 0.35;
+
+let mapZoom = 1;
+let mapFitWidth = 0; // px width the map renders at when mapZoom === 1
+
+function computeMapFitWidth() {
+  const natural = mapImageEl.naturalWidth || MAP_NATIVE_W;
+  const available = mapViewportEl.clientWidth || natural;
+  mapFitWidth = Math.min(natural, available);
+}
+
+function applyMapZoom() {
+  if (!mapFitWidth) computeMapFitWidth();
+  mapImageEl.style.maxWidth = 'none';
+  mapImageEl.style.width = (mapFitWidth * mapZoom) + 'px';
+}
+
+function clampZoom(z) {
+  return Math.min(MAX_MAP_ZOOM, Math.max(MIN_MAP_ZOOM, z));
+}
+
+// Zoom to `newZoom`, keeping whatever point is under (clientX, clientY)
+// visually stationary — otherwise every zoom step would just yank the
+// view back to the top-left corner instead of zooming toward wherever
+// the person is actually pointing or pinching.
+function zoomMapAt(newZoom, clientX, clientY) {
+  newZoom = clampZoom(newZoom);
+  if (newZoom === mapZoom) return;
+
+  const rect = mapViewportEl.getBoundingClientRect();
+  const px = (clientX ?? (rect.left + rect.width / 2)) - rect.left;
+  const py = (clientY ?? (rect.top + rect.height / 2)) - rect.top;
+
+  const contentX = mapViewportEl.scrollLeft + px;
+  const contentY = mapViewportEl.scrollTop + py;
+  const ratio = newZoom / mapZoom;
+
+  mapZoom = newZoom;
+  applyMapZoom();
+
+  mapViewportEl.scrollLeft = contentX * ratio - px;
+  mapViewportEl.scrollTop  = contentY * ratio - py;
+
+  updateZoomControlsState();
+}
+
+function updateZoomControlsState() {
+  const outBtn = document.getElementById('zoomOutBtn');
+  const inBtn  = document.getElementById('zoomInBtn');
+  if (outBtn) outBtn.disabled = mapZoom <= MIN_MAP_ZOOM + 0.001;
+  if (inBtn)  inBtn.disabled  = mapZoom >= MAX_MAP_ZOOM - 0.001;
+}
+
+// Wheel / trackpad zoom, centered on the cursor
+mapViewportEl.addEventListener('wheel', e => {
+  e.preventDefault();
+  const direction = e.deltaY < 0 ? 1 : -1;
+  zoomMapAt(mapZoom + direction * ZOOM_STEP, e.clientX, e.clientY);
+}, { passive: false });
+
+// Double-click to step in (or reset if already maxed), centered on the click
+mapImageEl.addEventListener('dblclick', e => {
+  zoomMapAt(mapZoom >= MAX_MAP_ZOOM - 0.001 ? MIN_MAP_ZOOM : mapZoom + ZOOM_STEP * 2, e.clientX, e.clientY);
+});
+
+document.getElementById('zoomInBtn')?.addEventListener('click', () => zoomMapAt(mapZoom + ZOOM_STEP));
+document.getElementById('zoomOutBtn')?.addEventListener('click', () => zoomMapAt(mapZoom - ZOOM_STEP));
+document.getElementById('zoomResetBtn')?.addEventListener('click', () => zoomMapAt(MIN_MAP_ZOOM));
+
+// ── mouse drag-to-pan (touch already pans natively via overflow:auto) ──
+let panPointerId = null;
+let panStartX = 0, panStartY = 0, panStartScrollLeft = 0, panStartScrollTop = 0;
+let isPanning = false;
+
+mapViewportEl.addEventListener('pointerdown', e => {
+  if (e.pointerType !== 'mouse') return;
+  if (e.target.closest('.pin') || e.target.closest('.popup') || e.target.closest('.map-zoom-controls')) return;
+  panPointerId = e.pointerId;
+  panStartX = e.clientX;
+  panStartY = e.clientY;
+  panStartScrollLeft = mapViewportEl.scrollLeft;
+  panStartScrollTop = mapViewportEl.scrollTop;
+  isPanning = false;
+});
+
+mapViewportEl.addEventListener('pointermove', e => {
+  if (panPointerId !== e.pointerId) return;
+  const dx = e.clientX - panStartX;
+  const dy = e.clientY - panStartY;
+  if (!isPanning) {
+    if (Math.hypot(dx, dy) < 6) return;
+    isPanning = true;
+    mapViewportEl.setPointerCapture(panPointerId);
+    mapViewportEl.classList.add('panning');
+  }
+  mapViewportEl.scrollLeft = panStartScrollLeft - dx;
+  mapViewportEl.scrollTop  = panStartScrollTop - dy;
+});
+
+function endMapPan(e) {
+  if (panPointerId !== e.pointerId) return;
+  if (isPanning) mapViewportEl.releasePointerCapture(panPointerId);
+  panPointerId = null;
+  isPanning = false;
+  mapViewportEl.classList.remove('panning');
+}
+mapViewportEl.addEventListener('pointerup', endMapPan);
+mapViewportEl.addEventListener('pointercancel', endMapPan);
+
+// ── two-finger pinch-to-zoom (touch) ──
+let pinchStartDist = null;
+let pinchStartZoom = 1;
+
+mapViewportEl.addEventListener('touchstart', e => {
+  if (e.touches.length === 2) {
+    const [t1, t2] = e.touches;
+    pinchStartDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+    pinchStartZoom = mapZoom;
+  }
+}, { passive: true });
+
+mapViewportEl.addEventListener('touchmove', e => {
+  if (e.touches.length === 2 && pinchStartDist) {
+    e.preventDefault();
+    const [t1, t2] = e.touches;
+    const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+    const midX = (t1.clientX + t2.clientX) / 2;
+    const midY = (t1.clientY + t2.clientY) / 2;
+    zoomMapAt(pinchStartZoom * (dist / pinchStartDist), midX, midY);
+  }
+}, { passive: false });
+
+mapViewportEl.addEventListener('touchend', e => {
+  if (e.touches.length < 2) pinchStartDist = null;
+});
+
 // ═══════════════ TOP ROUTE BAR ═══════════════
 
 // Flex-wrap breaks rows based on available width, so we can't know in
@@ -1199,6 +1339,13 @@ function init() {
   pollStatus();
   updateTogglePositions();
 
+  if (mapImageEl.complete) {
+    computeMapFitWidth();
+    applyMapZoom();
+  } else {
+    mapImageEl.addEventListener('load', () => { computeMapFitWidth(); applyMapZoom(); });
+  }
+
   // On phones the sidebar is `position: absolute` and nearly full-width
   // (`--sidebar-w: calc(100vw - 36px)`), and it sits ABOVE the map pane
   // (z-index 20 vs 16). Left un-collapsed, it covers almost the entire
@@ -1216,6 +1363,8 @@ function init() {
   window.addEventListener('resize', () => {
     if (popupState.rideId) hidePopup();
     updateTogglePositions();
+    computeMapFitWidth();
+    applyMapZoom();
   });
 }
 
