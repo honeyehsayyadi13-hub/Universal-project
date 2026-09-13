@@ -588,6 +588,9 @@ function renderPins() {
     if (state.liveOpen[r.id] === false) pin.classList.add('closed');
     pin.style.left = (r.x / MAP_NATIVE_W * 100) + '%';
     pin.style.top  = (r.y / MAP_NATIVE_H * 100) + '%';
+    const pinSize = pinSizeForZoom(mapZoom);
+    pin.style.width  = pinSize + 'px';
+    pin.style.height = pinSize + 'px';
     const img = document.createElement('img');
     img.src = r.icon;
     img.alt = r.name;
@@ -659,6 +662,23 @@ let mapPanX = 0;
 let mapPanY = 0;
 let mapFitWidth = 0; // px width the map renders at when mapZoom === 1
 
+const PIN_BASE_SIZE = 54; // matches .pin's base width/height in styles.css
+const PIN_MIN_SIZE  = 30; // never shrink below legible/tappable size
+
+// Shrinks with sqrt(zoom) rather than linearly, so pins scale down
+// gradually instead of vanishing quickly at higher zoom levels.
+function pinSizeForZoom(zoom) {
+  return Math.max(PIN_MIN_SIZE, PIN_BASE_SIZE / Math.sqrt(zoom));
+}
+
+function updatePinSizes() {
+  const size = pinSizeForZoom(mapZoom);
+  pinLayerEl.querySelectorAll('.pin').forEach(p => {
+    p.style.width  = size + 'px';
+    p.style.height = size + 'px';
+  });
+}
+
 // Cached instead of re-read on every gesture frame: calling
 // getBoundingClientRect() mid-gesture forces the browser to synchronously
 // recompute layout right then, which on a 30-120Hz stream of touch/pointer
@@ -688,8 +708,35 @@ function computeMapFitWidth() {
   mapImageEl.style.width = mapFitWidth + 'px';
 }
 
+// Keeps the map from ever being panned/zoomed off-screen. If the scaled
+// image is smaller than the viewport on an axis, it's centered on that
+// axis (no free panning needed); if it's bigger, panning is clamped so
+// neither edge of the image can pull inward past the viewport's edge.
+function clampMapPan() {
+  const viewportW = mapViewportEl.clientWidth;
+  const viewportH = mapViewportEl.clientHeight;
+  const baseW = mapImageEl.offsetWidth || mapFitWidth;
+  const baseH = mapImageEl.offsetHeight || (baseW * (MAP_NATIVE_H / MAP_NATIVE_W));
+  const scaledW = baseW * mapZoom;
+  const scaledH = baseH * mapZoom;
+
+  if (scaledW <= viewportW) {
+    mapPanX = (viewportW - scaledW) / 2;
+  } else {
+    mapPanX = Math.min(0, Math.max(viewportW - scaledW, mapPanX));
+  }
+
+  if (scaledH <= viewportH) {
+    mapPanY = (viewportH - scaledH) / 2;
+  } else {
+    mapPanY = Math.min(0, Math.max(viewportH - scaledH, mapPanY));
+  }
+}
+
 function applyMapTransform() {
+  clampMapPan();
   mapInnerEl.style.transform = `translate(${mapPanX}px, ${mapPanY}px) scale(${mapZoom})`;
+  updatePinSizes();
 }
 
 function centerMapHorizontally() {
