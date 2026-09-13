@@ -676,19 +676,20 @@ input { font-family: inherit; }
      needs to touch its height in JS. */
   flex: 1;
   min-height: 64px;
-  overflow: auto;
+  /* overflow:hidden, not auto -- we no longer use native scrolling at
+     all. Panning/zooming is done entirely via a CSS transform on
+     #mapInner (see app.js), which sidesteps a real browser quirk: when
+     content is centered via flexbox and then grows past the container's
+     width, browsers silently change how scrollLeft:0 maps to the
+     content's edge ("safe alignment" fallback). That's what was causing
+     the map to visibly jump sideways right as a zoom crossed that
+     threshold -- our math was correct, but the ground it was standing on
+     kept moving. A directly-controlled transform has no such ambiguity. */
+  overflow: hidden;
   background: var(--white);
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  position: relative;   /* anchors .map-zoom-controls to the viewport, not the page */
+  position: relative;
   cursor: grab;
-  /* Hand ALL touch gestures to our own JS. Letting the browser natively
-     handle panning here (e.g. "pan-x pan-y") meant it would try to scroll
-     the viewport on its own during a pinch, at the same time our zoom code
-     was repositioning it -- those two competing scroll writes per frame
-     is what showed up as the view drifting sideways during a pinch. */
-  touch-action: none;
+  touch-action: none;  /* all pan/zoom gestures are handled by our own JS */
 }
 
 #mapViewport.panning { cursor: grabbing; }
@@ -696,8 +697,14 @@ input { font-family: inherit; }
 
 
 #mapInner {
-  position: relative;
-  margin: auto;
+  /* Absolutely positioned and moved purely via `transform` (translate +
+     scale) from app.js -- its on-screen position and size are fully
+     owned by JS state now, not by document flow or scroll. */
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  will-change: transform;
 }
 
 #mapImage {

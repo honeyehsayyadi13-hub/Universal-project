@@ -262,6 +262,7 @@ const sidebarListEl     = $('#sidebarList');
 const popupEl           = $('#popup');
 const pinLayerEl        = $('#pinLayer');
 const mapImageEl        = $('#mapImage');
+const mapInnerEl        = $('#mapInner');
 const mapViewportEl     = $('#mapViewport');
 const routeItemsEl      = $('#routeItems');
 const routePlaceholderEl= $('#routePlaceholder');
@@ -639,34 +640,48 @@ document.addEventListener('click', e => {
 });
 
 // ═══════════════ MAP ZOOM & PAN ═══════════════
+//
+// Positioning is fully JS-owned via a CSS transform (translate + scale) on
+// #mapInner, rather than the browser's native scrollLeft/scrollTop. See the
+// comment on #mapViewport in styles.css for why: native scroll combined
+// with flex centering has an inconsistent "safe alignment" behavior right
+// at the point content starts overflowing, which is what was causing the
+// map to jump/drift sideways as soon as a zoom or pinch began. A directly
+// controlled transform has no such ambiguity -- the algebra below is the
+// only thing deciding where the image sits.
 
 const MIN_MAP_ZOOM = 1;
 const MAX_MAP_ZOOM = 4;
 const ZOOM_STEP = 0.35;
 
 let mapZoom = 1;
+let mapPanX = 0;
+let mapPanY = 0;
 let mapFitWidth = 0; // px width the map renders at when mapZoom === 1
 
 function computeMapFitWidth() {
   const natural = mapImageEl.naturalWidth || MAP_NATIVE_W;
   const available = mapViewportEl.clientWidth || natural;
   mapFitWidth = Math.min(natural, available);
+  mapImageEl.style.maxWidth = 'none';
+  mapImageEl.style.width = mapFitWidth + 'px';
 }
 
-function applyMapZoom() {
-  if (!mapFitWidth) computeMapFitWidth();
-  mapImageEl.style.maxWidth = 'none';
-  mapImageEl.style.width = (mapFitWidth * mapZoom) + 'px';
+function applyMapTransform() {
+  mapInnerEl.style.transform = `translate(${mapPanX}px, ${mapPanY}px) scale(${mapZoom})`;
+}
+
+function centerMapHorizontally() {
+  const available = mapViewportEl.clientWidth || mapFitWidth;
+  mapPanX = Math.max(0, (available - mapFitWidth * mapZoom) / 2);
 }
 
 function clampZoom(z) {
   return Math.min(MAX_MAP_ZOOM, Math.max(MIN_MAP_ZOOM, z));
 }
 
-// Zoom to `newZoom`, keeping whatever point is under (clientX, clientY)
-// visually stationary — otherwise every zoom step would just yank the
-// view back to the top-left corner instead of zooming toward wherever
-// the person is actually pointing or pinching.
+// Zoom to `newZoom`, keeping whatever image point is under (clientX, clientY)
+// visually stationary on screen.
 function zoomMapAt(newZoom, clientX, clientY) {
   newZoom = clampZoom(newZoom);
   if (newZoom === mapZoom) return;
@@ -675,15 +690,19 @@ function zoomMapAt(newZoom, clientX, clientY) {
   const px = (clientX ?? (rect.left + rect.width / 2)) - rect.left;
   const py = (clientY ?? (rect.top + rect.height / 2)) - rect.top;
 
-  const contentX = mapViewportEl.scrollLeft + px;
-  const contentY = mapViewportEl.scrollTop + py;
-  const ratio = newZoom / mapZoom;
+  // Where on the UNSCALED image (the image's own base pixels) is the point
+  // currently sitting under the anchor?
+  const imgX = (px - mapPanX) / mapZoom;
+  const imgY = (py - mapPanY) / mapZoom;
 
   mapZoom = newZoom;
-  applyMapZoom();
 
-  mapViewportEl.scrollLeft = contentX * ratio - px;
-  mapViewportEl.scrollTop  = contentY * ratio - py;
+  // Re-solve for the translate that puts that same image point back under
+  // the same screen coordinate at the new scale.
+  mapPanX = px - imgX * mapZoom;
+  mapPanY = py - imgY * mapZoom;
+
+  applyMapTransform();
 }
 
 // Wheel / trackpad zoom, centered on the cursor
@@ -698,19 +717,19 @@ mapImageEl.addEventListener('dblclick', e => {
   zoomMapAt(mapZoom >= MAX_MAP_ZOOM - 0.001 ? MIN_MAP_ZOOM : mapZoom + ZOOM_STEP * 2, e.clientX, e.clientY);
 });
 
-// ── mouse drag-to-pan (touch already pans natively via overflow:auto) ──
+// ── mouse drag-to-pan ──
 let panPointerId = null;
-let panStartX = 0, panStartY = 0, panStartScrollLeft = 0, panStartScrollTop = 0;
+let panStartX = 0, panStartY = 0, panStartPanX = 0, panStartPanY = 0;
 let isPanning = false;
 
 mapViewportEl.addEventListener('pointerdown', e => {
   if (e.pointerType !== 'mouse') return;
-  if (e.target.closest('.pin') || e.target.closest('.popup') || e.target.closest('.map-zoom-controls')) return;
+  if (e.target.closest('.pin') || e.target.closest('.popup')) return;
   panPointerId = e.pointerId;
   panStartX = e.clientX;
   panStartY = e.clientY;
-  panStartScrollLeft = mapViewportEl.scrollLeft;
-  panStartScrollTop = mapViewportEl.scrollTop;
+  panStartPanX = mapPanX;
+  panStartPanY = mapPanY;
   isPanning = false;
 });
 
@@ -724,8 +743,9 @@ mapViewportEl.addEventListener('pointermove', e => {
     mapViewportEl.setPointerCapture(panPointerId);
     mapViewportEl.classList.add('panning');
   }
-  mapViewportEl.scrollLeft = panStartScrollLeft - dx;
-  mapViewportEl.scrollTop  = panStartScrollTop - dy;
+  mapPanX = panStartPanX + dx;
+  mapPanY = panStartPanY + dy;
+  applyMapTransform();
 });
 
 function endMapPan(e) {
@@ -739,11 +759,7 @@ mapViewportEl.addEventListener('pointerup', endMapPan);
 mapViewportEl.addEventListener('pointercancel', endMapPan);
 
 // ── touch: single-finger pan, two-finger pinch-to-zoom ──
-// touch-action is now "none" on #mapViewport (see styles.css), so the
-// browser no longer does ANY of this natively -- both gestures below are
-// fully JS-driven, which is what stops native panning from fighting our
-// own scroll assignments during a pinch.
-let touchPanStartX = 0, touchPanStartY = 0, touchPanStartScrollLeft = 0, touchPanStartScrollTop = 0;
+let touchPanStartX = 0, touchPanStartY = 0, touchPanStartPanX = 0, touchPanStartPanY = 0;
 let pinchStartDist = null;
 let pinchStartZoom = 1;
 let pinchAnchorX = 0, pinchAnchorY = 0;
@@ -753,19 +769,15 @@ mapViewportEl.addEventListener('touchstart', e => {
     const t = e.touches[0];
     touchPanStartX = t.clientX;
     touchPanStartY = t.clientY;
-    touchPanStartScrollLeft = mapViewportEl.scrollLeft;
-    touchPanStartScrollTop  = mapViewportEl.scrollTop;
+    touchPanStartPanX = mapPanX;
+    touchPanStartPanY = mapPanY;
     pinchStartDist = null;
   } else if (e.touches.length === 2) {
     const [t1, t2] = e.touches;
     pinchStartDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
     pinchStartZoom = mapZoom;
-    // Lock the zoom anchor to wherever the pinch actually started, and
-    // keep using that SAME point for the whole gesture. Recomputing the
-    // midpoint every touchmove frame was the actual source of the drift:
-    // two fingers pinching almost never keep a perfectly steady midpoint,
-    // so re-anchoring to a slightly different point each frame accumulated
-    // into a visible sideways slide.
+    // Lock the zoom anchor to wherever the pinch started, and keep using
+    // that same point for the whole gesture.
     pinchAnchorX = (t1.clientX + t2.clientX) / 2;
     pinchAnchorY = (t1.clientY + t2.clientY) / 2;
   }
@@ -776,8 +788,9 @@ mapViewportEl.addEventListener('touchmove', e => {
     if (e.target.closest('.pin') || e.target.closest('.popup')) return;
     e.preventDefault();
     const t = e.touches[0];
-    mapViewportEl.scrollLeft = touchPanStartScrollLeft - (t.clientX - touchPanStartX);
-    mapViewportEl.scrollTop  = touchPanStartScrollTop  - (t.clientY - touchPanStartY);
+    mapPanX = touchPanStartPanX + (t.clientX - touchPanStartX);
+    mapPanY = touchPanStartPanY + (t.clientY - touchPanStartY);
+    applyMapTransform();
   } else if (e.touches.length === 2 && pinchStartDist) {
     e.preventDefault();
     const [t1, t2] = e.touches;
@@ -1351,11 +1364,16 @@ function init() {
   pollStatus();
   updateTogglePositions();
 
-  if (mapImageEl.complete) {
+  function initMapView() {
     computeMapFitWidth();
-    applyMapZoom();
+    centerMapHorizontally();
+    mapPanY = 0;
+    applyMapTransform();
+  }
+  if (mapImageEl.complete) {
+    initMapView();
   } else {
-    mapImageEl.addEventListener('load', () => { computeMapFitWidth(); applyMapZoom(); });
+    mapImageEl.addEventListener('load', initMapView);
   }
 
   // On phones the sidebar is `position: absolute` and nearly full-width
@@ -1376,7 +1394,11 @@ function init() {
     if (popupState.rideId) hidePopup();
     updateTogglePositions();
     computeMapFitWidth();
-    applyMapZoom();
+    if (mapZoom <= MIN_MAP_ZOOM + 0.001) {
+      centerMapHorizontally();
+      mapPanY = 0;
+      applyMapTransform();
+    }
   });
 }
 
