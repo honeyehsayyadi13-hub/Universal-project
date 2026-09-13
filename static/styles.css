@@ -715,10 +715,20 @@ input { font-family: inherit; }
   -webkit-user-drag: none;
 }
 
-#pinLayer { position: absolute; inset: 0; }
+/* pinLayer now sits OUTSIDE #mapInner (see index.html) rather than inside
+   it, specifically so it's never touched by #mapInner's CSS transform:
+   scale(). Pins were living inside the scaled element before, so shrinking
+   a pin's own size via JS was immediately undone by the ancestor's scale
+   re-enlarging it -- rendering an upscaled, blurry icon instead of a
+   crisp small one. Pins are now positioned in real screen pixels (see
+   updatePinPositions in app.js), independent of any transform.
+   pointer-events:none here lets empty space pass clicks/drags through to
+   the map underneath; individual .pin elements opt back into auto below. */
+#pinLayer { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
 
 .pin {
   position: absolute;
+  pointer-events: auto;
   width: 54px;
   height: 54px;
   transform: translate(-50%, -50%);

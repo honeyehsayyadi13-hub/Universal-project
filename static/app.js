@@ -586,11 +586,11 @@ function renderPins() {
     const pin = document.createElement('button');
     pin.className = 'pin';
     if (state.liveOpen[r.id] === false) pin.classList.add('closed');
-    pin.style.left = (r.x / MAP_NATIVE_W * 100) + '%';
-    pin.style.top  = (r.y / MAP_NATIVE_H * 100) + '%';
-    const pinSize = pinSizeForZoom(mapZoom);
-    pin.style.width  = pinSize + 'px';
-    pin.style.height = pinSize + 'px';
+    // Map-space coordinates only -- actual on-screen left/top and size are
+    // computed in real pixels by updatePinPositions()/updatePinSizes(),
+    // since pinLayer no longer lives inside the transformed/scaled element.
+    pin.dataset.mapX = r.x;
+    pin.dataset.mapY = r.y;
     const img = document.createElement('img');
     img.src = r.icon;
     img.alt = r.name;
@@ -599,6 +599,8 @@ function renderPins() {
     pin.addEventListener('click', e => { e.stopPropagation(); showPopup(r.id, pin); });
     pinLayerEl.appendChild(pin);
   });
+  updatePinPositions();
+  updatePinSizes();
 }
 
 function showPopup(rideId, anchorEl) {
@@ -679,6 +681,21 @@ function updatePinSizes() {
   });
 }
 
+// pinLayer sits OUTSIDE #mapInner now, so it's never scaled by CSS
+// transform -- each pin's screen position has to be computed by hand from
+// the current pan/zoom instead of relying on percentage positioning
+// inside a transformed ancestor. This is also what keeps icons crisp:
+// nothing here ever re-enlarges an already-rendered pin.
+function updatePinPositions() {
+  const fitH = mapFitWidth * (MAP_NATIVE_H / MAP_NATIVE_W);
+  pinLayerEl.querySelectorAll('.pin').forEach(p => {
+    const mx = parseFloat(p.dataset.mapX);
+    const my = parseFloat(p.dataset.mapY);
+    p.style.left = (mapPanX + (mx / MAP_NATIVE_W) * mapFitWidth * mapZoom) + 'px';
+    p.style.top  = (mapPanY + (my / MAP_NATIVE_H) * fitH * mapZoom) + 'px';
+  });
+}
+
 // Cached instead of re-read on every gesture frame: calling
 // getBoundingClientRect() mid-gesture forces the browser to synchronously
 // recompute layout right then, which on a 30-120Hz stream of touch/pointer
@@ -733,10 +750,26 @@ function clampMapPan() {
   }
 }
 
+// clampMapPan() is intentionally NOT called here anymore -- it now runs
+// synchronously the instant mapPanX/mapPanY change (see commitMapPan()),
+// so state is always internally consistent even before this deferred
+// redraw fires. Calling it only here was the actual source of the
+// teleport: several zoom/pinch events could fire back-to-back before this
+// function ever ran, each one computing its "keep this point stationary"
+// math against not-yet-clamped values, and then the delayed clamp would
+// correct everything at once -- visible as a sudden jump.
 function applyMapTransform() {
-  clampMapPan();
   mapInnerEl.style.transform = `translate(${mapPanX}px, ${mapPanY}px) scale(${mapZoom})`;
   updatePinSizes();
+  updatePinPositions();
+}
+
+// Clamps immediately (synchronously) so mapPanX/mapPanY are always valid
+// the instant they're read again -- then defers only the actual DOM
+// writes, which are the expensive part, to the next animation frame.
+function commitMapPan() {
+  clampMapPan();
+  scheduleApplyMapTransform();
 }
 
 function centerMapHorizontally() {
@@ -768,7 +801,7 @@ function zoomMapAt(newZoom, clientX, clientY, rect) {
   mapPanX = px - imgX * mapZoom;
   mapPanY = py - imgY * mapZoom;
 
-  scheduleApplyMapTransform();
+  commitMapPan();
 }
 
 // Wheel / trackpad zoom, centered on the cursor
@@ -812,7 +845,7 @@ mapViewportEl.addEventListener('pointermove', e => {
   }
   mapPanX = panStartPanX + dx;
   mapPanY = panStartPanY + dy;
-  scheduleApplyMapTransform();
+  commitMapPan();
 });
 
 function endMapPan(e) {
@@ -858,7 +891,7 @@ mapViewportEl.addEventListener('touchmove', e => {
     const t = e.touches[0];
     mapPanX = touchPanStartPanX + (t.clientX - touchPanStartX);
     mapPanY = touchPanStartPanY + (t.clientY - touchPanStartY);
-    scheduleApplyMapTransform();
+    commitMapPan();
   } else if (e.touches.length === 2 && pinchStartDist) {
     e.preventDefault();
     const [t1, t2] = e.touches;
@@ -1435,8 +1468,9 @@ function init() {
   function initMapView() {
     computeMapFitWidth();
     refreshMapViewportRect();
-    centerMapHorizontally();
+    mapPanX = 0;
     mapPanY = 0;
+    clampMapPan();
     applyMapTransform();
   }
   if (mapImageEl.complete) {
@@ -1464,11 +1498,8 @@ function init() {
     updateTogglePositions();
     computeMapFitWidth();
     refreshMapViewportRect();
-    if (mapZoom <= MIN_MAP_ZOOM + 0.001) {
-      centerMapHorizontally();
-      mapPanY = 0;
-      applyMapTransform();
-    }
+    clampMapPan();
+    applyMapTransform();
   });
 }
 
