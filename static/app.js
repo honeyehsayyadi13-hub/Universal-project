@@ -659,6 +659,27 @@ let mapPanX = 0;
 let mapPanY = 0;
 let mapFitWidth = 0; // px width the map renders at when mapZoom === 1
 
+// Cached instead of re-read on every gesture frame: calling
+// getBoundingClientRect() mid-gesture forces the browser to synchronously
+// recompute layout right then, which on a 30-120Hz stream of touch/pointer
+// events is exactly what produced the stutter. Refreshed once per gesture
+// (at touchstart/pointerdown) and on resize -- never mid-drag.
+let mapViewportRect = mapViewportEl.getBoundingClientRect();
+function refreshMapViewportRect() { mapViewportRect = mapViewportEl.getBoundingClientRect(); }
+
+// Batches transform writes to once per animation frame. Touch/pointer
+// events can fire many times between actual screen refreshes; writing the
+// style on every single one is wasted work the browser has to throw away,
+// and was the other half of the visible jank.
+let mapRafId = null;
+function scheduleApplyMapTransform() {
+  if (mapRafId !== null) return;
+  mapRafId = requestAnimationFrame(() => {
+    mapRafId = null;
+    applyMapTransform();
+  });
+}
+
 function computeMapFitWidth() {
   const natural = mapImageEl.naturalWidth || MAP_NATIVE_W;
   const available = mapViewportEl.clientWidth || natural;
@@ -681,28 +702,26 @@ function clampZoom(z) {
 }
 
 // Zoom to `newZoom`, keeping whatever image point is under (clientX, clientY)
-// visually stationary on screen.
-function zoomMapAt(newZoom, clientX, clientY) {
+// visually stationary on screen. `rect` is optional -- pass the cached one
+// during a continuous gesture; omitted, it reads fresh (fine for the
+// infrequent wheel/dblclick cases).
+function zoomMapAt(newZoom, clientX, clientY, rect) {
   newZoom = clampZoom(newZoom);
   if (newZoom === mapZoom) return;
 
-  const rect = mapViewportEl.getBoundingClientRect();
+  rect = rect || mapViewportEl.getBoundingClientRect();
   const px = (clientX ?? (rect.left + rect.width / 2)) - rect.left;
   const py = (clientY ?? (rect.top + rect.height / 2)) - rect.top;
 
-  // Where on the UNSCALED image (the image's own base pixels) is the point
-  // currently sitting under the anchor?
   const imgX = (px - mapPanX) / mapZoom;
   const imgY = (py - mapPanY) / mapZoom;
 
   mapZoom = newZoom;
 
-  // Re-solve for the translate that puts that same image point back under
-  // the same screen coordinate at the new scale.
   mapPanX = px - imgX * mapZoom;
   mapPanY = py - imgY * mapZoom;
 
-  applyMapTransform();
+  scheduleApplyMapTransform();
 }
 
 // Wheel / trackpad zoom, centered on the cursor
@@ -725,6 +744,7 @@ let isPanning = false;
 mapViewportEl.addEventListener('pointerdown', e => {
   if (e.pointerType !== 'mouse') return;
   if (e.target.closest('.pin') || e.target.closest('.popup')) return;
+  refreshMapViewportRect();
   panPointerId = e.pointerId;
   panStartX = e.clientX;
   panStartY = e.clientY;
@@ -745,7 +765,7 @@ mapViewportEl.addEventListener('pointermove', e => {
   }
   mapPanX = panStartPanX + dx;
   mapPanY = panStartPanY + dy;
-  applyMapTransform();
+  scheduleApplyMapTransform();
 });
 
 function endMapPan(e) {
@@ -765,6 +785,7 @@ let pinchStartZoom = 1;
 let pinchAnchorX = 0, pinchAnchorY = 0;
 
 mapViewportEl.addEventListener('touchstart', e => {
+  refreshMapViewportRect();
   if (e.touches.length === 1) {
     const t = e.touches[0];
     touchPanStartX = t.clientX;
@@ -790,12 +811,12 @@ mapViewportEl.addEventListener('touchmove', e => {
     const t = e.touches[0];
     mapPanX = touchPanStartPanX + (t.clientX - touchPanStartX);
     mapPanY = touchPanStartPanY + (t.clientY - touchPanStartY);
-    applyMapTransform();
+    scheduleApplyMapTransform();
   } else if (e.touches.length === 2 && pinchStartDist) {
     e.preventDefault();
     const [t1, t2] = e.touches;
     const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
-    zoomMapAt(pinchStartZoom * (dist / pinchStartDist), pinchAnchorX, pinchAnchorY);
+    zoomMapAt(pinchStartZoom * (dist / pinchStartDist), pinchAnchorX, pinchAnchorY, mapViewportRect);
   }
 }, { passive: false });
 
@@ -1366,6 +1387,7 @@ function init() {
 
   function initMapView() {
     computeMapFitWidth();
+    refreshMapViewportRect();
     centerMapHorizontally();
     mapPanY = 0;
     applyMapTransform();
@@ -1394,6 +1416,7 @@ function init() {
     if (popupState.rideId) hidePopup();
     updateTogglePositions();
     computeMapFitWidth();
+    refreshMapViewportRect();
     if (mapZoom <= MIN_MAP_ZOOM + 0.001) {
       centerMapHorizontally();
       mapPanY = 0;
