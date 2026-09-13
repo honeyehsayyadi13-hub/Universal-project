@@ -579,18 +579,20 @@ function renderSidebarList() {
 
 const popupState = { rideId: null };
 
+// Cached once per renderPins() call instead of re-querying/re-parsing the
+// DOM every animation frame during a drag or pinch -- that repeated
+// per-frame querySelectorAll + parseFloat work was adding avoidable jank
+// on top of the actual math.
+let pinElements = [];
+
 function renderPins() {
   pinLayerEl.innerHTML = '';
+  pinElements = [];
   RIDES.forEach(r => {
     if (!state.visible[r.id]) return;
     const pin = document.createElement('button');
     pin.className = 'pin';
     if (state.liveOpen[r.id] === false) pin.classList.add('closed');
-    // Map-space coordinates only -- actual on-screen left/top and size are
-    // computed in real pixels by updatePinPositions()/updatePinSizes(),
-    // since pinLayer no longer lives inside the transformed/scaled element.
-    pin.dataset.mapX = r.x;
-    pin.dataset.mapY = r.y;
     const img = document.createElement('img');
     img.src = r.icon;
     img.alt = r.name;
@@ -598,9 +600,9 @@ function renderPins() {
     pin.appendChild(img);
     pin.addEventListener('click', e => { e.stopPropagation(); showPopup(r.id, pin); });
     pinLayerEl.appendChild(pin);
+    pinElements.push({ el: pin, mx: r.x, my: r.y });
   });
-  updatePinPositions();
-  updatePinSizes();
+  updatePinLayout();
 }
 
 function showPopup(rideId, anchorEl) {
@@ -673,26 +675,21 @@ function pinSizeForZoom(zoom) {
   return Math.max(PIN_MIN_SIZE, PIN_BASE_SIZE / Math.sqrt(zoom));
 }
 
-function updatePinSizes() {
+// pinLayer sits OUTSIDE #mapInner, so it's never scaled by CSS transform --
+// each pin's screen position/size has to be computed by hand from the
+// current pan/zoom instead of relying on percentage positioning inside a
+// transformed ancestor. This is also what keeps icons crisp: nothing here
+// ever re-enlarges an already-rendered pin. Combined into one pass over
+// the cached pinElements array (see renderPins) rather than two separate
+// DOM queries, since this runs on every animation frame during a gesture.
+function updatePinLayout() {
   const size = pinSizeForZoom(mapZoom);
-  pinLayerEl.querySelectorAll('.pin').forEach(p => {
-    p.style.width  = size + 'px';
-    p.style.height = size + 'px';
-  });
-}
-
-// pinLayer sits OUTSIDE #mapInner now, so it's never scaled by CSS
-// transform -- each pin's screen position has to be computed by hand from
-// the current pan/zoom instead of relying on percentage positioning
-// inside a transformed ancestor. This is also what keeps icons crisp:
-// nothing here ever re-enlarges an already-rendered pin.
-function updatePinPositions() {
   const fitH = mapFitWidth * (MAP_NATIVE_H / MAP_NATIVE_W);
-  pinLayerEl.querySelectorAll('.pin').forEach(p => {
-    const mx = parseFloat(p.dataset.mapX);
-    const my = parseFloat(p.dataset.mapY);
-    p.style.left = (mapPanX + (mx / MAP_NATIVE_W) * mapFitWidth * mapZoom) + 'px';
-    p.style.top  = (mapPanY + (my / MAP_NATIVE_H) * fitH * mapZoom) + 'px';
+  pinElements.forEach(({ el, mx, my }) => {
+    el.style.left   = (mapPanX + (mx / MAP_NATIVE_W) * mapFitWidth * mapZoom) + 'px';
+    el.style.top    = (mapPanY + (my / MAP_NATIVE_H) * fitH * mapZoom) + 'px';
+    el.style.width  = size + 'px';
+    el.style.height = size + 'px';
   });
 }
 
@@ -760,8 +757,7 @@ function clampMapPan() {
 // correct everything at once -- visible as a sudden jump.
 function applyMapTransform() {
   mapInnerEl.style.transform = `translate(${mapPanX}px, ${mapPanY}px) scale(${mapZoom})`;
-  updatePinSizes();
-  updatePinPositions();
+  updatePinLayout();
 }
 
 // Clamps immediately (synchronously) so mapPanX/mapPanY are always valid
@@ -860,9 +856,7 @@ mapViewportEl.addEventListener('pointercancel', endMapPan);
 
 // ── touch: single-finger pan, two-finger pinch-to-zoom ──
 let touchPanStartX = 0, touchPanStartY = 0, touchPanStartPanX = 0, touchPanStartPanY = 0;
-let pinchStartDist = null;
-let pinchStartZoom = 1;
-let pinchAnchorX = 0, pinchAnchorY = 0;
+let pinchLastDist = null;
 
 mapViewportEl.addEventListener('touchstart', e => {
   refreshMapViewportRect();
@@ -872,36 +866,50 @@ mapViewportEl.addEventListener('touchstart', e => {
     touchPanStartY = t.clientY;
     touchPanStartPanX = mapPanX;
     touchPanStartPanY = mapPanY;
-    pinchStartDist = null;
+    pinchLastDist = null;
   } else if (e.touches.length === 2) {
     const [t1, t2] = e.touches;
-    pinchStartDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
-    pinchStartZoom = mapZoom;
-    // Lock the zoom anchor to wherever the pinch started, and keep using
-    // that same point for the whole gesture.
-    pinchAnchorX = (t1.clientX + t2.clientX) / 2;
-    pinchAnchorY = (t1.clientY + t2.clientY) / 2;
+    pinchLastDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
   }
 }, { passive: true });
 
 mapViewportEl.addEventListener('touchmove', e => {
-  if (e.touches.length === 1 && !pinchStartDist) {
+  if (e.touches.length === 1 && pinchLastDist === null) {
     if (e.target.closest('.pin') || e.target.closest('.popup')) return;
     e.preventDefault();
     const t = e.touches[0];
     mapPanX = touchPanStartPanX + (t.clientX - touchPanStartX);
     mapPanY = touchPanStartPanY + (t.clientY - touchPanStartY);
     commitMapPan();
-  } else if (e.touches.length === 2 && pinchStartDist) {
+  } else if (e.touches.length === 2 && pinchLastDist !== null) {
     e.preventDefault();
     const [t1, t2] = e.touches;
     const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
-    zoomMapAt(pinchStartZoom * (dist / pinchStartDist), pinchAnchorX, pinchAnchorY, mapViewportRect);
+
+    // Scale relative to the PREVIOUS frame's distance, not the gesture's
+    // starting distance. A fixed starting baseline is the actual cause of
+    // the teleport: fingers very often start close together, so that
+    // baseline can be tiny -- and the very next reading divided by a tiny
+    // number produces a huge, instant zoom jump. Frame-to-frame distances
+    // are always close together, so there's no room for that spike. A
+    // floor on both distances additionally guards against any single
+    // anomalous touch sample (hardware noise) doing the same thing.
+    if (pinchLastDist > 12 && dist > 12) {
+      const rawRatio = dist / pinchLastDist;
+      const ratio = Math.min(1.15, Math.max(0.87, rawRatio)); // cap per-frame change
+      const midX = (t1.clientX + t2.clientX) / 2;
+      const midY = (t1.clientY + t2.clientY) / 2;
+      // Anchored to the CURRENT midpoint every frame, so the zoom tracks
+      // wherever your fingers actually are right now, not where the
+      // pinch happened to begin.
+      zoomMapAt(mapZoom * ratio, midX, midY, mapViewportRect);
+    }
+    pinchLastDist = dist;
   }
 }, { passive: false });
 
 mapViewportEl.addEventListener('touchend', e => {
-  if (e.touches.length < 2) pinchStartDist = null;
+  if (e.touches.length < 2) pinchLastDist = null;
 }, { passive: true });
 
 // ═══════════════ TOP ROUTE BAR ═══════════════
