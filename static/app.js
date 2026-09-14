@@ -659,37 +659,41 @@ document.addEventListener('click', e => {
 
 const MIN_MAP_ZOOM = 1;
 const MAX_MAP_ZOOM = 4;
-const ZOOM_STEP = 0.35;
+const WHEEL_ZOOM_RATIO = 1.12; // multiplicative -- feels consistent at any zoom level
 
 let mapZoom = 1;
 let mapPanX = 0;
 let mapPanY = 0;
 let mapFitWidth = 0; // px width the map renders at when mapZoom === 1
 
-const PIN_BASE_SIZE = 54; // matches .pin's base width/height in styles.css
-const PIN_MIN_SIZE  = 30; // never shrink below legible/tappable size
+// Pins are intentionally NOT scaled with zoom -- fixed at 90% of their
+// original base size regardless of how far in/out the map is zoomed, so
+// they always stay a consistent, easy-to-tap size on screen.
+const PIN_SIZE = 54 * 0.9; // was 54px; now 10% smaller, and constant
 
-// Shrinks with sqrt(zoom) rather than linearly, so pins scale down
-// gradually instead of vanishing quickly at higher zoom levels.
-function pinSizeForZoom(zoom) {
-  return Math.max(PIN_MIN_SIZE, PIN_BASE_SIZE / Math.sqrt(zoom));
+function pinSizeForZoom() {
+  return PIN_SIZE;
 }
 
-// pinLayer sits OUTSIDE #mapInner, so it's never scaled by CSS transform --
-// each pin's screen position/size has to be computed by hand from the
-// current pan/zoom instead of relying on percentage positioning inside a
-// transformed ancestor. This is also what keeps icons crisp: nothing here
-// ever re-enlarges an already-rendered pin. Combined into one pass over
-// the cached pinElements array (see renderPins) rather than two separate
-// DOM queries, since this runs on every animation frame during a gesture.
-function updatePinLayout() {
-  const size = pinSizeForZoom(mapZoom);
+function updatePinSizes() {
+  pinLayerEl.querySelectorAll('.pin').forEach(p => {
+    p.style.width  = PIN_SIZE + 'px';
+    p.style.height = PIN_SIZE + 'px';
+  });
+}
+
+// pinLayer sits OUTSIDE #mapInner now, so it's never scaled by CSS
+// transform -- each pin's screen position has to be computed by hand from
+// the current pan/zoom instead of relying on percentage positioning
+// inside a transformed ancestor. This is also what keeps icons crisp:
+// nothing here ever re-enlarges an already-rendered pin.
+function updatePinPositions() {
   const fitH = mapFitWidth * (MAP_NATIVE_H / MAP_NATIVE_W);
-  pinElements.forEach(({ el, mx, my }) => {
-    el.style.left   = (mapPanX + (mx / MAP_NATIVE_W) * mapFitWidth * mapZoom) + 'px';
-    el.style.top    = (mapPanY + (my / MAP_NATIVE_H) * fitH * mapZoom) + 'px';
-    el.style.width  = size + 'px';
-    el.style.height = size + 'px';
+  pinLayerEl.querySelectorAll('.pin').forEach(p => {
+    const mx = parseFloat(p.dataset.mapX);
+    const my = parseFloat(p.dataset.mapY);
+    p.style.left = (mapPanX + (mx / MAP_NATIVE_W) * mapFitWidth * mapZoom) + 'px';
+    p.style.top  = (mapPanY + (my / MAP_NATIVE_H) * fitH * mapZoom) + 'px';
   });
 }
 
@@ -700,19 +704,6 @@ function updatePinLayout() {
 // (at touchstart/pointerdown) and on resize -- never mid-drag.
 let mapViewportRect = mapViewportEl.getBoundingClientRect();
 function refreshMapViewportRect() { mapViewportRect = mapViewportEl.getBoundingClientRect(); }
-
-// Batches transform writes to once per animation frame. Touch/pointer
-// events can fire many times between actual screen refreshes; writing the
-// style on every single one is wasted work the browser has to throw away,
-// and was the other half of the visible jank.
-let mapRafId = null;
-function scheduleApplyMapTransform() {
-  if (mapRafId !== null) return;
-  mapRafId = requestAnimationFrame(() => {
-    mapRafId = null;
-    applyMapTransform();
-  });
-}
 
 function computeMapFitWidth() {
   const natural = mapImageEl.naturalWidth || MAP_NATIVE_W;
@@ -747,69 +738,97 @@ function clampMapPan() {
   }
 }
 
-// clampMapPan() is intentionally NOT called here anymore -- it now runs
-// synchronously the instant mapPanX/mapPanY change (see commitMapPan()),
-// so state is always internally consistent even before this deferred
-// redraw fires. Calling it only here was the actual source of the
-// teleport: several zoom/pinch events could fire back-to-back before this
-// function ever ran, each one computing its "keep this point stationary"
-// math against not-yet-clamped values, and then the delayed clamp would
-// correct everything at once -- visible as a sudden jump.
 function applyMapTransform() {
   mapInnerEl.style.transform = `translate(${mapPanX}px, ${mapPanY}px) scale(${mapZoom})`;
-  updatePinLayout();
-}
-
-// Clamps immediately (synchronously) so mapPanX/mapPanY are always valid
-// the instant they're read again -- then defers only the actual DOM
-// writes, which are the expensive part, to the next animation frame.
-function commitMapPan() {
-  clampMapPan();
-  scheduleApplyMapTransform();
-}
-
-function centerMapHorizontally() {
-  const available = mapViewportEl.clientWidth || mapFitWidth;
-  mapPanX = Math.max(0, (available - mapFitWidth * mapZoom) / 2);
+  updatePinSizes();
+  updatePinPositions();
 }
 
 function clampZoom(z) {
   return Math.min(MAX_MAP_ZOOM, Math.max(MIN_MAP_ZOOM, z));
 }
 
-// Zoom to `newZoom`, keeping whatever image point is under (clientX, clientY)
-// visually stationary on screen. `rect` is optional -- pass the cached one
-// during a continuous gesture; omitted, it reads fresh (fine for the
-// infrequent wheel/dblclick cases).
-function zoomMapAt(newZoom, clientX, clientY, rect) {
-  newZoom = clampZoom(newZoom);
-  if (newZoom === mapZoom) return;
+// ── frame-coalesced zoom + paint ──
+//
+// Every raw input event (a wheel notch, a touchmove sample) used to
+// immediately mutate mapZoom/mapPanX/mapPanY and clamp on the spot. Fast
+// input -- a quick trackpad pinch, a fast scroll fling -- can fire many of
+// these before the browser ever gets to paint a frame, and each one was
+// doing its own independent anchor calculation AND its own independent
+// edge-clamp. Several clamps stacked back-to-back like that (instead of
+// one clean clamp against the true final target) is what let the position
+// drift toward a corner during a fast gesture instead of landing exactly
+// where the math intended.
+//
+// The fix: raw events only RECORD intent now -- a cumulative zoom ratio
+// plus the latest anchor point. The actual "solve for the pan that keeps
+// the anchor point stationary" math, and the one-and-only edge clamp, both
+// run exactly ONCE per animation frame, no matter how many raw events fed
+// into it. Zoom speed during a fast gesture is now bounded by frame rate,
+// not by how many raw events the input hardware happens to fire -- which
+// is also exactly what makes it feel smooth instead of jumpy.
+let pendingZoomRatio = 1;
+let hasPendingZoom = false;
+let pendingZoomAnchorX = 0, pendingZoomAnchorY = 0;
+let pendingZoomRect = null;
 
-  rect = rect || mapViewportEl.getBoundingClientRect();
-  const px = (clientX ?? (rect.left + rect.width / 2)) - rect.left;
-  const py = (clientY ?? (rect.top + rect.height / 2)) - rect.top;
+function queueZoomStep(ratio, clientX, clientY, rect) {
+  pendingZoomRatio *= ratio;
+  pendingZoomAnchorX = clientX;
+  pendingZoomAnchorY = clientY;
+  pendingZoomRect = rect || null;
+  hasPendingZoom = true;
+  scheduleMapFrame();
+}
 
-  const imgX = (px - mapPanX) / mapZoom;
-  const imgY = (py - mapPanY) / mapZoom;
+let mapRafId = null;
+function scheduleMapFrame() {
+  if (mapRafId !== null) return;
+  mapRafId = requestAnimationFrame(flushMapFrame);
+}
 
-  mapZoom = newZoom;
+function flushMapFrame() {
+  mapRafId = null;
 
-  mapPanX = px - imgX * mapZoom;
-  mapPanY = py - imgY * mapZoom;
+  if (hasPendingZoom) {
+    const targetZoom = clampZoom(mapZoom * pendingZoomRatio);
+    if (targetZoom !== mapZoom) {
+      const rect = pendingZoomRect || mapViewportEl.getBoundingClientRect();
+      const px = (pendingZoomAnchorX ?? (rect.left + rect.width / 2)) - rect.left;
+      const py = (pendingZoomAnchorY ?? (rect.top + rect.height / 2)) - rect.top;
 
-  commitMapPan();
+      const imgX = (px - mapPanX) / mapZoom;
+      const imgY = (py - mapPanY) / mapZoom;
+
+      mapZoom = targetZoom;
+      mapPanX = px - imgX * mapZoom;
+      mapPanY = py - imgY * mapZoom;
+    }
+    pendingZoomRatio = 1;
+    hasPendingZoom = false;
+  }
+
+  clampMapPan();
+  applyMapTransform();
+}
+
+function commitMapPan() {
+  scheduleMapFrame();
 }
 
 // Wheel / trackpad zoom, centered on the cursor
 mapViewportEl.addEventListener('wheel', e => {
   e.preventDefault();
-  const direction = e.deltaY < 0 ? 1 : -1;
-  zoomMapAt(mapZoom + direction * ZOOM_STEP, e.clientX, e.clientY);
+  const ratio = e.deltaY < 0 ? WHEEL_ZOOM_RATIO : 1 / WHEEL_ZOOM_RATIO;
+  queueZoomStep(ratio, e.clientX, e.clientY);
 }, { passive: false });
 
 // Double-click to step in (or reset if already maxed), centered on the click
 mapImageEl.addEventListener('dblclick', e => {
-  zoomMapAt(mapZoom >= MAX_MAP_ZOOM - 0.001 ? MIN_MAP_ZOOM : mapZoom + ZOOM_STEP * 2, e.clientX, e.clientY);
+  const targetZoom = mapZoom >= MAX_MAP_ZOOM - 0.001
+    ? MIN_MAP_ZOOM
+    : Math.min(MAX_MAP_ZOOM, mapZoom * WHEEL_ZOOM_RATIO * WHEEL_ZOOM_RATIO);
+  queueZoomStep(targetZoom / mapZoom, e.clientX, e.clientY);
 });
 
 // ── mouse drag-to-pan ──
@@ -886,23 +905,13 @@ mapViewportEl.addEventListener('touchmove', e => {
     const [t1, t2] = e.touches;
     const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
 
-    // Scale relative to the PREVIOUS frame's distance, not the gesture's
-    // starting distance. A fixed starting baseline is the actual cause of
-    // the teleport: fingers very often start close together, so that
-    // baseline can be tiny -- and the very next reading divided by a tiny
-    // number produces a huge, instant zoom jump. Frame-to-frame distances
-    // are always close together, so there's no room for that spike. A
-    // floor on both distances additionally guards against any single
-    // anomalous touch sample (hardware noise) doing the same thing.
+    // A floor on both distances guards against a single anomalous touch
+    // sample (hardware noise, or the very first tiny gap right as two
+    // fingers land) producing a huge, spurious ratio.
     if (pinchLastDist > 12 && dist > 12) {
-      const rawRatio = dist / pinchLastDist;
-      const ratio = Math.min(1.15, Math.max(0.87, rawRatio)); // cap per-frame change
       const midX = (t1.clientX + t2.clientX) / 2;
       const midY = (t1.clientY + t2.clientY) / 2;
-      // Anchored to the CURRENT midpoint every frame, so the zoom tracks
-      // wherever your fingers actually are right now, not where the
-      // pinch happened to begin.
-      zoomMapAt(mapZoom * ratio, midX, midY, mapViewportRect);
+      queueZoomStep(dist / pinchLastDist, midX, midY, mapViewportRect);
     }
     pinchLastDist = dist;
   }
