@@ -678,31 +678,22 @@ function pinSizeForZoom() {
   return PIN_SIZE;
 }
 
-function updatePinSizes() {
-  pinLayerEl.querySelectorAll('.pin').forEach(p => {
-    p.style.width  = PIN_SIZE + 'px';
-    p.style.height = PIN_SIZE + 'px';
-  });
-}
-
-// pinLayer sits OUTSIDE #mapInner now, so it's never scaled by CSS
-// transform -- each pin's screen position has to be computed by hand from
-// the current pan/zoom instead of relying on percentage positioning
-// inside a transformed ancestor. This is also what keeps icons crisp:
-// nothing here ever re-enlarges an already-rendered pin.
-function updatePinPositions() {
-  // Defensive guard: if this ever runs before the map's real width is
-  // known (mapFitWidth still 0), every pin's position formula collapses
-  // to 0 -- clumping the whole set at the top-left corner. Bailing out
-  // here means pins simply stay wherever they last were (or hidden via
-  // opacity below) instead of visibly snapping to the corner.
-  if (!mapFitWidth) return;
+// Restored: renderPins() and applyMapTransform() both call this, but the
+// function itself had been dropped in an earlier edit, leaving
+// renderPins() throwing a ReferenceError on every page load -- which in
+// turn silently aborted the rest of init() (see the comment above init()
+// for the full chain of what that broke). Reads from the cached
+// `pinElements` array (populated in renderPins()) rather than
+// querySelectorAll + dataset attributes, since those attributes are no
+// longer set on the pin elements at all in the current renderPins().
+function updatePinLayout() {
+  if (!mapFitWidth) return; // map dimensions not known yet -- see renderPins()/initMapView() ordering
   const fitH = mapFitWidth * (MAP_NATIVE_H / MAP_NATIVE_W);
-  pinLayerEl.querySelectorAll('.pin').forEach(p => {
-    const mx = parseFloat(p.dataset.mapX);
-    const my = parseFloat(p.dataset.mapY);
-    p.style.left = (mapPanX + (mx / MAP_NATIVE_W) * mapFitWidth * mapZoom) + 'px';
-    p.style.top  = (mapPanY + (my / MAP_NATIVE_H) * fitH * mapZoom) + 'px';
+  pinElements.forEach(({ el, mx, my }) => {
+    el.style.width  = PIN_SIZE + 'px';
+    el.style.height = PIN_SIZE + 'px';
+    el.style.left   = (mapPanX + (mx / MAP_NATIVE_W) * mapFitWidth * mapZoom) + 'px';
+    el.style.top    = (mapPanY + (my / MAP_NATIVE_H) * fitH * mapZoom) + 'px';
   });
 }
 
@@ -749,8 +740,7 @@ function clampMapPan() {
 
 function applyMapTransform() {
   mapInnerEl.style.transform = `translate(${mapPanX}px, ${mapPanY}px) scale(${mapZoom})`;
-  updatePinSizes();
-  updatePinPositions();
+  updatePinLayout();
 }
 
 function clampZoom(z) {
