@@ -659,7 +659,10 @@ document.addEventListener('click', e => {
 
 const MIN_MAP_ZOOM = 1;
 const MAX_MAP_ZOOM = 4;
-const WHEEL_ZOOM_RATIO = 1.12; // multiplicative -- feels consistent at any zoom level
+const WHEEL_ZOOM_RATIO = 1.12; // used only by the double-click step-zoom
+// Tuned so a standard mouse's single wheel notch (deltaY ~100) still lands
+// close to the old flat WHEEL_ZOOM_RATIO step.
+const WHEEL_ZOOM_SENSITIVITY = 0.0011;
 
 let mapZoom = 1;
 let mapPanX = 0;
@@ -688,6 +691,12 @@ function updatePinSizes() {
 // inside a transformed ancestor. This is also what keeps icons crisp:
 // nothing here ever re-enlarges an already-rendered pin.
 function updatePinPositions() {
+  // Defensive guard: if this ever runs before the map's real width is
+  // known (mapFitWidth still 0), every pin's position formula collapses
+  // to 0 -- clumping the whole set at the top-left corner. Bailing out
+  // here means pins simply stay wherever they last were (or hidden via
+  // opacity below) instead of visibly snapping to the corner.
+  if (!mapFitWidth) return;
   const fitH = mapFitWidth * (MAP_NATIVE_H / MAP_NATIVE_W);
   pinLayerEl.querySelectorAll('.pin').forEach(p => {
     const mx = parseFloat(p.dataset.mapX);
@@ -816,10 +825,24 @@ function commitMapPan() {
   scheduleMapFrame();
 }
 
-// Wheel / trackpad zoom, centered on the cursor
+// Wheel / trackpad zoom, centered on the cursor.
+//
+// A physical mouse fires ONE wheel event per notch, so a flat step-size
+// per event felt fine. A trackpad instead fires dozens of tiny wheel
+// events per second during a pinch or two-finger scroll -- treating each
+// of those tiny motions as a full fixed step compounded into a rapid,
+// uneven, almost exponential-feeling zoom. Scaling the ratio by the
+// event's own deltaY magnitude means a tiny trackpad nudge produces a
+// tiny zoom change and a big fling produces a bigger one, same as real
+// zoom UIs (Google Maps, Figma, etc.) -- which is what actually reads as
+// "smooth" rather than "glitchy."
 mapViewportEl.addEventListener('wheel', e => {
   e.preventDefault();
-  const ratio = e.deltaY < 0 ? WHEEL_ZOOM_RATIO : 1 / WHEEL_ZOOM_RATIO;
+  // Clamp deltaY first: some browsers/devices occasionally report huge
+  // one-off deltaY values (e.g. "page" scroll mode) that would otherwise
+  // translate into a single jarring zoom jump.
+  const deltaY = Math.max(-200, Math.min(200, e.deltaY));
+  const ratio = Math.exp(-deltaY * WHEEL_ZOOM_SENSITIVITY);
   queueZoomStep(ratio, e.clientX, e.clientY);
 }, { passive: false });
 
@@ -907,11 +930,18 @@ mapViewportEl.addEventListener('touchmove', e => {
 
     // A floor on both distances guards against a single anomalous touch
     // sample (hardware noise, or the very first tiny gap right as two
-    // fingers land) producing a huge, spurious ratio.
+    // fingers land) producing a huge, spurious ratio. The extra clamp on
+    // the ratio itself (per raw touchmove event) is a second safety net --
+    // frame-to-frame finger movement is normally small, so any single
+    // event trying to claim a bigger jump than that is almost certainly
+    // sensor noise rather than real intent, and got silently amplified
+    // into a visible micro-jump before this clamp existed.
     if (pinchLastDist > 12 && dist > 12) {
+      const rawRatio = dist / pinchLastDist;
+      const ratio = Math.min(1.15, Math.max(0.87, rawRatio));
       const midX = (t1.clientX + t2.clientX) / 2;
       const midY = (t1.clientY + t2.clientY) / 2;
-      queueZoomStep(dist / pinchLastDist, midX, midY, mapViewportRect);
+      queueZoomStep(ratio, midX, midY, mapViewportRect);
     }
     pinchLastDist = dist;
   }
@@ -1477,11 +1507,14 @@ function init() {
   renderStartDropdown();
   renderPresetDropdown();
   renderSidebarList();
-  renderPins();
-  renderRouteBar();
-  pollStatus();
-  updateTogglePositions();
 
+  // Map dimensions MUST be known before pins are ever positioned. Calling
+  // renderPins() first (as before) meant updatePinPositions() ran while
+  // mapFitWidth was still its literal starting value of 0 -- every pin's
+  // "left" and "top" came out as (mx / 1000) * 0 * zoom = 0, dumping the
+  // entire set at the top-left corner. initMapView() now runs first, and
+  // renderPins() (called after) picks up the real, already-computed
+  // dimensions on its very first pass.
   function initMapView() {
     computeMapFitWidth();
     refreshMapViewportRect();
@@ -1493,8 +1526,13 @@ function init() {
   if (mapImageEl.complete) {
     initMapView();
   } else {
-    mapImageEl.addEventListener('load', initMapView);
+    mapImageEl.addEventListener('load', () => { initMapView(); renderPins(); });
   }
+
+  renderPins();
+  renderRouteBar();
+  pollStatus();
+  updateTogglePositions();
 
   // On phones the sidebar is `position: absolute` and nearly full-width
   // (`--sidebar-w: calc(100vw - 36px)`), and it sits ABOVE the map pane
