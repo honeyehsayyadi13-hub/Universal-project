@@ -739,10 +739,10 @@ const PIN_SIZE = 54 * 0.9; // was 54px; now 10% smaller, and constant
 
 // ── all-rides wait bubbles (toggled by double-tapping any wait chip) ──
 const waitBubbleLayerEl = document.getElementById('waitBubbleLayer');
-// Gap between the bubble's arrow tip and the pin's top edge -- the bubble
-// itself is now auto-sized to its text (see .wait-bubble in styles.css),
-// same as .popup, rather than a fixed-size circle.
-const WAIT_BUBBLE_GAP = 8;
+// Must equal the arrow's own reach (its border-width in styles.css, 6px)
+// so the arrow tip lands exactly on the pin's edge -- same reasoning as
+// .popup's transform offset above.
+const WAIT_BUBBLE_GAP = 6;
 let showWaitBubbles = false;
 let waitBubbleElements = []; // cached per renderWaitBubbles(), same pattern as pinElements
 let lastWaitChipTapTime = 0; // for manual double-tap detection (see toggle listener below)

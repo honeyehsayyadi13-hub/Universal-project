@@ -836,7 +836,7 @@ input { font-family: inherit; }
 .popup::after {
   content: '';
   position: absolute;
-  bottom: -9px;
+  bottom: -8px;
   left: 50%;
   transform: translateX(-50%);
   border: 8px solid transparent;
