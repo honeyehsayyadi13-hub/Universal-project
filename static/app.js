@@ -651,14 +651,25 @@ function renderPins() {
     pin.appendChild(img);
     pin.addEventListener('click', e => {
       e.stopPropagation();
-      const now = Date.now();
-      if (now - lastWaitChipTapTime < DOUBLE_TAP_MS) {
-        lastWaitChipTapTime = 0;
+      if (pendingPinPopupTimer) {
+        // Second tap arrived in time -- this is a double-tap. Cancel the
+        // popup that the first tap was about to open (it must never have
+        // shown in the first place) and toggle the bubbles instead.
+        clearTimeout(pendingPinPopupTimer);
+        pendingPinPopupTimer = null;
+        pendingPinPopupArgs = null;
         toggleWaitBubbles();
-      } else {
-        lastWaitChipTapTime = now;
-        showPopup(r.id, pin);
+        return;
       }
+      // First tap -- don't open the popup yet. Wait to see whether a
+      // second tap follows within the window; only open it if this
+      // really was a single tap.
+      pendingPinPopupArgs = { rideId: r.id, anchorEl: pin };
+      pendingPinPopupTimer = setTimeout(() => {
+        pendingPinPopupTimer = null;
+        showPopup(pendingPinPopupArgs.rideId, pendingPinPopupArgs.anchorEl);
+        pendingPinPopupArgs = null;
+      }, DOUBLE_TAP_MS);
     });
     pinLayerEl.appendChild(pin);
     pinElements.push({ el: pin, mx: r.x, my: r.y });
@@ -739,14 +750,12 @@ const PIN_SIZE = 54 * 0.9; // was 54px; now 10% smaller, and constant
 
 // ── all-rides wait bubbles (toggled by double-tapping any wait chip) ──
 const waitBubbleLayerEl = document.getElementById('waitBubbleLayer');
-// Must equal the arrow's own reach (its border-width in styles.css, 6px)
-// so the arrow tip lands exactly on the pin's edge -- same reasoning as
-// .popup's transform offset above.
-const WAIT_BUBBLE_GAP = 6;
 let showWaitBubbles = false;
 let waitBubbleElements = []; // cached per renderWaitBubbles(), same pattern as pinElements
 let lastWaitChipTapTime = 0; // for manual double-tap detection (see toggle listener below)
 const DOUBLE_TAP_MS = 350;
+let pendingPinPopupTimer = null;   // delays showPopup() so a fast second tap can cancel it
+let pendingPinPopupArgs  = null;
 
 function renderWaitBubbles() {
   waitBubbleLayerEl.innerHTML = '';
@@ -771,12 +780,8 @@ function updateBubbleLayout() {
   waitBubbleElements.forEach(({ el, mx, my }) => {
     const centerX = mapPanX + (mx / MAP_NATIVE_W) * mapFitWidth * mapZoom;
     const centerY = mapPanY + (my / MAP_NATIVE_H) * fitH * mapZoom;
-    // left/top mark the arrow tip's position (bubble's own transform:
-    // translate(-50%, -100%) in CSS then grows the box upward from
-    // there) -- placed just above the pin's top edge with a small gap,
-    // exactly like positionPopup() anchors .popup off the pin's rect.
     el.style.left = centerX + 'px';
-    el.style.top  = (centerY - PIN_SIZE / 2 - WAIT_BUBBLE_GAP) + 'px';
+    el.style.top  = (centerY - PIN_SIZE / 2) + 'px'; // pin's exact top edge -- the arrow's own geometry supplies the visual gap
   });
 }
 
