@@ -630,7 +630,7 @@ function renderSidebarList() {
 
 // ═══════════════ MAP PINS + POPUP ═══════════════
 
-const popupState = { rideId: null };
+const popupState = { rideId: null, anchorEl: null };
 
 // Cached once per renderPins() call instead of re-querying/re-parsing the
 // DOM every animation frame during a drag or pinch -- that repeated
@@ -665,6 +665,7 @@ function renderPins() {
 
 function showPopup(rideId, anchorEl) {
   popupState.rideId = rideId;
+  popupState.anchorEl = anchorEl;
   const r = rideById[rideId];
   const wait = state.liveWaits[rideId];
   const isOpen = state.liveOpen[rideId];
@@ -697,6 +698,7 @@ function positionPopup(anchorEl) {
 
 function hidePopup() {
   popupState.rideId = null;
+  popupState.anchorEl = null;
   popupEl.classList.add('hidden');
 }
 
@@ -759,6 +761,13 @@ function updatePinLayout() {
   if (coordDotEl) {
     coordDotEl.style.left = (mapPanX + (coordDot.mx / MAP_NATIVE_W) * mapFitWidth * mapZoom) + 'px';
     coordDotEl.style.top  = (mapPanY + (coordDot.my / MAP_NATIVE_H) * fitH * mapZoom) + 'px';
+  }
+  // Keep an open popup glued to its pin during every pan/zoom frame --
+  // positionPopup() was previously only called once, at the moment the
+  // pin was tapped, so the popup stayed frozen at that screen coordinate
+  // while the pin moved out from under it on any subsequent zoom/pan.
+  if (popupState.rideId && popupState.anchorEl) {
+    positionPopup(popupState.anchorEl);
   }
 }
 
