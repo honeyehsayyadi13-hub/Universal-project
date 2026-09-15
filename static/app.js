@@ -315,6 +315,8 @@ const pinLayerEl        = $('#pinLayer');
 const mapImageEl        = $('#mapImage');
 const mapInnerEl        = $('#mapInner');
 const mapViewportEl     = $('#mapViewport');
+const coordDotEl        = $('#coordDot');
+const coordDisplayEl    = $('#coordDisplay');
 const routeItemsEl      = $('#routeItems');
 const routePlaceholderEl= $('#routePlaceholder');
 
@@ -636,6 +638,11 @@ const popupState = { rideId: null };
 // on top of the actual math.
 let pinElements = [];
 
+// Map-space (native 0..MAP_NATIVE_W / 0..MAP_NATIVE_H) position of the
+// coordinate-finder dot -- same coordinate space RIDES' x/y use, so a
+// value read off here can be pasted straight into that data.
+const coordDot = { mx: MAP_NATIVE_W / 2, my: MAP_NATIVE_H / 2 };
+
 function renderPins() {
   pinLayerEl.innerHTML = '';
   pinElements = [];
@@ -723,7 +730,7 @@ let mapFitWidth = 0; // px width the map renders at when mapZoom === 1
 // Pins are intentionally NOT scaled with zoom -- fixed at 90% of their
 // original base size regardless of how far in/out the map is zoomed, so
 // they always stay a consistent, easy-to-tap size on screen.
-const PIN_SIZE = 54 * 0.7; // was 54px; now 10% smaller, and constant
+const PIN_SIZE = 54 * 0.9; // was 54px; now 10% smaller, and constant
 
 function pinSizeForZoom() {
   return PIN_SIZE;
@@ -746,6 +753,13 @@ function updatePinLayout() {
     el.style.left   = (mapPanX + (mx / MAP_NATIVE_W) * mapFitWidth * mapZoom) + 'px';
     el.style.top    = (mapPanY + (my / MAP_NATIVE_H) * fitH * mapZoom) + 'px';
   });
+  // Keep the coordinate-finder dot glued to its map-space position across
+  // pan/zoom, exactly like a pin -- see the "coordinate-finder dot" section
+  // near the end of this file for how mx/my get set from a drag.
+  if (coordDotEl) {
+    coordDotEl.style.left = (mapPanX + (coordDot.mx / MAP_NATIVE_W) * mapFitWidth * mapZoom) + 'px';
+    coordDotEl.style.top  = (mapPanY + (coordDot.my / MAP_NATIVE_H) * fitH * mapZoom) + 'px';
+  }
 }
 
 // Cached instead of re-read on every gesture frame: calling
@@ -902,7 +916,7 @@ let isPanning = false;
 
 mapViewportEl.addEventListener('pointerdown', e => {
   if (e.pointerType !== 'mouse') return;
-  if (e.target.closest('.pin') || e.target.closest('.popup')) return;
+  if (e.target.closest('.pin') || e.target.closest('.popup') || e.target.closest('#coordDot')) return;
   refreshMapViewportRect();
   panPointerId = e.pointerId;
   panStartX = e.clientX;
@@ -958,7 +972,7 @@ mapViewportEl.addEventListener('touchstart', e => {
 
 mapViewportEl.addEventListener('touchmove', e => {
   if (e.touches.length === 1 && pinchLastDist === null) {
-    if (e.target.closest('.pin') || e.target.closest('.popup')) return;
+    if (e.target.closest('.pin') || e.target.closest('.popup') || e.target.closest('#coordDot')) return;
     e.preventDefault();
     const t = e.touches[0];
     mapPanX = touchPanStartPanX + (t.clientX - touchPanStartX);
@@ -991,6 +1005,57 @@ mapViewportEl.addEventListener('touchmove', e => {
 mapViewportEl.addEventListener('touchend', e => {
   if (e.touches.length < 2) pinchLastDist = null;
 }, { passive: true });
+
+// ── coordinate-finder dot ──
+// Drag this dot (mouse or finger) anywhere over the map; the bottom bar
+// shows its position in the same native map-space RIDES' x/y use, so you
+// can read off a value here and paste it straight into that data.
+let coordDragPointerId = null;
+
+function updateCoordDisplay() {
+  if (coordDisplayEl) {
+    coordDisplayEl.textContent = `X: ${Math.round(coordDot.mx)}  Y: ${Math.round(coordDot.my)}`;
+  }
+}
+
+function setCoordDotFromScreen(clientX, clientY) {
+  if (!mapFitWidth) return;
+  const fitH = mapFitWidth * (MAP_NATIVE_H / MAP_NATIVE_W);
+  const localX = clientX - mapViewportRect.left;
+  const localY = clientY - mapViewportRect.top;
+  coordDot.mx = ((localX - mapPanX) / (mapFitWidth * mapZoom)) * MAP_NATIVE_W;
+  coordDot.my = ((localY - mapPanY) / (fitH * mapZoom)) * MAP_NATIVE_H;
+  updatePinLayout();
+  updateCoordDisplay();
+}
+
+if (coordDotEl) {
+  coordDotEl.addEventListener('pointerdown', e => {
+    e.stopPropagation(); // don't let this also start a map pan
+    refreshMapViewportRect();
+    coordDragPointerId = e.pointerId;
+    coordDotEl.setPointerCapture(coordDragPointerId);
+    coordDotEl.classList.add('dragging');
+    setCoordDotFromScreen(e.clientX, e.clientY);
+  });
+
+  coordDotEl.addEventListener('pointermove', e => {
+    if (coordDragPointerId !== e.pointerId) return;
+    e.stopPropagation();
+    setCoordDotFromScreen(e.clientX, e.clientY);
+  });
+
+  const endCoordDrag = e => {
+    if (coordDragPointerId !== e.pointerId) return;
+    coordDotEl.releasePointerCapture(coordDragPointerId);
+    coordDragPointerId = null;
+    coordDotEl.classList.remove('dragging');
+  };
+  coordDotEl.addEventListener('pointerup', endCoordDrag);
+  coordDotEl.addEventListener('pointercancel', endCoordDrag);
+
+  updateCoordDisplay();
+}
 
 // ═══════════════ TOP ROUTE BAR ═══════════════
 
