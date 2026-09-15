@@ -119,8 +119,8 @@ function minsToTime(mins) {
 // route-planning data that gets bundled into presets.
 const DARK_MODE_KEY = 'urp.darkMode';
 const ADVANCED_MODE_KEY = 'urp.advancedMode';
-const LIGHT_MAP_SRC = 'assets/map.png';
-const DARK_MAP_SRC  = 'assets/map_dark.png';
+const LIGHT_MAP_SRC = 'assets/lightMap.png';
+const DARK_MAP_SRC  = 'assets/darkMap.png';
 
 function getInitialDarkMode() {
   const stored = localStorage.getItem(DARK_MODE_KEY);
