@@ -772,30 +772,46 @@ input { font-family: inherit; }
 .pin img { width: 100%; height: 100%; object-fit: contain; }
 .pin.closed { border-color: var(--danger); filter: grayscale(0.6); opacity: 0.75; }
 
-/* ── all-rides wait bubbles (double-tap a wait chip to toggle) ── */
+/* ── all-rides wait bubbles (double-tap a pin to toggle) ──
+   Styled to match .popup -- rounded rect + a downward arrow pointing at
+   the ride's pin, instead of the old plain circle with no visual link
+   back to which ride it belongs to. */
 .wait-bubble {
   position: absolute;
   pointer-events: none;
-  transform: translate(-50%, -50%);
-  border-radius: 50%;
+  transform: translate(-50%, -100%);
+  border-radius: 8px;
   background: var(--white);
   border: 2px solid var(--teal);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 10px;
+  font-size: 10.5px;
   font-weight: 700;
   color: var(--ink);
   box-shadow: 0 2px 6px rgba(0,0,0,0.3);
   z-index: 4;
-  text-align: center;
-  line-height: 1.05;
-  padding: 2px;
+  white-space: nowrap;
+  padding: 3px 7px;
+}
+
+.wait-bubble::after {
+  content: '';
+  position: absolute;
+  bottom: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-top-color: var(--teal);
 }
 
 .wait-bubble.closed {
   border-color: var(--danger);
   color: var(--danger);
+}
+
+.wait-bubble.closed::after {
+  border-top-color: var(--danger);
 }
 
 /* ═══════════════ POPUP ═══════════════ */

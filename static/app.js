@@ -739,10 +739,10 @@ const PIN_SIZE = 54 * 0.9; // was 54px; now 10% smaller, and constant
 
 // ── all-rides wait bubbles (toggled by double-tapping any wait chip) ──
 const waitBubbleLayerEl = document.getElementById('waitBubbleLayer');
-const WAIT_BUBBLE_SIZE = 34; // smaller than a pin -- no ride name/icon to fit
-// Sits just above the pin like a badge, rather than dead-center on top of
-// it, so the ride icon underneath stays visible while bubbles are shown.
-const WAIT_BUBBLE_OFFSET_Y = -(PIN_SIZE / 2 + WAIT_BUBBLE_SIZE / 2 + 4);
+// Gap between the bubble's arrow tip and the pin's top edge -- the bubble
+// itself is now auto-sized to its text (see .wait-bubble in styles.css),
+// same as .popup, rather than a fixed-size circle.
+const WAIT_BUBBLE_GAP = 8;
 let showWaitBubbles = false;
 let waitBubbleElements = []; // cached per renderWaitBubbles(), same pattern as pinElements
 let lastWaitChipTapTime = 0; // for manual double-tap detection (see toggle listener below)
@@ -769,10 +769,14 @@ function updateBubbleLayout() {
   if (!mapFitWidth) return;
   const fitH = mapFitWidth * (MAP_NATIVE_H / MAP_NATIVE_W);
   waitBubbleElements.forEach(({ el, mx, my }) => {
-    el.style.width  = WAIT_BUBBLE_SIZE + 'px';
-    el.style.height = WAIT_BUBBLE_SIZE + 'px';
-    el.style.left   = (mapPanX + (mx / MAP_NATIVE_W) * mapFitWidth * mapZoom) + 'px';
-    el.style.top    = (mapPanY + (my / MAP_NATIVE_H) * fitH * mapZoom + WAIT_BUBBLE_OFFSET_Y) + 'px';
+    const centerX = mapPanX + (mx / MAP_NATIVE_W) * mapFitWidth * mapZoom;
+    const centerY = mapPanY + (my / MAP_NATIVE_H) * fitH * mapZoom;
+    // left/top mark the arrow tip's position (bubble's own transform:
+    // translate(-50%, -100%) in CSS then grows the box upward from
+    // there) -- placed just above the pin's top edge with a small gap,
+    // exactly like positionPopup() anchors .popup off the pin's rect.
+    el.style.left = centerX + 'px';
+    el.style.top  = (centerY - PIN_SIZE / 2 - WAIT_BUBBLE_GAP) + 'px';
   });
 }
 
