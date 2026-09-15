@@ -113,6 +113,57 @@ function minsToTime(mins) {
   const hour = h % 12 || 12;
   return `${hour}:${String(m).padStart(2, '0')} ${period}`;
 }
+// ── advanced / dark mode ─────────────────────────────────────────
+// Kept as standalone flags rather than added to `state`, since these are
+// app-wide UI preferences (persisted across sessions) rather than
+// route-planning data that gets bundled into presets.
+const DARK_MODE_KEY = 'urp.darkMode';
+const ADVANCED_MODE_KEY = 'urp.advancedMode';
+const LIGHT_MAP_SRC = 'assets/map.png';
+const DARK_MAP_SRC  = 'assets/map_dark.png';
+
+function getInitialDarkMode() {
+  const stored = localStorage.getItem(DARK_MODE_KEY);
+  if (stored === 'true')  return true;
+  if (stored === 'false') return false;
+  // No explicit choice saved yet -- match the browser/OS setting.
+  return !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+}
+
+let darkModeOn = getInitialDarkMode();
+let advancedModeOn = localStorage.getItem(ADVANCED_MODE_KEY) === 'true';
+
+function applyDarkMode() {
+  const mapPaneEl = document.getElementById('mapPane');
+  mapPaneEl?.classList.toggle('map-dark', darkModeOn);
+  mapViewportEl.classList.toggle('map-dark', darkModeOn);
+
+  const wantedSrc = darkModeOn ? DARK_MAP_SRC : LIGHT_MAP_SRC;
+  if (!mapImageEl.src.endsWith(wantedSrc)) mapImageEl.src = wantedSrc;
+
+  document.getElementById('darkModeCheckbox')?.classList.toggle('checked', darkModeOn);
+  const label = document.getElementById('darkModeLabel');
+  if (label) label.textContent = darkModeOn ? 'Light Mode' : 'Dark Mode';
+}
+
+function applyAdvancedMode() {
+  document.getElementById('advancedModeCheckbox')?.classList.toggle('checked', advancedModeOn);
+  // Hook point for future advanced-mode behavior -- just persisted and
+  // reflected in the checkbox for now.
+}
+
+document.getElementById('advancedModeToggle').addEventListener('click', () => {
+  advancedModeOn = !advancedModeOn;
+  localStorage.setItem(ADVANCED_MODE_KEY, advancedModeOn);
+  applyAdvancedMode();
+});
+
+document.getElementById('darkModeToggle').addEventListener('click', () => {
+  darkModeOn = !darkModeOn;
+  localStorage.setItem(DARK_MODE_KEY, darkModeOn);
+  applyDarkMode();
+});
+
 let breakIdCounter = 0;
 let dragSrcIdx = null;
 let touchDragSrcIdx = null;
@@ -1498,25 +1549,26 @@ function init() {
   renderPresetDropdown();
   renderSidebarList();
 
-  // Map dimensions MUST be known before pins are ever positioned. Calling
-  // renderPins() first (as before) meant updatePinPositions() ran while
-  // mapFitWidth was still its literal starting value of 0 -- every pin's
-  // "left" and "top" came out as (mx / 1000) * 0 * zoom = 0, dumping the
-  // entire set at the top-left corner. initMapView() now runs first, and
-  // renderPins() (called after) picks up the real, already-computed
-  // dimensions on its very first pass.
-  function initMapView() {
+  applyDarkMode();
+  applyAdvancedMode();
+
+  // Recomputes map sizing/positioning whenever the image finishes loading
+  // -- both on first page load AND every time dark-mode toggling swaps
+  // mapImageEl.src to a different file. Pins don't need re-rendering here:
+  // updatePinLayout() (called via applyMapTransform) re-reads the already
+  // -cached pinElements array, so it correctly (re)positions pins that
+  // were created earlier but couldn't be placed yet because mapFitWidth
+  // was still 0 at the time.
+  function refreshMapImageSizing() {
     computeMapFitWidth();
     refreshMapViewportRect();
-    mapPanX = 0;
-    mapPanY = 0;
     clampMapPan();
     applyMapTransform();
   }
+  mapImageEl.addEventListener('load', refreshMapImageSizing);
+
   if (mapImageEl.complete) {
-    initMapView();
-  } else {
-    mapImageEl.addEventListener('load', () => { initMapView(); renderPins(); });
+    refreshMapImageSizing();
   }
 
   renderPins();
