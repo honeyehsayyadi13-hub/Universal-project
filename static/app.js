@@ -651,25 +651,22 @@ function renderPins() {
     pin.appendChild(img);
     pin.addEventListener('click', e => {
       e.stopPropagation();
-      if (pendingPinPopupTimer) {
-        // Second tap arrived in time -- this is a double-tap. Cancel the
-        // popup that the first tap was about to open (it must never have
-        // shown in the first place) and toggle the bubbles instead.
-        clearTimeout(pendingPinPopupTimer);
-        pendingPinPopupTimer = null;
-        pendingPinPopupArgs = null;
+      const now = Date.now();
+      if (now - lastPinTapTime < DOUBLE_TAP_MS && lastPinTapRideId === r.id) {
+        // Second tap on the SAME pin within the window -- this is a
+        // double-tap. The first tap already opened the popup instantly
+        // (no delay); undo that now and toggle the bubbles instead.
+        lastPinTapTime = 0;
+        lastPinTapRideId = null;
+        hidePopup();
         toggleWaitBubbles();
         return;
       }
-      // First tap -- don't open the popup yet. Wait to see whether a
-      // second tap follows within the window; only open it if this
-      // really was a single tap.
-      pendingPinPopupArgs = { rideId: r.id, anchorEl: pin };
-      pendingPinPopupTimer = setTimeout(() => {
-        pendingPinPopupTimer = null;
-        showPopup(pendingPinPopupArgs.rideId, pendingPinPopupArgs.anchorEl);
-        pendingPinPopupArgs = null;
-      }, DOUBLE_TAP_MS);
+      // Single tap (or a tap on a different pin) -- open its popup
+      // immediately, with zero delay.
+      lastPinTapTime = now;
+      lastPinTapRideId = r.id;
+      showPopup(r.id, pin);
     });
     pinLayerEl.appendChild(pin);
     pinElements.push({ el: pin, mx: r.x, my: r.y });
@@ -754,8 +751,8 @@ let showWaitBubbles = false;
 let waitBubbleElements = []; // cached per renderWaitBubbles(), same pattern as pinElements
 let lastWaitChipTapTime = 0; // for manual double-tap detection (see toggle listener below)
 const DOUBLE_TAP_MS = 350;
-let pendingPinPopupTimer = null;   // delays showPopup() so a fast second tap can cancel it
-let pendingPinPopupArgs  = null;
+let lastPinTapTime = 0;      // for double-tap detection without delaying the first tap's popup
+let lastPinTapRideId = null;
 
 function renderWaitBubbles() {
   waitBubbleLayerEl.innerHTML = '';
