@@ -734,6 +734,48 @@ let mapFitWidth = 0; // px width the map renders at when mapZoom === 1
 // they always stay a consistent, easy-to-tap size on screen.
 const PIN_SIZE = 54 * 0.9; // was 54px; now 10% smaller, and constant
 
+// ── all-rides wait bubbles (toggled by double-tapping any wait chip) ──
+const waitBubbleLayerEl = document.getElementById('waitBubbleLayer');
+const WAIT_BUBBLE_SIZE = 34; // smaller than a pin -- no ride name/icon to fit
+// Sits just above the pin like a badge, rather than dead-center on top of
+// it, so the ride icon underneath stays visible while bubbles are shown.
+const WAIT_BUBBLE_OFFSET_Y = -(PIN_SIZE / 2 + WAIT_BUBBLE_SIZE / 2 + 4);
+let showWaitBubbles = false;
+let waitBubbleElements = []; // cached per renderWaitBubbles(), same pattern as pinElements
+
+function renderWaitBubbles() {
+  waitBubbleLayerEl.innerHTML = '';
+  waitBubbleElements = [];
+  if (!showWaitBubbles) { return; }
+  RIDES.forEach(r => {
+    const wait = state.liveWaits[r.id];
+    const isOpen = state.liveOpen[r.id];
+    if (wait == null && isOpen !== false) return; // unknown -- nothing real to show
+    const bubble = document.createElement('div');
+    bubble.className = 'wait-bubble' + (isOpen === false ? ' closed' : '');
+    bubble.textContent = isOpen === false ? 'Closed' : `${wait}m`;
+    waitBubbleLayerEl.appendChild(bubble);
+    waitBubbleElements.push({ el: bubble, mx: r.x, my: r.y });
+  });
+  updateBubbleLayout();
+}
+
+function updateBubbleLayout() {
+  if (!mapFitWidth) return;
+  const fitH = mapFitWidth * (MAP_NATIVE_H / MAP_NATIVE_W);
+  waitBubbleElements.forEach(({ el, mx, my }) => {
+    el.style.width  = WAIT_BUBBLE_SIZE + 'px';
+    el.style.height = WAIT_BUBBLE_SIZE + 'px';
+    el.style.left   = (mapPanX + (mx / MAP_NATIVE_W) * mapFitWidth * mapZoom) + 'px';
+    el.style.top    = (mapPanY + (my / MAP_NATIVE_H) * fitH * mapZoom + WAIT_BUBBLE_OFFSET_Y) + 'px';
+  });
+}
+
+function toggleWaitBubbles() {
+  showWaitBubbles = !showWaitBubbles;
+  renderWaitBubbles();
+}
+
 function pinSizeForZoom() {
   return PIN_SIZE;
 }
@@ -769,6 +811,10 @@ function updatePinLayout() {
   if (popupState.rideId && popupState.anchorEl) {
     positionPopup(popupState.anchorEl);
   }
+  // Wait bubbles use the exact same map-space -> screen-space math, and
+  // this function already runs on every pan/zoom/drag frame -- piggyback
+  // on it instead of wiring up a second geometry-update loop.
+  updateBubbleLayout();
 }
 
 // Cached instead of re-read on every gesture frame: calling
@@ -1257,6 +1303,10 @@ function renderRouteBar() {
       const chip = document.createElement('span');
       chip.className = 'wait-chip';
       chip.textContent = stop.predictedWait == null ? '--' : `${Math.round(stop.predictedWait)}m`;
+      chip.addEventListener('dblclick', e => {
+        e.stopPropagation();
+        toggleWaitBubbles();
+      });
 
       const timeChip = document.createElement('span');
       timeChip.className = 'time-chip';
@@ -1523,6 +1573,7 @@ async function pollStatus() {
     state.liveWaits = waits;
     state.liveOpen  = open;
     renderPins();
+    if (showWaitBubbles) renderWaitBubbles(); // keep bubble text fresh while they're showing
     if (popupState.rideId) showPopup(popupState.rideId, [...pinLayerEl.children].find(p => p.querySelector('img')?.alt === rideById[popupState.rideId]?.name));
   } catch (err) {
     // best-effort; app still works with unknown wait times
