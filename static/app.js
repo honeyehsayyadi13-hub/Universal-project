@@ -1585,77 +1585,26 @@ async function pollStatus() {
 $('#sidebarToggle').addEventListener('click', () => sidebarEl.classList.toggle('collapsed'));
 
 // The sidebar collapses cleanly because margin-left is the ONLY thing that
-// moves -- nothing inside it resizes. #topBar used to animate max-height
-// alone while its .collapsed class snapped padding-top/padding-bottom/
-// border-bottom-width to 0 instantly (no transition covers them, since the
-// inline `transition` set below only ever named max-height). That mismatch
-// -- content flush against the edges immediately, height easing down after
-// -- is what read as "clunky". Animating all four together fixes it.
-const TOPBAR_PAD_TOP = 10, TOPBAR_PAD_BOTTOM = 12, TOPBAR_BORDER = 2; // px -- keep in sync with #topBar's base rule in styles.css
-const TOPBAR_TRANSITION = 'max-height 0.28s ease, padding-top 0.28s ease, padding-bottom 0.28s ease, border-bottom-width 0.28s ease';
-
+// moves -- nothing inside it resizes. #topBar's expand/collapse used to be
+// driven from here too: JS would measure scrollHeight and animate max-height
+// to that pixel target. The problem was that #topBar's own flex children
+// were fighting over a shrinking box mid-animation -- with flex-shrink: 0 on
+// the compact button and min-height: 0 on #routeTrack, the track got
+// squeezed to nothing at small heights while the button (which couldn't
+// shrink) claimed whatever space was left. It rendered at full size
+// immediately and the track only grew in afterward, which read as "clunky".
+//
+// #topBar now handles the whole animation in CSS via a grid-template-rows
+// 0fr <-> 1fr transition (see styles.css) -- the browser interpolates the
+// row track itself every frame, so #topBarContent's natural-size content
+// grows in as one continuous unit with no separate JS-measured target to
+// get stale or out of sync. All JS has to do is toggle the class.
 $('#topBarToggle').addEventListener('click', () => {
-  const compactBtn = document.getElementById('generateRouteBtn');
-  const collapsed = topBarEl.classList.contains('collapsed');
-  if (compactBtn) compactBtn.style.transition = 'opacity 0.28s ease';
+  topBarEl.classList.toggle('collapsed');
+});
 
-  if (collapsed) {
-    topBarEl.classList.remove('collapsed');
-    // Reserve room for both the toggle button (38px) and the map's floor
-    // height, so expanding the top bar can never squeeze the map (even
-    // with the back button already hidden) below MAP_MIN_HEIGHT.
-    const target = Math.min(topBarEl.scrollHeight, window.innerHeight - 38 - MAP_MIN_HEIGHT);
-    topBarEl.style.transition = 'none';
-    topBarEl.style.maxHeight = '0px';
-    topBarEl.style.paddingTop = '0px';
-    topBarEl.style.paddingBottom = '0px';
-    topBarEl.style.borderBottomWidth = '0px';
-    if (compactBtn) compactBtn.style.opacity = '0';
-    topBarEl.offsetHeight; // reflow
-    topBarEl.style.transition = TOPBAR_TRANSITION;
-    topBarEl.style.maxHeight = target + 'px';
-    topBarEl.style.paddingTop = TOPBAR_PAD_TOP + 'px';
-    topBarEl.style.paddingBottom = TOPBAR_PAD_BOTTOM + 'px';
-    topBarEl.style.borderBottomWidth = TOPBAR_BORDER + 'px';
-    if (compactBtn) compactBtn.style.opacity = '1';
-    topBarEl.addEventListener('transitionend', function clear(e) {
-      if (e.propertyName !== 'max-height') return; // fires once per animated property -- wait for the one driving layout
-      topBarEl.style.maxHeight = '';
-      topBarEl.style.paddingTop = '';
-      topBarEl.style.paddingBottom = '';
-      topBarEl.style.borderBottomWidth = '';
-      topBarEl.style.transition = '';
-      topBarEl.removeEventListener('transitionend', clear);
-      updateTogglePositions();
-    });
-  } else {
-    const current = topBarEl.scrollHeight;
-    topBarEl.style.transition = 'none';
-    topBarEl.style.maxHeight = current + 'px';
-    topBarEl.style.paddingTop = TOPBAR_PAD_TOP + 'px';
-    topBarEl.style.paddingBottom = TOPBAR_PAD_BOTTOM + 'px';
-    topBarEl.style.borderBottomWidth = TOPBAR_BORDER + 'px';
-    topBarEl.offsetHeight; // reflow
-    topBarEl.style.transition = TOPBAR_TRANSITION;
-    topBarEl.style.maxHeight = '0px';
-    topBarEl.style.paddingTop = '0px';
-    topBarEl.style.paddingBottom = '0px';
-    topBarEl.style.borderBottomWidth = '0px';
-    if (compactBtn) compactBtn.style.opacity = '0';
-    // Recalc after the shrink finishes, not immediately — offsetHeight
-    // read right now would still reflect the pre-collapse (tall) size.
-    topBarEl.addEventListener('transitionend', function clear(e) {
-      if (e.propertyName !== 'max-height') return;
-      topBarEl.classList.add('collapsed');
-      topBarEl.style.maxHeight = '';
-      topBarEl.style.paddingTop = '';
-      topBarEl.style.paddingBottom = '';
-      topBarEl.style.borderBottomWidth = '';
-      topBarEl.style.transition = '';
-      topBarEl.removeEventListener('transitionend', clear);
-      updateTogglePositions();
-    });
-  }
+topBarEl.addEventListener('transitionend', (e) => {
+  if (e.propertyName === 'grid-template-rows') updateTogglePositions();
 });
 const MAP_MIN_HEIGHT = 64; // px — keep in sync with #mapViewport's min-height in styles.css
 let bottomBarNaturalH = 0; // captured once at init, before bottomBar is ever minimized

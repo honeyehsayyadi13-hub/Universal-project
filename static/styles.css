@@ -492,42 +492,47 @@ input { font-family: inherit; }
 }
 
 #topBar {
+  display: grid;
+  grid-template-rows: 1fr; /* expanded: content-sized row, animates down to 0fr */
   background: var(--paper);
   border-bottom: 2px solid var(--paper-line);
   padding: 10px 12px 12px;
   flex-shrink: 0;
-  min-height: 0;
-  max-height: calc(100vh - 38px);
-  max-height: calc(100dvh - 38px);
-  overflow: hidden;
+  /* Static ceiling (no JS needed): always leaves room for the toggle button
+     (38px) and the map's floor height, so an expanded topBar can never
+     squeeze the map below MAP_MIN_HEIGHT, even with lots of route items. */
+  max-height: calc(100vh - 38px - 64px);
+  max-height: calc(100dvh - 38px - 64px);
   position: relative;
   z-index: 16;
-  /* app.js drives the actual collapse/expand animation via inline styles
-     (it needs a dynamic target height), so this is mostly documentation --
-     but it keeps padding/border in sync with max-height if anything ever
-     toggles .collapsed without going through that JS. */
-  transition: max-height 0.28s ease, padding-top 0.28s ease, padding-bottom 0.28s ease, border-bottom-width 0.28s ease;
+  /* grid-template-rows: 0fr <-> 1fr is what actually drives the reveal.
+     Unlike animating max-height to a JS-measured pixel target, the browser
+     interpolates the row track itself every frame, so #topBarContent (see
+     below) grows in as one continuous unit -- there's no separate "target
+     height" to get stale or mismatched, and nothing inside can render at
+     full size before the row catches up. That mismatch (the button
+     appearing full-size while the route track was still squeezed to
+     nothing) is what previously read as "clunky". */
+  transition: grid-template-rows 0.28s ease, padding-top 0.28s ease, padding-bottom 0.28s ease, border-bottom-width 0.28s ease;
 }
 
-/* #topBarContent holds the real layout (routeTrack + button) at its natural,
-   un-shrunk size at all times. #topBar is the only thing that animates
-   (via max-height + overflow: hidden), so it just reveals more of this
-   fixed-size content from the top as it grows -- instead of #topBar's own
-   flex children fighting over a shrinking box mid-animation. That fighting
-   is what caused the button to visibly "pop" to full size before the route
-   track area caught up: with flex-shrink: 0 on the button and min-height: 0
-   on #routeTrack, #routeTrack got squeezed to nothing at small heights while
-   the button (which can't shrink) claimed whatever space was left, so it
-   rendered first and the track only grew in afterward. */
+/* Grid items default to min-height: auto, which would stop the row from
+   ever reaching truly 0 (it'd stay pinned to the content's min-content
+   height). min-height: 0 + overflow: hidden let it collapse all the way,
+   while keeping the *content* (routeTrack + button) laid out at natural
+   size at all times -- #topBar's row track is the only thing that animates,
+   revealing more of this fixed-size content from the top as it grows. */
 #topBarContent {
   display: flex;
   flex-direction: column;
   align-items: stretch;
   gap: 8px;
+  min-height: 0;
+  overflow: hidden;
 }
 
 #topBar.collapsed {
-  max-height: 0;
+  grid-template-rows: 0fr;
   padding-top: 0;
   padding-bottom: 0;
   border-bottom-width: 0;
