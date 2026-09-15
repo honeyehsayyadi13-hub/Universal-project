@@ -152,13 +152,13 @@ function applyAdvancedMode() {
   // reflected in the checkbox for now.
 }
 
-document.getElementById('darkModeToggle')?.addEventListener('click', () => {
+document.getElementById('advancedModeToggle')?.addEventListener('click', () => {
   advancedModeOn = !advancedModeOn;
   localStorage.setItem(ADVANCED_MODE_KEY, advancedModeOn);
   applyAdvancedMode();
 });
 
-document.getElementById('advancedModeToggle')?.addEventListener('click', () => {
+document.getElementById('darkModeToggle')?.addEventListener('click', () => {
   darkModeOn = !darkModeOn;
   localStorage.setItem(DARK_MODE_KEY, darkModeOn);
   applyDarkMode();
