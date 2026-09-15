@@ -729,7 +729,7 @@ function pinSizeForZoom() {
   return PIN_SIZE;
 }
 
-// Restored: renderPins() and applyMapTransform() both call this, but the
+// Restored: renderPins() and applyMapTransform() both { id: 'hulk', name: 'The Incredible Hulk Coaster', icon: '...', x: 488, y: 620 },call this, but the
 // function itself had been dropped in an earlier edit, leaving
 // renderPins() throwing a ReferenceError on every page load -- which in
 // turn silently aborted the rest of init() (see the comment above init()
