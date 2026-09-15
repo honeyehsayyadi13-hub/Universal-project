@@ -649,7 +649,17 @@ function renderPins() {
     img.alt = r.name;
     img.onerror = () => { img.style.display = 'none'; pin.textContent = r.name.split(' ')[0]; };
     pin.appendChild(img);
-    pin.addEventListener('click', e => { e.stopPropagation(); showPopup(r.id, pin); });
+    pin.addEventListener('click', e => {
+      e.stopPropagation();
+      const now = Date.now();
+      if (now - lastWaitChipTapTime < DOUBLE_TAP_MS) {
+        lastWaitChipTapTime = 0;
+        toggleWaitBubbles();
+      } else {
+        lastWaitChipTapTime = now;
+        showPopup(r.id, pin);
+      }
+    });
     pinLayerEl.appendChild(pin);
     pinElements.push({ el: pin, mx: r.x, my: r.y });
   });
