@@ -67,13 +67,6 @@ input { font-family: inherit; }
   gap: 14px;
 }
 
-#coordDisplay {
-  font: 600 14px/1 monospace;
-  color: var(--navy, #222);
-  white-space: nowrap;
-  padding-bottom: max(10px, env(safe-area-inset-bottom));
-}
-
 #backBtn {
   width: auto;
   min-width: 160px;
@@ -804,23 +797,6 @@ input { font-family: inherit; }
   border-color: var(--danger);
   color: var(--danger);
 }
-
-/* ── coordinate-finder dot ── */
-#coordDot {
-  position: absolute;
-  pointer-events: auto;
-  width: 22px;
-  height: 22px;
-  transform: translate(-50%, -50%);
-  border-radius: 50%;
-  background: var(--danger, #d32f2f);
-  border: 2px solid #fff;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.45);
-  z-index: 6;
-  cursor: grab;
-  touch-action: none;
-}
-#coordDot.dragging { cursor: grabbing; transform: translate(-50%, -50%) scale(1.15); }
 
 /* ═══════════════ POPUP ═══════════════ */
 
