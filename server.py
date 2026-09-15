@@ -45,7 +45,7 @@ def route():
 
     # Pull today's real Islands of Adventure closing time if it's available;
     # compute_and_print_route falls back to 8 PM on its own if this is None.
-    close_hour, close_minute = 0, 0
+    close_hour, close_minute = 23, 59
 
     try:
         result = compute_and_print_route(
