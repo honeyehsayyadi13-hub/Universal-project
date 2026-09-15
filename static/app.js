@@ -37,9 +37,9 @@ const STATUS_POLL_MS = 8000;
 
 // ── ride catalogue (mirrors ride_names / raw_buttons / _ride_image_paths) ──
 const RIDES = [
-  { id: 'hulk',           name: 'The Incredible Hulk Coaster',                 icon: 'assets/logos/hulk_logo.png',            x: 488, y: 620 },
-  { id: 'stormForce',     name: 'Storm Force Accelatron',                      icon: 'assets/logos/stormForce_logo.png',      x: 469, y: 654 },
-  { id: 'doctorDoom',     name: "Doctor Doom's Fearfall",                      icon: 'assets/logos/Doctor-dooms-fearfall-ride-logo-b.png', x: 411, y: 572 },
+  { id: 'hulk',           name: 'The Incredible Hulk Coaster',                 icon: 'assets/logos/hulk_logo.png',            x: 455, y: 741 },
+  { id: 'stormForce',     name: 'Storm Force Accelatron',                      icon: 'assets/logos/stormForce_logo.png',      x: 386, y: 735 },
+  { id: 'doctorDoom',     name: "Doctor Doom's Fearfall",                      icon: 'assets/logos/Doctor-dooms-fearfall-ride-logo-b.png', x: 325, y: 679 },
   { id: 'spiderMan',      name: 'The Amazing Adventures of Spider-Man',        icon: 'assets/logos/Amazing-adventures-spider-man-ride-logo-b.png', x: 418, y: 527 },
   { id: 'bilgeRat',       name: "Popeye & Bluto's Bilge-Rat Barges",           icon: 'assets/logos/bilge_rat.png',            x: 394, y: 380 },
   { id: 'ripsawFalls',    name: "Dudley Do-Right's Ripsaw Falls",              icon: 'assets/logos/Dudley-do-rights-ripsaw-falls-water-ride-logo-b.png', x: 276, y: 379 },
