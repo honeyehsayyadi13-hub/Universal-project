@@ -1005,93 +1005,26 @@ mapViewportEl.addEventListener('pointercancel', endMapPan);
 // small per-frame errors can't compound and drift the anchor away from
 // your fingers.
 //
-// touchmove was previously writing straight to the DOM on every single
-// raw event. Touchmove can fire faster than the screen actually paints,
-// so each of those writes was wasted work the browser had to immediately
-// redo for the next event -- that's the stutter, and on a dropped frame
-// the visible zoom point lags behind where your fingers actually are,
-// which is exactly what read as "not zooming where I pinch." Batched
-// the same way wheel already is: raw events just record the latest
-// finger positions, and only the most recent one gets solved + painted,
-// once per animation frame.
-let touchBaseline = null; // { mode: 'pan'|'pinch', zoom, panX, panY, x, y, dist, midX, midY }
-let latestTouches = null;
-let touchFrameQueued = false;
-
-function touchPoint(touches) {
-  if (touches.length === 1) {
-    return { mode: 'pan', x: touches[0].clientX, y: touches[0].clientY };
-  }
-  const [t1, t2] = touches;
-  return {
-    mode: 'pinch',
-    dist: Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY),
-    midX: (t1.clientX + t2.clientX) / 2,
-    midY: (t1.clientY + t2.clientY) / 2,
-  };
-}
-
-function captureTouchBaseline(touches) {
-  refreshMapViewportRect();
-  touchBaseline = { zoom: mapZoom, panX: mapPanX, panY: mapPanY, ...touchPoint(touches) };
-}
-
-function flushTouchFrame() {
-  touchFrameQueued = false;
-  if (!latestTouches || !touchBaseline) return;
-  const touches = latestTouches;
-
-  if (touchBaseline.mode === 'pan') {
-    const t = touches[0];
-    mapPanX = touchBaseline.panX + (t.clientX - touchBaseline.x);
-    mapPanY = touchBaseline.panY + (t.clientY - touchBaseline.y);
-    clampMapPan();
-    applyMapTransform();
-  } else {
-    const now = touchPoint(touches);
-    // Guard against a near-zero distance (hardware noise, or the very
-    // instant two fingers land) producing a huge or unstable ratio.
-    if (touchBaseline.dist < 12 || now.dist < 12) return;
-    const targetZoom = touchBaseline.zoom * (now.dist / touchBaseline.dist);
-    // Solved from the fixed gesture-start baseline every time, not the
-    // previous frame's result, so error can't compound and the anchor
-    // can't drift away from your fingers.
-    zoomAtPoint(targetZoom, now.midX, now.midY, touchBaseline.zoom, touchBaseline.panX, touchBaseline.panY);
-  }
-}
-
-function queueTouchFrame(touches) {
-  latestTouches = touches;
-  if (!touchFrameQueued) {
-    touchFrameQueued = true;
-    requestAnimationFrame(flushTouchFrame);
-  }
-}
-
-mapViewportEl.addEventListener('touchstart', e => {
-  captureTouchBaseline(e.touches);
-}, { passive: true });
-
-mapViewportEl.addEventListener('touchmove', e => {
-  const wantMode = e.touches.length >= 2 ? 'pinch' : 'pan';
-  if (!touchBaseline || touchBaseline.mode !== wantMode) {
-    captureTouchBaseline(e.touches);
-  }
-  if (touchBaseline.mode === 'pan' && (e.target.closest('.pin') || e.target.closest('.popup'))) return;
-  e.preventDefault();
-  queueTouchFrame(e.touches);
-}, { passive: false });
-
-mapViewportEl.addEventListener('touchend', e => {
-  latestTouches = null;
-  if (e.touches.length === 0) touchBaseline = null;
-  else captureTouchBaseline(e.touches);
-}, { passive: true });
-
-mapViewportEl.addEventListener('touchcancel', () => {
-  touchBaseline = null;
-  latestTouches = null;
-}, { passive: true });
+// CRITICAL: raw Touch/TouchList objects from the browser are only safe
+// to read SYNCHRONOUSLY, inside the event handler that received them.
+// Several mobile browsers recycle and mutate those same Touch objects
+// in place for the NEXT touch event rather than allocating new ones --
+// so if you hang onto a Touch object and read its .clientX/.clientY a
+// frame later (e.g. from inside requestAnimationFrame, which is what
+// the old code did by queuing `e.touches` itself), you can end up
+// reading coordinates that already belong to a different, later event
+// -- or a finger that has since lifted. That's exactly what produced
+// the occasional jump/drift toward a wrong (often centre-ish) point:
+// it wasn't math error, it was reading stale/rewritten touch data.
+//
+// Fix: extract plain {x, y} numbers out of the TouchList IMMEDIATELY,
+// synchronously, inside the event handler -- and only ever queue/read
+// those plain numbers afterward. Plain objects can't be mutated out
+// from under us by the browser, so the deferred, frame-coalesced
+// zoom/pan math is now reading exactly the data it was given.
+function extractPoints(touchList) {
+  const pts = [];
+  for (let i = 0; i
 
 // ═══════════════ TOP ROUTE BAR ═══════════════
 
