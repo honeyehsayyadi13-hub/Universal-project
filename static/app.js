@@ -812,101 +812,74 @@ function clampZoom(z) {
   return Math.min(MAX_MAP_ZOOM, Math.max(MIN_MAP_ZOOM, z));
 }
 
-// ── frame-coalesced zoom + paint ──
+// ── zoom/pan gesture engine ──
 //
-// Every raw input event (a wheel notch, a touchmove sample) used to
-// immediately mutate mapZoom/mapPanX/mapPanY and clamp on the spot. Fast
-// input -- a quick trackpad pinch, a fast scroll fling -- can fire many of
-// these before the browser ever gets to paint a frame, and each one was
-// doing its own independent anchor calculation AND its own independent
-// edge-clamp. Several clamps stacked back-to-back like that (instead of
-// one clean clamp against the true final target) is what let the position
-// drift toward a corner during a fast gesture instead of landing exactly
-// where the math intended.
+// Full rewrite. The old version accumulated zoom ratios across raw
+// events and only resolved anchor math + clamp once per frame. That
+// caused two real bugs:
+//   1) Pinch-zoom landing off from where your fingers actually were --
+//      each frame re-anchored relative to whatever mapPanX/mapPanY
+//      happened to be at that moment, so small per-frame errors could
+//      compound over a fast pinch.
+//   2) The map teleporting to the top-left. This happened when a
+//      two-finger pinch dropped to one finger (or vice versa):
+//      touchstart only recorded a new pan-reference point on the very
+//      first 0-finger -> 1-finger transition, so lifting a finger
+//      mid-pinch left the single-finger pan math reusing a stale
+//      reference point from a completely different part of the
+//      gesture -- producing a huge, wrong pan delta that clampMapPan()
+//      then slammed into a corner.
 //
-// The fix: raw events only RECORD intent now -- a cumulative zoom ratio
-// plus the latest anchor point. The actual "solve for the pan that keeps
-// the anchor point stationary" math, and the one-and-only edge clamp, both
-// run exactly ONCE per animation frame, no matter how many raw events fed
-// into it. Zoom speed during a fast gesture is now bounded by frame rate,
-// not by how many raw events the input hardware happens to fire -- which
-// is also exactly what makes it feel smooth instead of jumpy.
-let pendingZoomRatio = 1;
-let hasPendingZoom = false;
-let pendingZoomAnchorX = 0, pendingZoomAnchorY = 0;
-let pendingZoomRect = null;
+// Fix: every gesture captures a fresh "baseline" (the pan/zoom the map
+// was at, plus the input's starting position/distance) every time the
+// gesture changes shape (finger count changes). All movement is solved
+// directly from that baseline, never from the previous frame's result,
+// so stale references and compounding error can't happen.
 
-function queueZoomStep(ratio, clientX, clientY, rect) {
-  pendingZoomRatio *= ratio;
-  pendingZoomAnchorX = clientX;
-  pendingZoomAnchorY = clientY;
-  pendingZoomRect = rect || null;
-  hasPendingZoom = true;
-  scheduleMapFrame();
-}
-
-let mapRafId = null;
-function scheduleMapFrame() {
-  if (mapRafId !== null) return;
-  mapRafId = requestAnimationFrame(flushMapFrame);
-}
-
-function flushMapFrame() {
-  mapRafId = null;
-
-  if (hasPendingZoom) {
-    const targetZoom = clampZoom(mapZoom * pendingZoomRatio);
-    if (targetZoom !== mapZoom) {
-      const rect = pendingZoomRect || mapViewportEl.getBoundingClientRect();
-      const px = (pendingZoomAnchorX ?? (rect.left + rect.width / 2)) - rect.left;
-      const py = (pendingZoomAnchorY ?? (rect.top + rect.height / 2)) - rect.top;
-
-      const imgX = (px - mapPanX) / mapZoom;
-      const imgY = (py - mapPanY) / mapZoom;
-
-      mapZoom = targetZoom;
-      mapPanX = px - imgX * mapZoom;
-      mapPanY = py - imgY * mapZoom;
-    }
-    pendingZoomRatio = 1;
-    hasPendingZoom = false;
-  }
-
+function zoomAtPoint(targetZoomRaw, clientX, clientY, baseZoom, basePanX, basePanY) {
+  const targetZoom = clampZoom(targetZoomRaw);
+  const rect = mapViewportRect;
+  const px = clientX - rect.left;
+  const py = clientY - rect.top;
+  const imgX = (px - basePanX) / baseZoom;
+  const imgY = (py - basePanY) / baseZoom;
+  mapZoom = targetZoom;
+  mapPanX = px - imgX * mapZoom;
+  mapPanY = py - imgY * mapZoom;
   clampMapPan();
   applyMapTransform();
 }
 
-function commitMapPan() {
-  scheduleMapFrame();
-}
+// ── wheel / trackpad zoom, centered on the cursor ──
+let wheelRatioAccum = 1;
+let wheelClientX = 0, wheelClientY = 0;
+let wheelFrameQueued = false;
 
-// Wheel / trackpad zoom, centered on the cursor.
-//
-// A physical mouse fires ONE wheel event per notch, so a flat step-size
-// per event felt fine. A trackpad instead fires dozens of tiny wheel
-// events per second during a pinch or two-finger scroll -- treating each
-// of those tiny motions as a full fixed step compounded into a rapid,
-// uneven, almost exponential-feeling zoom. Scaling the ratio by the
-// event's own deltaY magnitude means a tiny trackpad nudge produces a
-// tiny zoom change and a big fling produces a bigger one, same as real
-// zoom UIs (Google Maps, Figma, etc.) -- which is what actually reads as
-// "smooth" rather than "glitchy."
 mapViewportEl.addEventListener('wheel', e => {
   e.preventDefault();
-  // Clamp deltaY first: some browsers/devices occasionally report huge
-  // one-off deltaY values (e.g. "page" scroll mode) that would otherwise
-  // translate into a single jarring zoom jump.
   const deltaY = Math.max(-200, Math.min(200, e.deltaY));
-  const ratio = Math.exp(-deltaY * WHEEL_ZOOM_SENSITIVITY);
-  queueZoomStep(ratio, e.clientX, e.clientY);
+  wheelRatioAccum *= Math.exp(-deltaY * WHEEL_ZOOM_SENSITIVITY);
+  wheelClientX = e.clientX;
+  wheelClientY = e.clientY;
+  if (!wheelFrameQueued) {
+    wheelFrameQueued = true;
+    requestAnimationFrame(() => {
+      wheelFrameQueued = false;
+      const ratio = wheelRatioAccum;
+      wheelRatioAccum = 1;
+      refreshMapViewportRect();
+      zoomAtPoint(mapZoom * ratio, wheelClientX, wheelClientY, mapZoom, mapPanX, mapPanY);
+    });
+  }
 }, { passive: false });
 
 // Double-click to step in (or reset if already maxed), centered on the click
 mapImageEl.addEventListener('dblclick', e => {
+  refreshMapViewportRect();
   const targetZoom = mapZoom >= MAX_MAP_ZOOM - 0.001
     ? MIN_MAP_ZOOM
     : Math.min(MAX_MAP_ZOOM, mapZoom * WHEEL_ZOOM_RATIO * WHEEL_ZOOM_RATIO);
-  queueZoomStep(targetZoom / mapZoom, e.clientX, e.clientY);
+  zoomAtPoint(targetZoom, e.clientX, e.clientY, mapZoom, mapPanX, mapPanY);
 });
 
 // ── mouse drag-to-pan ──
@@ -938,7 +911,8 @@ mapViewportEl.addEventListener('pointermove', e => {
   }
   mapPanX = panStartPanX + dx;
   mapPanY = panStartPanY + dy;
-  commitMapPan();
+  clampMapPan();
+  applyMapTransform();
 });
 
 function endMapPan(e) {
@@ -952,59 +926,68 @@ mapViewportEl.addEventListener('pointerup', endMapPan);
 mapViewportEl.addEventListener('pointercancel', endMapPan);
 
 // ── touch: single-finger pan, two-finger pinch-to-zoom ──
-let touchPanStartX = 0, touchPanStartY = 0, touchPanStartPanX = 0, touchPanStartPanY = 0;
-let pinchLastDist = null;
+//
+// touchBaseline is re-captured any time the gesture changes shape
+// (finger added or removed) -- never reused across a shape change. That
+// is the fix for the teleport bug.
+let touchBaseline = null; // { mode: 'pan'|'pinch', zoom, panX, panY, x, y, dist, midX, midY }
+
+function touchPoint(touches) {
+  if (touches.length === 1) {
+    return { mode: 'pan', x: touches[0].clientX, y: touches[0].clientY };
+  }
+  const [t1, t2] = touches;
+  return {
+    mode: 'pinch',
+    dist: Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY),
+    midX: (t1.clientX + t2.clientX) / 2,
+    midY: (t1.clientY + t2.clientY) / 2,
+  };
+}
+
+function captureTouchBaseline(touches) {
+  refreshMapViewportRect();
+  touchBaseline = { zoom: mapZoom, panX: mapPanX, panY: mapPanY, ...touchPoint(touches) };
+}
 
 mapViewportEl.addEventListener('touchstart', e => {
-  refreshMapViewportRect();
-  if (e.touches.length === 1) {
-    const t = e.touches[0];
-    touchPanStartX = t.clientX;
-    touchPanStartY = t.clientY;
-    touchPanStartPanX = mapPanX;
-    touchPanStartPanY = mapPanY;
-    pinchLastDist = null;
-  } else if (e.touches.length === 2) {
-    const [t1, t2] = e.touches;
-    pinchLastDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
-  }
+  captureTouchBaseline(e.touches);
 }, { passive: true });
 
 mapViewportEl.addEventListener('touchmove', e => {
-  if (e.touches.length === 1 && pinchLastDist === null) {
+  const wantMode = e.touches.length >= 2 ? 'pinch' : 'pan';
+  if (!touchBaseline || touchBaseline.mode !== wantMode) {
+    captureTouchBaseline(e.touches);
+  }
+
+  if (touchBaseline.mode === 'pan') {
     if (e.target.closest('.pin') || e.target.closest('.popup') || e.target.closest('#coordDot')) return;
     e.preventDefault();
     const t = e.touches[0];
-    mapPanX = touchPanStartPanX + (t.clientX - touchPanStartX);
-    mapPanY = touchPanStartPanY + (t.clientY - touchPanStartY);
-    commitMapPan();
-  } else if (e.touches.length === 2 && pinchLastDist !== null) {
+    mapPanX = touchBaseline.panX + (t.clientX - touchBaseline.x);
+    mapPanY = touchBaseline.panY + (t.clientY - touchBaseline.y);
+    clampMapPan();
+    applyMapTransform();
+  } else {
     e.preventDefault();
-    const [t1, t2] = e.touches;
-    const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
-
-    // A floor on both distances guards against a single anomalous touch
-    // sample (hardware noise, or the very first tiny gap right as two
-    // fingers land) producing a huge, spurious ratio. The extra clamp on
-    // the ratio itself (per raw touchmove event) is a second safety net --
-    // frame-to-frame finger movement is normally small, so any single
-    // event trying to claim a bigger jump than that is almost certainly
-    // sensor noise rather than real intent, and got silently amplified
-    // into a visible micro-jump before this clamp existed.
-    if (pinchLastDist > 12 && dist > 12) {
-      const rawRatio = dist / pinchLastDist;
-      const ratio = Math.min(1.15, Math.max(0.87, rawRatio));
-      const midX = (t1.clientX + t2.clientX) / 2;
-      const midY = (t1.clientY + t2.clientY) / 2;
-      queueZoomStep(ratio, midX, midY, mapViewportRect);
-    }
-    pinchLastDist = dist;
+    const now = touchPoint(e.touches);
+    // Guard against a near-zero distance (hardware noise, or the very
+    // instant two fingers land) producing a huge or unstable ratio.
+    if (touchBaseline.dist < 12 || now.dist < 12) return;
+    const targetZoom = touchBaseline.zoom * (now.dist / touchBaseline.dist);
+    // Solved from the fixed gesture-start baseline every time, not the
+    // previous frame's result, so error can't compound and the anchor
+    // can't drift away from your fingers.
+    zoomAtPoint(targetZoom, now.midX, now.midY, touchBaseline.zoom, touchBaseline.panX, touchBaseline.panY);
   }
 }, { passive: false });
 
 mapViewportEl.addEventListener('touchend', e => {
-  if (e.touches.length < 2) pinchLastDist = null;
+  if (e.touches.length === 0) touchBaseline = null;
+  else captureTouchBaseline(e.touches);
 }, { passive: true });
+
+mapViewportEl.addEventListener('touchcancel', () => { touchBaseline = null; }, { passive: true });
 
 // ── coordinate-finder dot ──
 // Drag this dot (mouse or finger) anywhere over the map; the bottom bar
