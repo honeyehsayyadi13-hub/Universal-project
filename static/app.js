@@ -1024,7 +1024,92 @@ mapViewportEl.addEventListener('pointercancel', endMapPan);
 // zoom/pan math is now reading exactly the data it was given.
 function extractPoints(touchList) {
   const pts = [];
-  for (let i = 0; i
+  for (let i = 0; i < touchList.length; i++) {
+    pts.push({ x: touchList[i].clientX, y: touchList[i].clientY });
+  }
+  return pts;
+}
+
+let touchBaseline = null; // { mode: 'pan'|'pinch', zoom, panX, panY, x, y, dist, midX, midY }
+let latestPoints = null;
+let touchFrameQueued = false;
+
+function touchPoint(points) {
+  if (points.length === 1) {
+    return { mode: 'pan', x: points[0].x, y: points[0].y };
+  }
+  const [p1, p2] = points;
+  return {
+    mode: 'pinch',
+    dist: Math.hypot(p2.x - p1.x, p2.y - p1.y),
+    midX: (p1.x + p2.x) / 2,
+    midY: (p1.y + p2.y) / 2,
+  };
+}
+
+function captureTouchBaseline(points) {
+  refreshMapViewportRect();
+  touchBaseline = { zoom: mapZoom, panX: mapPanX, panY: mapPanY, ...touchPoint(points) };
+}
+
+function flushTouchFrame() {
+  touchFrameQueued = false;
+  if (!latestPoints || !touchBaseline) return;
+  const points = latestPoints;
+
+  if (touchBaseline.mode === 'pan') {
+    const p = points[0];
+    mapPanX = touchBaseline.panX + (p.x - touchBaseline.x);
+    mapPanY = touchBaseline.panY + (p.y - touchBaseline.y);
+    clampMapPan();
+    applyMapTransform();
+  } else {
+    const now = touchPoint(points);
+    // Guard against a near-zero distance (hardware noise, or the very
+    // instant two fingers land) producing a huge or unstable ratio.
+    if (touchBaseline.dist < 12 || now.dist < 12) return;
+    const targetZoom = touchBaseline.zoom * (now.dist / touchBaseline.dist);
+    // Solved from the fixed gesture-start baseline every time, not the
+    // previous frame's result, so error can't compound and the anchor
+    // can't drift away from your fingers.
+    zoomAtPoint(targetZoom, now.midX, now.midY, touchBaseline.zoom, touchBaseline.panX, touchBaseline.panY);
+  }
+}
+
+function queueTouchFrame(points) {
+  latestPoints = points;
+  if (!touchFrameQueued) {
+    touchFrameQueued = true;
+    requestAnimationFrame(flushTouchFrame);
+  }
+}
+
+mapViewportEl.addEventListener('touchstart', e => {
+  captureTouchBaseline(extractPoints(e.touches));
+}, { passive: true });
+
+mapViewportEl.addEventListener('touchmove', e => {
+  const points = extractPoints(e.touches);
+  const wantMode = points.length >= 2 ? 'pinch' : 'pan';
+  if (!touchBaseline || touchBaseline.mode !== wantMode) {
+    captureTouchBaseline(points);
+  }
+  if (touchBaseline.mode === 'pan' && (e.target.closest('.pin') || e.target.closest('.popup'))) return;
+  e.preventDefault();
+  queueTouchFrame(points);
+}, { passive: false });
+
+mapViewportEl.addEventListener('touchend', e => {
+  latestPoints = null;
+  const points = extractPoints(e.touches);
+  if (points.length === 0) touchBaseline = null;
+  else captureTouchBaseline(points);
+}, { passive: true });
+
+mapViewportEl.addEventListener('touchcancel', () => {
+  touchBaseline = null;
+  latestPoints = null;
+}, { passive: true });
 
 // ═══════════════ TOP ROUTE BAR ═══════════════
 
