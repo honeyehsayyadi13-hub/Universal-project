@@ -1044,7 +1044,54 @@ function flushTouchFrame() {
   if (touchBaseline.mode === 'pan') {
     const t = touches[0];
     mapPanX = touchBaseline.panX + (t.clientX - touchBaseline.x);
-    mapPanY = touchBaseline.panY + (t.clientY -
+    mapPanY = touchBaseline.panY + (t.clientY - touchBaseline.y);
+    clampMapPan();
+    applyMapTransform();
+  } else {
+    const now = touchPoint(touches);
+    // Guard against a near-zero distance (hardware noise, or the very
+    // instant two fingers land) producing a huge or unstable ratio.
+    if (touchBaseline.dist < 12 || now.dist < 12) return;
+    const targetZoom = touchBaseline.zoom * (now.dist / touchBaseline.dist);
+    // Solved from the fixed gesture-start baseline every time, not the
+    // previous frame's result, so error can't compound and the anchor
+    // can't drift away from your fingers.
+    zoomAtPoint(targetZoom, now.midX, now.midY, touchBaseline.zoom, touchBaseline.panX, touchBaseline.panY);
+  }
+}
+
+function queueTouchFrame(touches) {
+  latestTouches = touches;
+  if (!touchFrameQueued) {
+    touchFrameQueued = true;
+    requestAnimationFrame(flushTouchFrame);
+  }
+}
+
+mapViewportEl.addEventListener('touchstart', e => {
+  captureTouchBaseline(e.touches);
+}, { passive: true });
+
+mapViewportEl.addEventListener('touchmove', e => {
+  const wantMode = e.touches.length >= 2 ? 'pinch' : 'pan';
+  if (!touchBaseline || touchBaseline.mode !== wantMode) {
+    captureTouchBaseline(e.touches);
+  }
+  if (touchBaseline.mode === 'pan' && (e.target.closest('.pin') || e.target.closest('.popup'))) return;
+  e.preventDefault();
+  queueTouchFrame(e.touches);
+}, { passive: false });
+
+mapViewportEl.addEventListener('touchend', e => {
+  latestTouches = null;
+  if (e.touches.length === 0) touchBaseline = null;
+  else captureTouchBaseline(e.touches);
+}, { passive: true });
+
+mapViewportEl.addEventListener('touchcancel', () => {
+  touchBaseline = null;
+  latestTouches = null;
+}, { passive: true });
 
 // ═══════════════ TOP ROUTE BAR ═══════════════
 
