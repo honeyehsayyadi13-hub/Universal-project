@@ -788,3 +788,34 @@ input { font-family: inherit; }
   #sidebar { position: absolute; inset: 0 auto 0 0; height: 100%; }
   .edge-toggle--left { left: var(--sidebar-w); }
 }
+
+/* ═══════════════ MODE TOGGLES ═══════════════ */
+
+.mode-toggle-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 2px 2px 4px;
+}
+
+.mode-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.mode-toggle-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #DCE3EA;
+  white-space: nowrap;
+}
+
+/* Dark-mode map override. Specificity (id + class) beats the plain
+   #mapPane / #mapViewport rules regardless of source order, so this is
+   safe to declare anywhere in the file. */
+#mapPane.map-dark,
+#mapViewport.map-dark {
+  background: var(--navy);
+}
