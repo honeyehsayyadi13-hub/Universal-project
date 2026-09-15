@@ -735,6 +735,8 @@ const WAIT_BUBBLE_SIZE = 34; // smaller than a pin -- no ride name/icon to fit
 const WAIT_BUBBLE_OFFSET_Y = -(PIN_SIZE / 2 + WAIT_BUBBLE_SIZE / 2 + 4);
 let showWaitBubbles = false;
 let waitBubbleElements = []; // cached per renderWaitBubbles(), same pattern as pinElements
+let lastWaitChipTapTime = 0; // for manual double-tap detection (see toggle listener below)
+const DOUBLE_TAP_MS = 350;
 
 function renderWaitBubbles() {
   waitBubbleLayerEl.innerHTML = '';
@@ -1238,9 +1240,20 @@ function renderRouteBar() {
       const chip = document.createElement('span');
       chip.className = 'wait-chip';
       chip.textContent = stop.predictedWait == null ? '--' : `${Math.round(stop.predictedWait)}m`;
-      chip.addEventListener('dblclick', e => {
+      // 'dblclick' doesn't fire reliably from real touch double-taps on
+      // mobile browsers (it's normally synthesized alongside the native
+      // double-tap-zoom gesture, which our viewport meta tag already
+      // disables) -- so detect the double-tap manually off 'click' timing
+      // instead, which fires consistently for both touch and mouse.
+      chip.addEventListener('click', e => {
         e.stopPropagation();
-        toggleWaitBubbles();
+        const now = Date.now();
+        if (now - lastWaitChipTapTime < DOUBLE_TAP_MS) {
+          lastWaitChipTapTime = 0;
+          toggleWaitBubbles();
+        } else {
+          lastWaitChipTapTime = now;
+        }
       });
 
       const timeChip = document.createElement('span');
