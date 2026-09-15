@@ -715,6 +715,23 @@ function hidePopup() {
 
 document.addEventListener('click', e => {
   if (!e.target.closest('.pin') && !e.target.closest('.popup')) hidePopup();
+
+  // Double-tap toggles the wait bubbles on; a tap anywhere else on the
+  // map (or empty space generally) should toggle them back off, same as
+  // if you'd double-tapped again. Excludes taps on a pin itself (which
+  // already has its own single/double-tap handling above) and on any of
+  // the surrounding UI chrome -- sidebar, top route bar, bottom bar, the
+  // collapse toggles, and dropdowns -- so opening a menu or collapsing a
+  // bar doesn't also dismiss the bubbles as a side effect.
+  if (showWaitBubbles
+      && !e.target.closest('.pin')
+      && !e.target.closest('#sidebar')
+      && !e.target.closest('#topBar')
+      && !e.target.closest('#bottomBar')
+      && !e.target.closest('.edge-toggle')
+      && !e.target.closest('.dropdown')) {
+    toggleWaitBubbles();
+  }
 });
 
 // ═══════════════ MAP ZOOM & PAN ═══════════════
@@ -732,8 +749,9 @@ const MIN_MAP_ZOOM = 1;
 const MAX_MAP_ZOOM = 4;
 const WHEEL_ZOOM_RATIO = 1.12; // used only by the double-click step-zoom
 // Tuned so a standard mouse's single wheel notch (deltaY ~100) still lands
-// close to the old flat WHEEL_ZOOM_RATIO step.
-const WHEEL_ZOOM_SENSITIVITY = 0.0011;
+// close to the old flat WHEEL_ZOOM_RATIO step. Bumped up from 0.0011 for
+// slightly punchier response per notch/scroll tick.
+const WHEEL_ZOOM_SENSITIVITY = 0.0015;
 
 let mapZoom = 1;
 let mapPanX = 0;
@@ -873,28 +891,9 @@ function clampZoom(z) {
 
 // ── zoom/pan gesture engine ──
 //
-// Full rewrite. The old version accumulated zoom ratios across raw
-// events and only resolved anchor math + clamp once per frame. That
-// caused two real bugs:
-//   1) Pinch-zoom landing off from where your fingers actually were --
-//      each frame re-anchored relative to whatever mapPanX/mapPanY
-//      happened to be at that moment, so small per-frame errors could
-//      compound over a fast pinch.
-//   2) The map teleporting to the top-left. This happened when a
-//      two-finger pinch dropped to one finger (or vice versa):
-//      touchstart only recorded a new pan-reference point on the very
-//      first 0-finger -> 1-finger transition, so lifting a finger
-//      mid-pinch left the single-finger pan math reusing a stale
-//      reference point from a completely different part of the
-//      gesture -- producing a huge, wrong pan delta that clampMapPan()
-//      then slammed into a corner.
-//
-// Fix: every gesture captures a fresh "baseline" (the pan/zoom the map
-// was at, plus the input's starting position/distance) every time the
-// gesture changes shape (finger count changes). All movement is solved
-// directly from that baseline, never from the previous frame's result,
-// so stale references and compounding error can't happen.
-
+// Anchor math: for any zoom change, solve for the pan that keeps
+// whatever image-space point was under the anchor (cursor / pinch
+// midpoint) glued to that same screen position after the zoom applies.
 function zoomAtPoint(targetZoomRaw, clientX, clientY, baseZoom, basePanX, basePanY) {
   const targetZoom = clampZoom(targetZoomRaw);
   const rect = mapViewportRect;
@@ -910,6 +909,11 @@ function zoomAtPoint(targetZoomRaw, clientX, clientY, baseZoom, basePanX, basePa
 }
 
 // ── wheel / trackpad zoom, centered on the cursor ──
+//
+// Raw wheel events only record intent (a cumulative ratio + latest
+// cursor position); the solve + DOM write happens once per animation
+// frame, so a flood of tiny trackpad events between two paints gets
+// coalesced into a single smooth step instead of many redundant ones.
 let wheelRatioAccum = 1;
 let wheelClientX = 0, wheelClientY = 0;
 let wheelFrameQueued = false;
@@ -932,13 +936,22 @@ mapViewportEl.addEventListener('wheel', e => {
   }
 }, { passive: false });
 
-// Double-click to step in (or reset if already maxed), centered on the click
+// Double-click to step in (or reset if already maxed), centered on the
+// click. This is the one zoom gesture that's a single discrete jump
+// rather than a continuous drag, so it's the one place a brief CSS
+// transition (.map-zoom-anim, see styles.css) actually helps instead of
+// fighting live tracking -- it turns the jump into a quick, organic
+// glide instead of an instant snap.
+let zoomAnimClearTimer = null;
 mapImageEl.addEventListener('dblclick', e => {
   refreshMapViewportRect();
   const targetZoom = mapZoom >= MAX_MAP_ZOOM - 0.001
     ? MIN_MAP_ZOOM
     : Math.min(MAX_MAP_ZOOM, mapZoom * WHEEL_ZOOM_RATIO * WHEEL_ZOOM_RATIO);
+  mapInnerEl.classList.add('map-zoom-anim');
   zoomAtPoint(targetZoom, e.clientX, e.clientY, mapZoom, mapPanX, mapPanY);
+  clearTimeout(zoomAnimClearTimer);
+  zoomAnimClearTimer = setTimeout(() => mapInnerEl.classList.remove('map-zoom-anim'), 260);
 });
 
 // ── mouse drag-to-pan ──
@@ -986,10 +999,24 @@ mapViewportEl.addEventListener('pointercancel', endMapPan);
 
 // ── touch: single-finger pan, two-finger pinch-to-zoom ──
 //
-// touchBaseline is re-captured any time the gesture changes shape
-// (finger added or removed) -- never reused across a shape change. That
-// is the fix for the teleport bug.
+// touchBaseline is captured fresh every time the gesture changes shape
+// (finger added/removed), and every frame's math is solved directly
+// from that fixed baseline rather than the previous frame's output, so
+// small per-frame errors can't compound and drift the anchor away from
+// your fingers.
+//
+// touchmove was previously writing straight to the DOM on every single
+// raw event. Touchmove can fire faster than the screen actually paints,
+// so each of those writes was wasted work the browser had to immediately
+// redo for the next event -- that's the stutter, and on a dropped frame
+// the visible zoom point lags behind where your fingers actually are,
+// which is exactly what read as "not zooming where I pinch." Batched
+// the same way wheel already is: raw events just record the latest
+// finger positions, and only the most recent one gets solved + painted,
+// once per animation frame.
 let touchBaseline = null; // { mode: 'pan'|'pinch', zoom, panX, panY, x, y, dist, midX, midY }
+let latestTouches = null;
+let touchFrameQueued = false;
 
 function touchPoint(touches) {
   if (touches.length === 1) {
@@ -1009,44 +1036,15 @@ function captureTouchBaseline(touches) {
   touchBaseline = { zoom: mapZoom, panX: mapPanX, panY: mapPanY, ...touchPoint(touches) };
 }
 
-mapViewportEl.addEventListener('touchstart', e => {
-  captureTouchBaseline(e.touches);
-}, { passive: true });
-
-mapViewportEl.addEventListener('touchmove', e => {
-  const wantMode = e.touches.length >= 2 ? 'pinch' : 'pan';
-  if (!touchBaseline || touchBaseline.mode !== wantMode) {
-    captureTouchBaseline(e.touches);
-  }
+function flushTouchFrame() {
+  touchFrameQueued = false;
+  if (!latestTouches || !touchBaseline) return;
+  const touches = latestTouches;
 
   if (touchBaseline.mode === 'pan') {
-    if (e.target.closest('.pin') || e.target.closest('.popup')) return;
-    e.preventDefault();
-    const t = e.touches[0];
+    const t = touches[0];
     mapPanX = touchBaseline.panX + (t.clientX - touchBaseline.x);
-    mapPanY = touchBaseline.panY + (t.clientY - touchBaseline.y);
-    clampMapPan();
-    applyMapTransform();
-  } else {
-    e.preventDefault();
-    const now = touchPoint(e.touches);
-    // Guard against a near-zero distance (hardware noise, or the very
-    // instant two fingers land) producing a huge or unstable ratio.
-    if (touchBaseline.dist < 12 || now.dist < 12) return;
-    const targetZoom = touchBaseline.zoom * (now.dist / touchBaseline.dist);
-    // Solved from the fixed gesture-start baseline every time, not the
-    // previous frame's result, so error can't compound and the anchor
-    // can't drift away from your fingers.
-    zoomAtPoint(targetZoom, now.midX, now.midY, touchBaseline.zoom, touchBaseline.panX, touchBaseline.panY);
-  }
-}, { passive: false });
-
-mapViewportEl.addEventListener('touchend', e => {
-  if (e.touches.length === 0) touchBaseline = null;
-  else captureTouchBaseline(e.touches);
-}, { passive: true });
-
-mapViewportEl.addEventListener('touchcancel', () => { touchBaseline = null; }, { passive: true });
+    mapPanY = touchBaseline.panY + (t.clientY -
 
 // ═══════════════ TOP ROUTE BAR ═══════════════
 

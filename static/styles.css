@@ -732,6 +732,14 @@ input { font-family: inherit; }
   will-change: transform;
 }
 
+/* Only applied momentarily for the double-click step-zoom (see app.js) --
+   never during a live drag/pinch/wheel, since a transition would fight
+   with (and lag behind) continuous per-frame updates there. This is what
+   turns that one discrete zoom jump into a quick organic glide. */
+#mapInner.map-zoom-anim {
+  transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
 #mapImage {
   display: block;
   max-width: 100%;
