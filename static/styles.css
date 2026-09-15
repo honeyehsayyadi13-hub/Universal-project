@@ -506,6 +506,11 @@ input { font-family: inherit; }
   overflow: hidden;
   position: relative;
   z-index: 16;
+  /* app.js drives the actual collapse/expand animation via inline styles
+     (it needs a dynamic target height), so this is mostly documentation --
+     but it keeps padding/border in sync with max-height if anything ever
+     toggles .collapsed without going through that JS. */
+  transition: max-height 0.28s ease, padding-top 0.28s ease, padding-bottom 0.28s ease, border-bottom-width 0.28s ease;
 }
 
 #topBar.collapsed {
