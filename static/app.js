@@ -37,7 +37,7 @@ const STATUS_POLL_MS = 8000;
 
 // ── ride catalogue (mirrors ride_names / raw_buttons / _ride_image_paths) ──
 const RIDES = [
-  { id: 'hulk',           name: 'The Incredible Hulk Coaster',                 icon: 'assets/logos/hulk_logo.png',            x: 455, y: 741 },
+  { id: 'hulk',           name: 'The Incredible Hulk Coaster',                 displayName: 'Hulk',   icon: 'assets/logos/hulk_logo.png',            x: 455, y: 741 },
   { id: 'stormForce',     name: 'Storm Force Accelatron',                      icon: 'assets/logos/stormForce_logo.png',      x: 386, y: 735 },
   { id: 'doctorDoom',     name: "Doctor Doom's Fearfall",                      icon: 'assets/logos/Doctor-dooms-fearfall-ride-logo-b.png', x: 325, y: 679 },
   { id: 'spiderMan',      name: 'The Amazing Adventures of Spider-Man',        icon: 'assets/logos/Amazing-adventures-spider-man-ride-logo-b.png', x: 418, y: 527 },
@@ -484,7 +484,10 @@ function renderSidebarList() {
 
     const name = document.createElement('span');
     name.className = 'ride-name';
-    name.textContent = r.name.replace(/\n/g, ' ');
+    // displayName (if set on a RIDES entry) overrides just the sidebar
+    // label -- everything else (popup title... see showPopup below,
+    // pin/img alt text, route-pill fallback text) still reads r.name.
+    name.textContent = (r.displayName ?? r.name).replace(/\n/g, ' ');
 
     // ── min (white) spinner ──────────────────────────────────────
     const spinner = document.createElement('div');
@@ -636,6 +639,11 @@ const popupState = { rideId: null, anchorEl: null };
 // on top of the actual math.
 let pinElements = [];
 
+function updateCoordDisplay(mx, my) {
+  const el = document.getElementById('coordDisplay');
+  if (el) el.textContent = `X: ${Math.round(mx)}  Y: ${Math.round(my)}`;
+}
+
 function renderPins() {
   pinLayerEl.innerHTML = '';
   pinElements = [];
@@ -649,8 +657,65 @@ function renderPins() {
     img.alt = r.name;
     img.onerror = () => { img.style.display = 'none'; pin.textContent = r.name.split(' ')[0]; };
     pin.appendChild(img);
+
+    const pinEntry = { el: pin, mx: r.x, my: r.y };
+    pinElements.push(pinEntry);
+
+    // ── drag-to-reposition (Advanced Mode only) ──
+    // Lets you nudge a pin's map-space (x, y) live and read the result
+    // off #coordDisplay to paste straight into the RIDES array above --
+    // same idea as this project's old coordinate-finder dot, but right
+    // on the real pin instead of a separate dot you had to line up by
+    // eye. Gated behind Advanced Mode so an ordinary tap/double-tap
+    // during route planning can never accidentally drag a ride's icon.
+    let pinPointerId = null;
+    let pinDragStartX = 0, pinDragStartY = 0;
+    let pinDragStartMX = 0, pinDragStartMY = 0;
+    let pinDragMoved = false;
+
+    pin.addEventListener('pointerdown', e => {
+      if (!advancedModeOn) return;
+      e.stopPropagation();
+      refreshMapViewportRect();
+      pinPointerId = e.pointerId;
+      pinDragStartX = e.clientX;
+      pinDragStartY = e.clientY;
+      pinDragStartMX = r.x;
+      pinDragStartMY = r.y;
+      pinDragMoved = false;
+      pin.setPointerCapture(pinPointerId);
+    });
+
+    pin.addEventListener('pointermove', e => {
+      if (pinPointerId !== e.pointerId) return;
+      const dx = e.clientX - pinDragStartX;
+      const dy = e.clientY - pinDragStartY;
+      if (!pinDragMoved && Math.hypot(dx, dy) < 4) return;
+      pinDragMoved = true;
+      // Screen-pixel delta -> map-space delta, inverse of the scaling
+      // updatePinLayout() uses to go the other direction.
+      const fitH = mapFitWidth * (MAP_NATIVE_H / MAP_NATIVE_W);
+      const scaleX = (mapFitWidth * mapZoom) / MAP_NATIVE_W;
+      const scaleY = (fitH * mapZoom) / MAP_NATIVE_H;
+      r.x = pinDragStartMX + dx / scaleX;
+      r.y = pinDragStartMY + dy / scaleY;
+      pinEntry.mx = r.x;
+      pinEntry.my = r.y;
+      updatePinLayout();
+      updateCoordDisplay(r.x, r.y);
+    });
+
+    function endPinDrag(e) {
+      if (pinPointerId !== e.pointerId) return;
+      pin.releasePointerCapture(pinPointerId);
+      pinPointerId = null;
+    }
+    pin.addEventListener('pointerup', endPinDrag);
+    pin.addEventListener('pointercancel', endPinDrag);
+
     pin.addEventListener('click', e => {
       e.stopPropagation();
+      if (pinDragMoved) { pinDragMoved = false; return; } // a drag just ended -- not a tap
       const now = Date.now();
       if (now - lastPinTapTime < DOUBLE_TAP_MS && lastPinTapRideId === r.id) {
         // Second tap on the SAME pin within the window -- this is a
@@ -668,8 +733,8 @@ function renderPins() {
       lastPinTapRideId = r.id;
       showPopup(r.id, pin);
     });
+
     pinLayerEl.appendChild(pin);
-    pinElements.push({ el: pin, mx: r.x, my: r.y });
   });
   updatePinLayout();
 }
@@ -685,7 +750,7 @@ function showPopup(rideId, anchorEl) {
   else if (isOpen === false) { waitLine = 'Ride is currently closed'; waitCls = 'closed'; }
   else { waitLine = `Wait: ${wait} min`; }
 
-  popupEl.innerHTML = `${r.name.replace(/\n/g, '<br>')}<div class="wait-line ${waitCls}">${waitLine}</div>`;
+  popupEl.innerHTML = `${(r.displayName ?? r.name).replace(/\n/g, '<br>')}<div class="wait-line ${waitCls}">${waitLine}</div>`;
   // Recolor the whole popup (border + arrow), not just the inner
   // wait-line text, when the ride is closed -- matches how .pin.closed
   // and .wait-bubble.closed both turn fully red rather than just their
