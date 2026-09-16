@@ -1700,6 +1700,21 @@ topBarEl.addEventListener('transitionend', (e) => {
 // needs to hide itself -- it's always in flow, always in the same place.
 // #topBarToggle floats too now, so it has to be told where #topBar's live
 // bottom edge is whenever that edge can move.
+// Shared with updateTopBarMaxHeight(): the gap the map (and the arrow)
+// keep above the Back button matches whatever gap the Back button
+// already keeps from the true bottom of the screen -- read live off
+// the element so it can't drift out of sync with it.
+function getBackButtonGap() {
+  const backBtnEl = document.getElementById('backBtn');
+  return parseFloat(getComputedStyle(backBtnEl).paddingBottom) || 10;
+}
+
+// Floor on how short the visible map can get before it stops tracking
+// the arrow downward and just holds at this minimum instead. Matches
+// #mapViewport's own CSS min-height so the JS-computed cap and that
+// CSS floor never disagree.
+const MIN_MAP_HEIGHT = 64;
+
 function updateTogglePositions() {
   const sidebarToggle = document.getElementById('sidebarToggle');
   const topBarToggleEl = document.getElementById('topBarToggle');
@@ -1711,7 +1726,23 @@ function updateTogglePositions() {
   // bottom edge, not underneath it -- push #mapViewport's padding-top
   // (see styles.css) down to exactly that edge every time it moves.
   const toggleBottom = toggleTop + topBarToggleEl.offsetHeight;
-  mapPaneEl.style.setProperty('--map-top-offset', toggleBottom + 'px');
+
+  // The map's bottom edge sits at a fixed gap above the Back button at
+  // all times, so as the arrow moves down, the map's top edge follows
+  // it and the map just gets shorter -- it doesn't slide as a whole.
+  // But only down to a point: once tracking the arrow would shrink the
+  // map below MIN_MAP_HEIGHT, the top edge stops advancing and holds
+  // there. The map stays at that minimum height -- with #topBar now
+  // overlapping the portion it can no longer make room for -- until
+  // #topBar shrinks again and there's slack to follow the arrow back up.
+  const gap = getBackButtonGap();
+  const bottomBarEl = document.getElementById('bottomBar');
+  const available = mapPaneEl.clientHeight - bottomBarEl.offsetHeight;
+  const maxTopOffset = Math.max(0, available - gap - MIN_MAP_HEIGHT);
+  const topOffset = Math.min(toggleBottom, maxTopOffset);
+
+  mapPaneEl.style.setProperty('--map-top-offset', topOffset + 'px');
+  mapPaneEl.style.setProperty('--map-bottom-gap', gap + 'px');
 
   // Changing padding-top changes #mapViewport's own clientHeight, which
   // shifts where a zoomed/panned map should be clamped to -- recompute
@@ -1743,14 +1774,7 @@ function updateTogglePositions() {
 function updateTopBarMaxHeight() {
   const bottomBarEl = document.getElementById('bottomBar');
   const topBarToggleEl = document.getElementById('topBarToggle');
-  const backBtnEl = document.getElementById('backBtn');
-
-  // The GAP between the arrow and the Back button should match the gap
-  // the Back button already keeps from the true bottom of the screen --
-  // that's exactly #backBtn's own padding-bottom (max(10px, safe-area
-  // inset)), so read it live off the element instead of hardcoding a
-  // number that could drift out of sync with it.
-  const gap = parseFloat(getComputedStyle(backBtnEl).paddingBottom) || 10;
+  const gap = getBackButtonGap();
 
   // #topBar's own content should stop short of #bottomBar by however
   // much space the arrow (which sits directly below #topBar's bottom

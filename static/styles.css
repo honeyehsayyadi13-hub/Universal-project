@@ -719,7 +719,13 @@ input { font-family: inherit; }
      clampMapPan()/computeMapFitWidth() already read clientWidth/Height,
      which already accounts for padding, so the map image and its
      pan/zoom clamping shrink to fit above by themselves. */
-  padding-top: var(--map-top-offset, 0px);
+  margin-top: var(--map-top-offset, 0px);
+  /* Fixed gap between the map and the Back button, matching the
+     arrow's own gap above it -- set alongside --map-top-offset in
+     updateTogglePositions() (app.js), which is also what caps how far
+     the top offset can grow so this bottom gap and the top tracking
+     never fight over the same space. */
+  margin-bottom: var(--map-bottom-gap, 0px);
   /* The only thing (besides #bottomBar) left in #mapPane's normal flex
      flow -- #topBar and its toggle float above it now, so flex:1 here
      always resolves to "all of mapPane's height minus #bottomBar's",
