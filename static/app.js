@@ -686,6 +686,11 @@ function showPopup(rideId, anchorEl) {
   else { waitLine = `Wait: ${wait} min`; }
 
   popupEl.innerHTML = `${r.name.replace(/\n/g, '<br>')}<div class="wait-line ${waitCls}">${waitLine}</div>`;
+  // Recolor the whole popup (border + arrow), not just the inner
+  // wait-line text, when the ride is closed -- matches how .pin.closed
+  // and .wait-bubble.closed both turn fully red rather than just their
+  // label text.
+  popupEl.classList.toggle('closed', isOpen === false);
   popupEl.classList.remove('hidden');
   positionPopup(anchorEl);
 }

@@ -837,44 +837,43 @@ input { font-family: inherit; }
   z-index: 50;
   background: var(--white);
   border: 2px solid var(--teal);
-  border-radius: 10px;
-  padding: 10px 14px;
-  font-size: 12.5px;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 11px;
   font-weight: 600;
   text-align: center;
-  line-height: 1.35;
+  line-height: 1.25;
   box-shadow: var(--shadow);
-  transform: translate(-50%, calc(-100% - 8px));
+  transform: translate(-50%, calc(-100% - 6px));
   pointer-events: none;
   white-space: pre-line;
+  max-width: 160px;
 }
 
 /* clip-path triangle -- see .wait-bubble::after above for why this
    replaces the old border-triangle trick. Color matches .wait-bubble's
-   teal (closed state below matches .wait-bubble.closed's red) so the
-   single-tap popup and the double-tap all-rides bubbles read as the
-   same family of UI element. */
+   teal so the single-tap popup and the double-tap all-rides bubbles
+   read as the same family of UI element. */
 .popup::after {
   content: '';
   position: absolute;
   top: 100%;
   left: 50%;
   transform: translateX(-50%);
-  width: 16px;
-  height: 8px;
+  width: 12px;
+  height: 6px;
   background: var(--teal);
   clip-path: polygon(0 0, 100% 0, 50% 100%);
 }
 
 .popup.hidden { display: none; }
 
-.popup .wait-line { margin-top: 4px; color: var(--teal); font-weight: 700; }
+.popup .wait-line { margin-top: 3px; color: var(--teal); font-weight: 700; }
 .popup .wait-line.closed { color: var(--danger); }
 
 /* When the ride is closed, recolor the whole popup (border + arrow) to
-   red, matching .wait-bubble.closed's treatment, rather than only the
-   wait-line text. app.js's showPopup() doesn't currently add a class to
-   .popup itself for this -- see note below if you want that too. */
+   red, matching .pin.closed / .wait-bubble.closed's treatment, rather
+   than only the wait-line text. */
 .popup.closed { border-color: var(--danger); }
 .popup.closed::after { background: var(--danger); }
 
