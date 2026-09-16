@@ -711,6 +711,15 @@ input { font-family: inherit; }
   opacity: 0.6;
 }
 #mapViewport {
+  /* Pushes the map's own content down below #topBarToggle (the gray
+     arrow), which floats above the map at a live-tracked position.
+     --map-top-offset is kept in sync with that arrow's bottom edge by
+     updateTogglePositions() in app.js. Padding (not margin) so it
+     comes out of #mapViewport's own box-sizing: border-box area --
+     clampMapPan()/computeMapFitWidth() already read clientWidth/Height,
+     which already accounts for padding, so the map image and its
+     pan/zoom clamping shrink to fit above by themselves. */
+  padding-top: var(--map-top-offset, 0px);
   /* The only thing (besides #bottomBar) left in #mapPane's normal flex
      flow -- #topBar and its toggle float above it now, so flex:1 here
      always resolves to "all of mapPane's height minus #bottomBar's",
