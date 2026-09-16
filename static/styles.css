@@ -51,10 +51,18 @@ button { font-family: inherit; cursor: pointer; }
 input { font-family: inherit; }
 
 #app {
-  position: relative;
-  width: 100vw;
-  height: 100vh;
-  height: 100dvh;
+  /* Fixed + inset:0 pins #app to the browser's actual visual-viewport
+     edges at all times. The old width/height: 100vw/100dvh instead
+     measures the layout viewport, which some mobile browsers (Samsung
+     Internet included) don't reliably resize when their own toolbar
+     chrome shows/hides -- #app's real box could end up shorter than
+     what's actually on screen, and the browser then cosmetically fills
+     that leftover strip with an extrapolated edge color. That's the
+     dark gap that was appearing below #bottomBar/the Back button.
+     Anchoring to inset:0 on a fixed element sidesteps the ambiguity
+     entirely -- #app's box is always exactly the visible screen. */
+  position: fixed;
+  inset: 0;
   display: flex;
   background: var(--white);
 }
