@@ -317,6 +317,7 @@ const mapInnerEl        = $('#mapInner');
 const mapViewportEl     = $('#mapViewport');
 const routeItemsEl      = $('#routeItems');
 const routePlaceholderEl= $('#routePlaceholder');
+const mapPaneEl = $('#mapPane');
 
 // ═══════════════ DROPDOWNS ═══════════════
 
@@ -1685,21 +1686,6 @@ async function pollStatus() {
 
 $('#sidebarToggle').addEventListener('click', () => sidebarEl.classList.toggle('collapsed'));
 
-// The sidebar collapses cleanly because margin-left is the ONLY thing that
-// moves -- nothing inside it resizes. #topBar's expand/collapse used to be
-// driven from here too: JS would measure scrollHeight and animate max-height
-// to that pixel target. The problem was that #topBar's own flex children
-// were fighting over a shrinking box mid-animation -- with flex-shrink: 0 on
-// the compact button and min-height: 0 on #routeTrack, the track got
-// squeezed to nothing at small heights while the button (which couldn't
-// shrink) claimed whatever space was left. It rendered at full size
-// immediately and the track only grew in afterward, which read as "clunky".
-//
-// #topBar now handles the whole animation in CSS via a grid-template-rows
-// 0fr <-> 1fr transition (see styles.css) -- the browser interpolates the
-// row track itself every frame, so #topBarContent's natural-size content
-// grows in as one continuous unit with no separate JS-measured target to
-// get stale or out of sync. All JS has to do is toggle the class.
 $('#topBarToggle').addEventListener('click', () => {
   topBarEl.classList.toggle('collapsed');
 });
@@ -1707,21 +1693,32 @@ $('#topBarToggle').addEventListener('click', () => {
 topBarEl.addEventListener('transitionend', (e) => {
   if (e.propertyName === 'grid-template-rows') updateTogglePositions();
 });
+
+// #topBar now floats above #mapViewport (position: absolute) instead of
+// pushing it down as a flex sibling. So #mapViewport's box never changes
+// size/position as #topBar expands or collapses, and #bottomBar never
+// needs to hide itself -- it's always in flow, always in the same place.
+// #topBarToggle floats too now, so it has to be told where #topBar's live
+// bottom edge is whenever that edge can move.
 function updateTogglePositions() {
-  // The back button row is no longer hidden/minimized -- #topBar's own
-  // max-height (see styles.css) already reserves enough room for it and
-  // for the now-static, fixed-size map, so it always fits and stays
-  // visible without any JS deciding whether to hide it.
   const sidebarToggle = document.getElementById('sidebarToggle');
   const topBarToggleEl = document.getElementById('topBarToggle');
-  const topH = topBarEl.offsetHeight;
-  const toggleH = topBarToggleEl.offsetHeight;
+
+  topBarToggleEl.style.top = topBarEl.offsetHeight + 'px';
 
   if (sidebarToggle) {
-    const mapH = mapViewportEl.offsetHeight;
-    const mapMid = topH + toggleH + mapH / 2;
+    // mapViewport's box is static now, so this is just its (unchanging)
+    // vertical midpoint -- no longer needs topBar/toggle height at all.
+    const mapMid = mapViewportEl.offsetTop + mapViewportEl.offsetHeight / 2;
     sidebarToggle.style.top = mapMid + 'px';
   }
+}
+
+// Keeps #topBar's max-height in sync with #bottomBar's real rendered
+// height, so #topBar can grow all the way down to meet it exactly.
+function updateBottomBarHeightVar() {
+  const bottomBarEl = document.getElementById('bottomBar');
+  mapPaneEl.style.setProperty('--bottom-bar-h', bottomBarEl.offsetHeight + 'px');
 }
 
 const topBarResizeObserver = new ResizeObserver(updateTogglePositions);
@@ -1729,6 +1726,7 @@ topBarResizeObserver.observe(topBarEl);
 // ═══════════════ INIT ═══════════════
 
 function init() {
+  updateBottomBarHeightVar();
   renderStartDropdown();
   renderPresetDropdown();
   renderSidebarList();
@@ -1776,6 +1774,7 @@ function init() {
 
   window.addEventListener('resize', () => {
     if (popupState.rideId) hidePopup();
+    updateBottomBarHeightVar();
     updateTogglePositions();
     computeMapFitWidth();
     refreshMapViewportRect();
