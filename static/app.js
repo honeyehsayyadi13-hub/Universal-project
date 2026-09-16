@@ -1704,7 +1704,23 @@ function updateTogglePositions() {
   const sidebarToggle = document.getElementById('sidebarToggle');
   const topBarToggleEl = document.getElementById('topBarToggle');
 
-  topBarToggleEl.style.top = topBarEl.offsetHeight + 'px';
+  const toggleTop = topBarEl.offsetHeight;
+  topBarToggleEl.style.top = toggleTop + 'px';
+
+  // The map's visible content should start below the arrow's own
+  // bottom edge, not underneath it -- push #mapViewport's padding-top
+  // (see styles.css) down to exactly that edge every time it moves.
+  const toggleBottom = toggleTop + topBarToggleEl.offsetHeight;
+  mapPaneEl.style.setProperty('--map-top-offset', toggleBottom + 'px');
+
+  // Changing padding-top changes #mapViewport's own clientHeight, which
+  // shifts where a zoomed/panned map should be clamped to -- recompute
+  // immediately so the image doesn't sit stale relative to its new,
+  // shorter box.
+  if (typeof clampMapPan === 'function' && mapFitWidth) {
+    clampMapPan();
+    applyMapTransform();
+  }
 
   if (sidebarToggle) {
     // mapViewport's box is static now, so this is just its (unchanging)
@@ -1726,7 +1742,22 @@ function updateTogglePositions() {
 // taller than it should and shove/overlap #bottomBar.
 function updateTopBarMaxHeight() {
   const bottomBarEl = document.getElementById('bottomBar');
-  const maxH = mapPaneEl.clientHeight - bottomBarEl.offsetHeight;
+  const topBarToggleEl = document.getElementById('topBarToggle');
+  const backBtnEl = document.getElementById('backBtn');
+
+  // The GAP between the arrow and the Back button should match the gap
+  // the Back button already keeps from the true bottom of the screen --
+  // that's exactly #backBtn's own padding-bottom (max(10px, safe-area
+  // inset)), so read it live off the element instead of hardcoding a
+  // number that could drift out of sync with it.
+  const gap = parseFloat(getComputedStyle(backBtnEl).paddingBottom) || 10;
+
+  // #topBar's own content should stop short of #bottomBar by however
+  // much space the arrow (which sits directly below #topBar's bottom
+  // edge) plus that gap needs -- so it's the arrow's bottom edge that
+  // ends up `gap` px above the Back button, not #topBar's content.
+  const reserved = bottomBarEl.offsetHeight + topBarToggleEl.offsetHeight + gap;
+  const maxH = mapPaneEl.clientHeight - reserved;
   mapPaneEl.style.setProperty('--topbar-max-h', Math.max(0, maxH) + 'px');
 }
 
@@ -1765,7 +1796,7 @@ function init() {
   renderPins();
   renderRouteBar();
   pollStatus();
-  updateTogglePositions();
+  updateTogglePositions(); // sets --map-top-offset before first paint settles
 
   // On phones the sidebar is `position: absolute` and nearly full-width
   // (`--sidebar-w: calc(100vw - 36px)`), and it sits ABOVE the map pane
