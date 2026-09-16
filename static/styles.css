@@ -475,6 +475,14 @@ input { font-family: inherit; }
 #sidebar.collapsed ~ .edge-toggle--left { left: 0; }
 #sidebar.collapsed ~ .edge-toggle--left svg { transform: rotate(180deg); }
 
+/* The left arrow normally sits behind #topBar (z-index 15 vs 16) so
+   the top bar can grow/overlay over it undisturbed while the sidebar
+   is closed. But while the sidebar is open, the arrow should read as
+   part of the sidebar's own UI and stay clickable/visible on top of
+   whatever #topBar is doing -- so only in that state, lift it above
+   #topBar's z-index. */
+#sidebar:not(.collapsed) ~ .edge-toggle--left { z-index: 17; }
+
 .edge-toggle--top {
   /* Tracks the live bottom edge of #topBar via `top` (set in app.js) --
      there's no "next flex sibling" position to fall into anymore. */
