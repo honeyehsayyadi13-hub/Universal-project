@@ -22,6 +22,14 @@
   --radius-md:   10px;
   --radius-lg:   16px;
   --sidebar-w:   360px;
+  /* Map is a fixed, static size now -- it no longer resizes as the top
+     route bar expands/collapses. Only these two numbers control that:
+     bump --map-height to make the map itself bigger/smaller, and
+     --bottombar-h reserves enough room that an expanded topBar's
+     max-height (see #topBar below) always stops just above the back
+     button, rather than ever overlapping or squeezing it. */
+  --map-height:  34vh;
+  --bottombar-h: 64px;
 }
 
 * { box-sizing: border-box; }
@@ -498,11 +506,14 @@ input { font-family: inherit; }
   border-bottom: 2px solid var(--paper-line);
   padding: 10px 12px 12px;
   flex-shrink: 0;
-  /* Static ceiling (no JS needed): always leaves room for the toggle button
-     (38px) and the map's floor height, so an expanded topBar can never
-     squeeze the map below MAP_MIN_HEIGHT, even with lots of route items. */
-  max-height: calc(100vh - 38px - 64px);
-  max-height: calc(100dvh - 38px - 64px);
+  /* Static ceiling (no JS needed): reserves room for the toggle button
+     (38px), the map's now-fixed height, and the back-button row -- so an
+     expanded topBar grows all the way down until it's just touching the
+     back button (when there's enough route content to need that much
+     room), without ever overlapping it or nudging the map, which no
+     longer resizes at all. */
+  max-height: calc(100vh - 38px - var(--map-height) - var(--bottombar-h));
+  max-height: calc(100dvh - 38px - var(--map-height) - var(--bottombar-h));
   position: relative;
   z-index: 16;
   /* grid-template-rows: 0fr <-> 1fr is what actually drives the reveal.
@@ -702,12 +713,15 @@ input { font-family: inherit; }
   opacity: 0.6;
 }
 #mapViewport {
-  /* min-height is an absolute floor even with flex:1 — browsers always
-     honor min-height on a flex item regardless of flex-basis. That's
-     the actual mechanism holding the map at ~one row; nothing else
-     needs to touch its height in JS. */
-  flex: 1;
-  min-height: 64px;
+  /* Fixed, static size -- flex: 0 0 var(--map-height) plus an explicit
+     height means this box no longer grows or shrinks as #topBar
+     expands/collapses. Previously flex:1 made the map the thing that
+     absorbed whatever space #topBar didn't take, so every expand/collapse
+     visibly resized it; now #topBar's own max-height (see above) is
+     solely responsible for how far it can grow, and the map just stays
+     put. */
+  flex: 0 0 var(--map-height);
+  height: var(--map-height);
   /* overflow:hidden, not auto -- we no longer use native scrolling at
      all. Panning/zooming is done entirely via a CSS transform on
      #mapInner (see app.js), which sidesteps a real browser quirk: when

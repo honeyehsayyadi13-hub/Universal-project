@@ -1707,26 +1707,18 @@ $('#topBarToggle').addEventListener('click', () => {
 topBarEl.addEventListener('transitionend', (e) => {
   if (e.propertyName === 'grid-template-rows') updateTogglePositions();
 });
-const MAP_MIN_HEIGHT = 64; // px — keep in sync with #mapViewport's min-height in styles.css
-let bottomBarNaturalH = 0; // captured once at init, before bottomBar is ever minimized
-
 function updateTogglePositions() {
+  // The back button row is no longer hidden/minimized -- #topBar's own
+  // max-height (see styles.css) already reserves enough room for it and
+  // for the now-static, fixed-size map, so it always fits and stays
+  // visible without any JS deciding whether to hide it.
   const sidebarToggle = document.getElementById('sidebarToggle');
-  const bottomBarEl = document.getElementById('bottomBar');
   const topBarToggleEl = document.getElementById('topBarToggle');
   const topH = topBarEl.offsetHeight;
   const toggleH = topBarToggleEl.offsetHeight;
-  const appH = document.getElementById('app').offsetHeight;
-  const available = appH - topH - toggleH;
-
-  // #mapViewport already has flex:1 + min-height:64px in CSS, so it
-  // naturally shrinks to that floor on its own as topBar grows — no JS
-  // needs to set its height. This only decides whether the back button
-  // still fits in whatever's left over.
-  bottomBarEl.classList.toggle('minimized', (available - bottomBarNaturalH) < MAP_MIN_HEIGHT);
 
   if (sidebarToggle) {
-    const mapH = mapViewportEl.offsetHeight; // reflects layout post class-toggle, since display:none is instant
+    const mapH = mapViewportEl.offsetHeight;
     const mapMid = topH + toggleH + mapH / 2;
     sidebarToggle.style.top = mapMid + 'px';
   }
@@ -1737,7 +1729,6 @@ topBarResizeObserver.observe(topBarEl);
 // ═══════════════ INIT ═══════════════
 
 function init() {
-  bottomBarNaturalH = document.getElementById('bottomBar').offsetHeight;
   renderStartDropdown();
   renderPresetDropdown();
   renderSidebarList();
