@@ -512,7 +512,7 @@ input { font-family: inherit; }
      There's no reserved "always-visible map floor" anymore -- the map is
      static now (see #mapViewport), so #topBar is covering it, not
      shrinking it, and it's fine for it to go all the way down. */
-  max-height: calc(100% - var(--bottom-bar-h, 64px));
+  max-height: var(--topbar-max-h, 400px);
   z-index: 16;
   transition: grid-template-rows 0.28s ease, padding-top 0.28s ease, padding-bottom 0.28s ease, border-bottom-width 0.28s ease;
 }

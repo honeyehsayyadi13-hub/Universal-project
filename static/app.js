@@ -1714,11 +1714,20 @@ function updateTogglePositions() {
   }
 }
 
-// Keeps #topBar's max-height in sync with #bottomBar's real rendered
-// height, so #topBar can grow all the way down to meet it exactly.
-function updateBottomBarHeightVar() {
+// Keeps #topBar's max-height in sync with how much room is actually
+// left above #bottomBar. Computed as a plain pixel number here instead
+// of a CSS calc(100% - ...) -- that percentage only resolves correctly
+// if every ancestor up to #topBar's containing block (#app -> #mapPane,
+// both sized via flex-stretch rather than an explicit height) reports a
+// definite used height, and that chain isn't reliable across every
+// browser/webview. Reading #mapPane's and #bottomBar's real rendered
+// heights directly and doing the subtraction ourselves leaves nothing
+// for the CSS engine to infer -- which is what was letting #topBar grow
+// taller than it should and shove/overlap #bottomBar.
+function updateTopBarMaxHeight() {
   const bottomBarEl = document.getElementById('bottomBar');
-  mapPaneEl.style.setProperty('--bottom-bar-h', bottomBarEl.offsetHeight + 'px');
+  const maxH = mapPaneEl.clientHeight - bottomBarEl.offsetHeight;
+  mapPaneEl.style.setProperty('--topbar-max-h', Math.max(0, maxH) + 'px');
 }
 
 const topBarResizeObserver = new ResizeObserver(updateTogglePositions);
@@ -1726,7 +1735,7 @@ topBarResizeObserver.observe(topBarEl);
 // ═══════════════ INIT ═══════════════
 
 function init() {
-  updateBottomBarHeightVar();
+  updateTopBarMaxHeight();
   renderStartDropdown();
   renderPresetDropdown();
   renderSidebarList();
@@ -1774,7 +1783,7 @@ function init() {
 
   window.addEventListener('resize', () => {
     if (popupState.rideId) hidePopup();
-    updateBottomBarHeightVar();
+    updateTopBarMaxHeight();
     updateTogglePositions();
     computeMapFitWidth();
     refreshMapViewportRect();
