@@ -662,12 +662,6 @@ function renderPins() {
     pinElements.push(pinEntry);
 
     // ── drag-to-reposition (Advanced Mode only) ──
-    // Lets you nudge a pin's map-space (x, y) live and read the result
-    // off #coordDisplay to paste straight into the RIDES array above --
-    // same idea as this project's old coordinate-finder dot, but right
-    // on the real pin instead of a separate dot you had to line up by
-    // eye. Gated behind Advanced Mode so an ordinary tap/double-tap
-    // during route planning can never accidentally drag a ride's icon.
     let pinPointerId = null;
     let pinDragStartX = 0, pinDragStartY = 0;
     let pinDragStartMX = 0, pinDragStartMY = 0;
@@ -680,8 +674,8 @@ function renderPins() {
       pinPointerId = e.pointerId;
       pinDragStartX = e.clientX;
       pinDragStartY = e.clientY;
-      pinDragStartMX = r.x;
-      pinDragStartMY = r.y;
+      pinDragStartMX = pinEntry.mx;
+      pinDragStartMY = pinEntry.my;
       pinDragMoved = false;
       pin.setPointerCapture(pinPointerId);
     });
@@ -692,17 +686,32 @@ function renderPins() {
       const dy = e.clientY - pinDragStartY;
       if (!pinDragMoved && Math.hypot(dx, dy) < 4) return;
       pinDragMoved = true;
-      // Screen-pixel delta -> map-space delta, inverse of the scaling
-      // updatePinLayout() uses to go the other direction.
+
+      if (!mapFitWidth) return; // map not sized yet -- nothing to compute against
+
+      // Screen-pixel delta -> map-space delta (inverse of the scaling
+      // updatePinLayout uses to go the other direction).
       const fitH = mapFitWidth * (MAP_NATIVE_H / MAP_NATIVE_W);
       const scaleX = (mapFitWidth * mapZoom) / MAP_NATIVE_W;
       const scaleY = (fitH * mapZoom) / MAP_NATIVE_H;
-      r.x = pinDragStartMX + dx / scaleX;
-      r.y = pinDragStartMY + dy / scaleY;
-      pinEntry.mx = r.x;
-      pinEntry.my = r.y;
-      updatePinLayout();
-      updateCoordDisplay(r.x, r.y);
+      const newMX = pinDragStartMX + dx / scaleX;
+      const newMY = pinDragStartMY + dy / scaleY;
+
+      // Update every copy of this ride's position: the RIDES entry
+      // (source of truth), the pinElements array entry (what
+      // updatePinLayout reads for every pin on every future frame),
+      // AND -- belt and suspenders -- this exact element's own
+      // left/top directly, right now, so the icon moves immediately
+      // even if something else about the shared array were ever stale.
+      r.x = newMX;
+      r.y = newMY;
+      pinEntry.mx = newMX;
+      pinEntry.my = newMY;
+
+      pin.style.left = (mapPanX + (newMX / MAP_NATIVE_W) * mapFitWidth * mapZoom) + 'px';
+      pin.style.top  = (mapPanY + (newMY / MAP_NATIVE_H) * fitH * mapZoom) + 'px';
+
+      updateCoordDisplay(newMX, newMY);
     });
 
     function endPinDrag(e) {
@@ -718,17 +727,12 @@ function renderPins() {
       if (pinDragMoved) { pinDragMoved = false; return; } // a drag just ended -- not a tap
       const now = Date.now();
       if (now - lastPinTapTime < DOUBLE_TAP_MS && lastPinTapRideId === r.id) {
-        // Second tap on the SAME pin within the window -- this is a
-        // double-tap. The first tap already opened the popup instantly
-        // (no delay); undo that now and toggle the bubbles instead.
         lastPinTapTime = 0;
         lastPinTapRideId = null;
         hidePopup();
         toggleWaitBubbles();
         return;
       }
-      // Single tap (or a tap on a different pin) -- open its popup
-      // immediately, with zero delay.
       lastPinTapTime = now;
       lastPinTapRideId = r.id;
       showPopup(r.id, pin);
