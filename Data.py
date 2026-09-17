@@ -144,7 +144,7 @@ def update_backend():
 THEMEPARKS_API_BASE = "https://api.themeparks.wiki/v1"
 PARK_HOURS_CACHE_TTL = 3600     # re-check once an hour; hours rarely change intra-day
 
-_ioa_entity_id_cache: str | None = None
+_ioa_entity_id_cache = None
 _park_hours_cache: dict = {}
 _park_hours_cache_ts: float = 0.0
 

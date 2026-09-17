@@ -22,20 +22,19 @@ def home():
 
 @app.route("/api/rides")
 def rides():
-    """
-    Live wait times fetched on-demand from queue-times.com (cached 30 s).
-
-    Fetching on-demand is more reliable than a background thread on
-    Render free tier: the service spins down after inactivity, and a
-    daemon thread that was alive before spin-down does NOT automatically
-    restart on wake-up.  The first request after wake-up triggers a
-    fresh fetch here, so the UI always gets real data instead of {}.
-    """
     payload = Data.get_live_wait_times()
-    # Also sync the legacy dicts so routeOptimizer sees fresh data
-    # if it reads ride_waits/ride_open before the background thread
-    # has had a chance to run.
     Data._sync_legacy_dicts(payload)
+
+    # If we're past closing time, don't trust the source — mark everything closed.
+    park_hours = Data.get_park_close_time()
+    if park_hours:
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        now = datetime.now(ZoneInfo("America/New_York"))
+        close_hour, close_minute = park_hours
+        if (now.hour, now.minute) >= (close_hour, close_minute):
+            payload = {k: {**v, "is_open": False, "waittime": 0} for k, v in payload.items()}
+
     return jsonify(payload)
 
 
