@@ -792,6 +792,7 @@ input { font-family: inherit; }
   height: auto;
   user-select: none;
   -webkit-user-drag: none;
+  filter: brightness(1.25);
 }
 
 /* pinLayer now sits OUTSIDE #mapInner (see index.html) rather than inside
