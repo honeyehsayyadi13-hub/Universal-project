@@ -721,7 +721,7 @@ input { font-family: inherit; }
   font-weight: 700;
   flex-shrink: 0;
   align-self: center;
-  opacity: 0.6;
+  opacity: 0.6; 
 }
 #mapViewport {
   /* Pushes the map's own content down below #topBarToggle (the gray
@@ -863,7 +863,7 @@ input { font-family: inherit; }
    a quieter, half-there icon signaling "not running right now". */
 .pin.closed img {
   filter: grayscale(0.6) drop-shadow(0 2px 4px rgba(0,0,0,0.5)) drop-shadow(0 0 2px rgba(0,0,0,0.45));
-  opacity: 0.6;
+  opacity: 1; /*hon - 0.6*/
 }
 
 /* ── all-rides wait bubbles (double-tap a pin to toggle) ──
