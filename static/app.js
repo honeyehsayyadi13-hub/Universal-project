@@ -1118,93 +1118,107 @@ mapViewportEl.addEventListener('pointercancel', endMapPan);
 // those plain numbers afterward. Plain objects can't be mutated out
 // from under us by the browser, so the deferred, frame-coalesced
 // zoom/pan math is now reading exactly the data it was given.
-function extractPoints(touchList) {
-  const pts = [];
-  for (let i = 0; i < touchList.length; i++) {
-    pts.push({ x: touchList[i].clientX, y: touchList[i].clientY });
-  }
-  return pts;
+// ── touch: single-finger pan, two-finger pinch-to-zoom ──
+// Classic anchor pinch-zoom: compute the map-space point under the
+// initial midpoint ONCE at gesture start, then keep it pinned under
+// the live midpoint every frame — gives smooth simultaneous zoom+pan.
+
+let t1Id = null, t2Id = null;
+let t1 = { x: 0, y: 0 }, t2 = { x: 0, y: 0 };
+let panBase = null;   // { startX, startY, startPanX, startPanY }
+let pinchBase = null; // { imgX, imgY, startDist, startZoom }
+let touchFlushPending = false;
+
+function startPanBase() {
+  pinchBase = null;
+  panBase = { startX: t1.x, startY: t1.y, startPanX: mapPanX, startPanY: mapPanY };
 }
 
-let touchBaseline = null; // { mode: 'pan'|'pinch', zoom, panX, panY, x, y, dist, midX, midY }
-let latestPoints = null;
-let touchFrameQueued = false;
-
-function touchPoint(points) {
-  if (points.length === 1) {
-    return { mode: 'pan', x: points[0].x, y: points[0].y };
-  }
-  const [p1, p2] = points;
-  return {
-    mode: 'pinch',
-    dist: Math.hypot(p2.x - p1.x, p2.y - p1.y),
-    midX: (p1.x + p2.x) / 2,
-    midY: (p1.y + p2.y) / 2,
+function startPinchBase() {
+  panBase = null;
+  const midX = (t1.x + t2.x) / 2;
+  const midY = (t1.y + t2.y) / 2;
+  const dist = Math.hypot(t2.x - t1.x, t2.y - t1.y);
+  const rect = mapViewportRect;
+  pinchBase = {
+    imgX: (midX - rect.left - mapPanX) / mapZoom,
+    imgY: (midY - rect.top  - mapPanY) / mapZoom,
+    startDist: dist,
+    startZoom: mapZoom,
   };
 }
 
-function captureTouchBaseline(points) {
-  refreshMapViewportRect();
-  touchBaseline = { zoom: mapZoom, panX: mapPanX, panY: mapPanY, ...touchPoint(points) };
-}
-
-function flushTouchFrame() {
-  touchFrameQueued = false;
-  if (!latestPoints || !touchBaseline) return;
-  const points = latestPoints;
-
-  if (touchBaseline.mode === 'pan') {
-    const p = points[0];
-    mapPanX = touchBaseline.panX + (p.x - touchBaseline.x);
-    mapPanY = touchBaseline.panY + (p.y - touchBaseline.y);
+function flushTouchGesture() {
+  touchFlushPending = false;
+  if (pinchBase) {
+    const midX = (t1.x + t2.x) / 2;
+    const midY = (t1.y + t2.y) / 2;
+    const dist = Math.hypot(t2.x - t1.x, t2.y - t1.y);
+    if (pinchBase.startDist < 8 || dist < 8) return;
+    const newZoom = clampZoom(pinchBase.startZoom * (dist / pinchBase.startDist));
+    const rect = mapViewportRect;
+    mapZoom = newZoom;
+    mapPanX = (midX - rect.left) - pinchBase.imgX * newZoom;
+    mapPanY = (midY - rect.top)  - pinchBase.imgY * newZoom;
     clampMapPan();
     applyMapTransform();
-  } else {
-    const now = touchPoint(points);
-    // Guard against a near-zero distance (hardware noise, or the very
-    // instant two fingers land) producing a huge or unstable ratio.
-    if (touchBaseline.dist < 12 || now.dist < 12) return;
-    const targetZoom = touchBaseline.zoom * (now.dist / touchBaseline.dist);
-    // Solved from the fixed gesture-start baseline every time, not the
-    // previous frame's result, so error can't compound and the anchor
-    // can't drift away from your fingers.
-    zoomAtPoint(targetZoom, now.midX, now.midY, touchBaseline.zoom, touchBaseline.panX, touchBaseline.panY);
+  } else if (panBase) {
+    mapPanX = panBase.startPanX + (t1.x - panBase.startX);
+    mapPanY = panBase.startPanY + (t1.y - panBase.startY);
+    clampMapPan();
+    applyMapTransform();
   }
 }
 
-function queueTouchFrame(points) {
-  latestPoints = points;
-  if (!touchFrameQueued) {
-    touchFrameQueued = true;
-    requestAnimationFrame(flushTouchFrame);
+function scheduleTouchFlush() {
+  if (!touchFlushPending) {
+    touchFlushPending = true;
+    requestAnimationFrame(flushTouchGesture);
   }
 }
 
 mapViewportEl.addEventListener('touchstart', e => {
-  captureTouchBaseline(extractPoints(e.touches));
+  refreshMapViewportRect();
+  for (let i = 0; i < e.changedTouches.length; i++) {
+    const t = e.changedTouches[i];
+    if (t1Id === null) {
+      t1Id = t.identifier; t1 = { x: t.clientX, y: t.clientY };
+    } else if (t2Id === null && t.identifier !== t1Id) {
+      t2Id = t.identifier; t2 = { x: t.clientX, y: t.clientY };
+    }
+  }
+  if (t2Id !== null) startPinchBase();
+  else startPanBase();
 }, { passive: true });
 
 mapViewportEl.addEventListener('touchmove', e => {
-  const points = extractPoints(e.touches);
-  const wantMode = points.length >= 2 ? 'pinch' : 'pan';
-  if (!touchBaseline || touchBaseline.mode !== wantMode) {
-    captureTouchBaseline(points);
-  }
-  if (touchBaseline.mode === 'pan' && (e.target.closest('.pin') || e.target.closest('.popup'))) return;
+  if (!pinchBase && e.target.closest('.pin')) return;
   e.preventDefault();
-  queueTouchFrame(points);
+  for (let i = 0; i < e.changedTouches.length; i++) {
+    const t = e.changedTouches[i];
+    if (t.identifier === t1Id)      t1 = { x: t.clientX, y: t.clientY };
+    else if (t.identifier === t2Id) t2 = { x: t.clientX, y: t.clientY };
+  }
+  scheduleTouchFlush();
 }, { passive: false });
 
 mapViewportEl.addEventListener('touchend', e => {
-  latestPoints = null;
-  const points = extractPoints(e.touches);
-  if (points.length === 0) touchBaseline = null;
-  else captureTouchBaseline(points);
+  for (let i = 0; i < e.changedTouches.length; i++) {
+    const id = e.changedTouches[i].identifier;
+    if (id === t1Id) {
+      if (t2Id !== null) { t1Id = t2Id; t1 = { ...t2 }; t2Id = null; }
+      else t1Id = null;
+    } else if (id === t2Id) {
+      t2Id = null;
+    }
+  }
+  if (t1Id !== null && t2Id === null) startPanBase();
+  else if (t1Id === null) { panBase = null; pinchBase = null; }
 }, { passive: true });
 
 mapViewportEl.addEventListener('touchcancel', () => {
-  touchBaseline = null;
-  latestPoints = null;
+  t1Id = null; t2Id = null;
+  panBase = null; pinchBase = null;
 }, { passive: true });
 
 // ═══════════════ TOP ROUTE BAR ═══════════════
