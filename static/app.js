@@ -37,7 +37,7 @@ const STATUS_POLL_MS = 8000;
 
 // ── ride catalogue (mirrors ride_names / raw_buttons / _ride_image_paths) ──
 const RIDES = [
-  { id: 'hulk',           name: 'The Incredible Hulk Coaster',                 displayName: 'Hulk',   icon: 'assets/logos/hulk_logo.png',            x: 455, y: 741 },
+  { id: 'hulk',           name: 'The Incredible Hulk Coaster',                 displayName: 'Hulk',   icon: 'assets/logos/hulk_logo.png',            x: 435 , y: 659 },
   { id: 'stormForce',     name: 'Storm Force Accelatron',                      icon: 'assets/logos/stormForce_logo.png',      x: 411 , y: 754 },
   { id: 'doctorDoom',     name: "Doctor Doom's Fearfall",                      icon: 'assets/logos/Doctor-dooms-fearfall-ride-logo-b.png', x: 325, y: 696 },
   { id: 'spiderMan',      name: 'The Amazing Adventures of Spider-Man',        icon: 'assets/logos/Amazing-adventures-spider-man-ride-logo-b.png', x: 319, y: 623 },
@@ -45,13 +45,13 @@ const RIDES = [
   { id: 'ripsawFalls',    name: "Dudley Do-Right's Ripsaw Falls",              icon: 'assets/logos/Dudley-do-rights-ripsaw-falls-water-ride-logo-b.png', x: 166, y: 411 },
   { id: 'skullIsland',    name: 'Skull Island: Reign of Kong',                 icon: 'assets/logos/Skull_Island-_Reign_of_Kong_Logo.png', x: 179, y: 246 },
   { id: 'velociCoaster',  name: 'Jurassic World VelociCoaster',                icon: 'assets/logos/velocicoaster.png',        x: 475 , y: 325 },
-  { id: 'riverAdventure', name: 'Jurassic Park River Adventure',               icon: 'assets/logos/jurrasicPark.png',         x: 246, y: 188 },
+  { id: 'riverAdventure', name: 'Jurassic Park River Adventure',               icon: 'assets/logos/jurrasicPark.png',         x: 246, y: 169 },
   { id: 'hogwartsTrain',  name: 'Hogwarts Express',                            icon: 'assets/logos/express.png',              x: 787 , y: 293 },
-  { id: 'hippogriff',     name: 'Flight of the Hippogriff',                    icon: 'assets/logos/hippogriph.png',           x: 586 , y: 148 },
-  { id: 'hagrid',         name: "Hagrid's Magical Creatures Motorbike Adventure", icon: 'assets/logos/Hagrid27s_Magical_Creatures_Motorbike_Adventure.png', x: 691 , y: 251 },
+  { id: 'hippogriff',     name: 'Flight of the Hippogriff',                    icon: 'assets/logos/hippogriph.png',           x: 672  , y: 125 },
+  { id: 'hagrid',         name: "Hagrid's Magical Creatures Motorbike Adventure", icon: 'assets/logos/Hagrid27s_Magical_Creatures_Motorbike_Adventure.png', x: 714  , y: 228 },
   { id: 'drSeussAirRide', name: 'High in the Sky Seuss Trolley Train Ride',    icon: 'assets/logos/seuss.png',                x: 684 , y: 541 },
-  { id: 'caroSeussel',    name: 'Caro-Seuss-el',                               icon: 'assets/logos/caro.png',                 x: 642 , y: 627 },
-  { id: 'oneFishtwoFish', name: 'One Fish, Two Fish, Red Fish, Blue Fish',     icon: 'assets/logos/blue.png',                 x: 685 , y: 681 },
+  { id: 'caroSeussel',    name: 'Caro-Seuss-el',                               icon: 'assets/logos/caro.png',                 x: 610  , y: 616 },
+  { id: 'oneFishtwoFish', name: 'One Fish, Two Fish, Red Fish, Blue Fish',     icon: 'assets/logos/blue.png',                 x: 689  , y: 654 },
   { id: 'catInTheHat',    name: 'The Cat in the Hat',                          icon: 'assets/logos/cat.png',                  x: 634 , y: 727 },
   { id: 'harryPotter',    name: 'Harry Potter and the Forbidden Journey',      icon: 'assets/logos/hogwarts.png',             x: 560 , y: 165 },
 ];
@@ -853,7 +853,7 @@ let mapFitWidth = 0; // px width the map renders at when mapZoom === 1
 // Pins are intentionally NOT scaled with zoom -- fixed at 90% of their
 // original base size regardless of how far in/out the map is zoomed, so
 // they always stay a consistent, easy-to-tap size on screen.
-const PIN_SIZE = 54 * 0.9; // was 54px; now 10% smaller, and constant
+const PIN_SIZE = 54 * 0.9 * 1.1; // was 54px; now 10% smaller, and constant
 
 // ── all-rides wait bubbles (toggled by double-tapping any wait chip) ──
 const waitBubbleLayerEl = document.getElementById('waitBubbleLayer');
