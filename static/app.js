@@ -37,23 +37,23 @@ const STATUS_POLL_MS = 8000;
 
 // ── ride catalogue (mirrors ride_names / raw_buttons / _ride_image_paths) ──
 const RIDES = [
-  { id: 'hulk',           name: 'The Incredible Hulk Coaster',                 displayName: 'Hulk',   icon: 'assets/logos/hulk_logo.png',            x: 456  , y: 668, realX: 454, realY: 741, sizeMult: 1 },
-  { id: 'stormForce',     name: 'Storm Force Accelatron',                      icon: 'assets/logos/stormForce_logo.png',      x: 429   , y: 762, realX: 387 , realY: 738, sizeMult: 1 },
-  { id: 'doctorDoom',     name: "Doctor Doom's Fearfall",                      icon: 'assets/logos/Doctor-dooms-fearfall-ride-logo-b.png', x: 305  , y: 695, realX: 329 , realY: 674, sizeMult: 1 },
-  { id: 'spiderMan',      name: 'The Amazing Adventures of Spider-Man',        icon: 'assets/logos/Amazing-adventures-spider-man-ride-logo-b.png', x: 305, y: 607, realX: 310 , realY: 622, sizeMult: 1 },
-  { id: 'bilgeRat',       name: "Popeye & Bluto's Bilge-Rat Barges",           icon: 'assets/logos/bilge_rat.png',            x: 321, y: 398, realX: 321, realY: 398, sizeMult: 1 },
-  { id: 'ripsawFalls',    name: "Dudley Do-Right's Ripsaw Falls",              icon: 'assets/logos/Dudley-do-rights-ripsaw-falls-water-ride-logo-b.png', x: 166, y: 411, realX: 166, realY: 411, sizeMult: 1 },
-  { id: 'skullIsland',    name: 'Skull Island: Reign of Kong',                 icon: 'assets/logos/Skull_Island-_Reign_of_Kong_Logo.png', x: 179, y: 246, realX: 179, realY: 246, sizeMult: 0.95 },
-  { id: 'velociCoaster',  name: 'Jurassic World VelociCoaster',                icon: 'assets/logos/velocicoaster.png',        x: 475 , y: 325, realX: 475, realY: 325, sizeMult: 1 },
-  { id: 'riverAdventure', name: 'Jurassic Park River Adventure',               icon: 'assets/logos/jurrasicPark.png',         x: 246, y: 164, realX: 329, realY: 194, sizeMult: 1 },
-  { id: 'hogwartsTrain',  name: 'Hogwarts Express',                            icon: 'assets/logos/express.png',              x: 728   , y: 331, realX: 793, realY: 288, sizeMult: 1 },
-  { id: 'hippogriff',     name: 'Flight of the Hippogriff',                    icon: 'assets/logos/hippogriph.png',           x: 657    , y: 106, realX: 587, realY: 152, sizeMult: 1 },
-  { id: 'hagrid',         name: "Hagrid's Magical Creatures Motorbike Adventure", icon: 'assets/logos/Hagrid27s_Magical_Creatures_Motorbike_Adventure.png', x: 714  , y: 228, realX: 697, realY: 238, sizeMult: 1 },
-  { id: 'drSeussAirRide', name: 'High in the Sky Seuss Trolley Train Ride',    icon: 'assets/logos/seuss.png',                x: 684 , y: 531, realX: 680, realY: 578, sizeMult: 1.1 },
-  { id: 'caroSeussel',    name: 'Caro-Seuss-el',                               icon: 'assets/logos/caro.png',                 x: 587   , y: 603, realX: 587, realY: 603, sizeMult: 1.1 },
-  { id: 'oneFishtwoFish', name: 'One Fish, Two Fish, Red Fish, Blue Fish',     icon: 'assets/logos/blue.png',                 x: 720     , y: 655, realX: 650, realY: 626, sizeMult: 1 },
-  { id: 'catInTheHat',    name: 'The Cat in the Hat',                          icon: 'assets/logos/cat.png',                  x: 634 , y: 744, realX: 645, realY: 715, sizeMult: 1 },
-  { id: 'harryPotter',    name: 'Harry Potter and the Forbidden Journey',      icon: 'assets/logos/hogwarts.png',             x: 536  , y: 167, realX: 539, realY: 159, sizeMult: 1 },
+  { id: 'hulk',           name: 'The Incredible Hulk Coaster',                 displayName: "The Incredible Hulk",   icon: 'assets/logos/hulk_logo.png',            x: 456  , y: 668, realX: 454, realY: 741, sizeMult: 1, brightness: 1.4 },
+  { id: 'stormForce',     name: 'Storm Force Accelatron',                      displayName: "Storm Force", icon: 'assets/logos/stormForce_logo.png',      x: 429   , y: 762, realX: 387 , realY: 738, sizeMult: 1, brightness: 1.4 },
+  { id: 'doctorDoom',     name: "Doctor Doom's Fearfall",                      displayName: "Doctor Doom", icon: 'assets/logos/Doctor-dooms-fearfall-ride-logo-b.png', x: 305  , y: 695, realX: 329 , realY: 674, sizeMult: 1, brightness: 1.4 },
+  { id: 'spiderMan',      name: 'The Amazing Adventures of Spider-Man',        displayName: "Spider Man", icon: 'assets/logos/Amazing-adventures-spider-man-ride-logo-b.png', x: 305, y: 607, realX: 310 , realY: 622, sizeMult: 1, brightness: 1.4 },
+  { id: 'bilgeRat',       name: "Popeye & Bluto's Bilge-Rat Barges",           displayName: "Bilge-rat barges", icon: 'assets/logos/bilge_rat.png',            x: 321, y: 398, realX: 321, realY: 398, sizeMult: 1, brightness: 1.4 },
+  { id: 'ripsawFalls',    name: "Dudley Do-Right's Ripsaw Falls",              displayName: "Ripsaw Falls", icon: 'assets/logos/Dudley-do-rights-ripsaw-falls-water-ride-logo-b.png', x: 166, y: 411, realX: 166, realY: 411, sizeMult: 1, brightness: 1.4 },
+  { id: 'skullIsland',    name: 'Skull Island: Reign of Kong',                 displayName: "Skull Island", icon: 'assets/logos/Skull_Island-_Reign_of_Kong_Logo.png', x: 179, y: 246, realX: 179, realY: 246, sizeMult: 0.95, brightness: 1.6 },
+  { id: 'velociCoaster',  name: 'Jurassic World VelociCoaster',                displayName: "VelociCoaster", icon: 'assets/logos/velocicoaster.png',        x: 475 , y: 325, realX: 475, realY: 325, sizeMult: 1, brightness: 1.4 },
+  { id: 'riverAdventure', name: 'Jurassic Park River Adventure',               displayName: "River Adventure", icon: 'assets/logos/jurrasicPark.png',         x: 246, y: 164, realX: 329, realY: 194, sizeMult: 1, brightness: 1.6 },
+  { id: 'hogwartsTrain',  name: 'Hogwarts Express',                            displayName: "Hogwarts Express", icon: 'assets/logos/express.png',              x: 728   , y: 331, realX: 793, realY: 288, sizeMult: 1, brightness: 1 },
+  { id: 'hippogriff',     name: 'Flight of the Hippogriff',                    displayName: "Hippogriff", icon: 'assets/logos/hippogriph.png',           x: 657    , y: 106, realX: 587, realY: 152, sizeMult: 1, brightness: 1.4 },
+  { id: 'hagrid',         name: "Hagrid's Magical Creatures Motorbike Adventure", displayName: "Hagrids", icon: 'assets/logos/Hagrid27s_Magical_Creatures_Motorbike_Adventure.png', x: 714  , y: 228, realX: 697, realY: 238, sizeMult: 1, brightness: 1.4 },
+  { id: 'drSeussAirRide', name: 'High in the Sky Seuss Trolley Train Ride',    displayName: "Dr. Suess's Trolly", icon: 'assets/logos/seuss.png',                x: 684 , y: 531, realX: 680, realY: 578, sizeMult: 1.1, brightness: 1.4 },
+  { id: 'caroSeussel',    name: 'Caro-Seuss-el',                               displayName: "Caro-Suess-el", icon: 'assets/logos/caro.png',                 x: 587   , y: 603, realX: 587, realY: 603, sizeMult: 1.1, brightness: 1.4 },
+  { id: 'oneFishtwoFish', name: 'One Fish, Two Fish, Red Fish, Blue Fish',     displayName: "One Fish Two Fish", icon: 'assets/logos/blue.png',                 x: 720     , y: 655, realX: 650, realY: 626, sizeMult: 1, brightness: 1.4 },
+  { id: 'catInTheHat',    name: 'The Cat in the Hat',                          displayName: "Cat in the Hat", icon: 'assets/logos/cat.png',                  x: 634 , y: 744, realX: 645, realY: 715, sizeMult: 1, brightness: 1.4 },
+  { id: 'harryPotter',    name: 'Harry Potter and the Forbidden Journey',      displayName: "Forbidden Journey", icon: 'assets/logos/hogwarts.png',             x: 536  , y: 167, realX: 539, realY: 159, sizeMult: 1, brightness: 1.4 },
 ];
 const MAP_NATIVE_W = 1000;
 const MAP_NATIVE_H = 800;
@@ -660,6 +660,7 @@ function renderPins() {
     // for its own native "download image" / drag-ghost gesture before
     // our pointerdown handler below ever gets a clean shot at it.
     img.draggable = false;
+    img.style.setProperty('--icon-brightness', r.brightness ?? 1.4);
     img.onerror = () => { img.style.display = 'none'; pin.textContent = r.name.split(' ')[0]; };
     pin.appendChild(img);
 

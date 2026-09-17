@@ -861,7 +861,7 @@ input { font-family: inherit; }
      (filter functions apply left-to-right, so these affect the pixels
      first, then the shadows are cast from that brighter result). Tune
      the three numbers to taste -- 1.0 is "no change" for all of them. */
-  filter: brightness(1.4) saturate(1.4) contrast(1.1)
+    filter: brightness(var(--icon-brightness, 1.4)) saturate(1.4) contrast(1.1)
           drop-shadow(0 2px 4px rgba(0,0,0,0.5)) drop-shadow(0 0 2px rgba(0,0,0,0.45));
   transition: filter 0.15s ease;
 }
@@ -871,7 +871,7 @@ input { font-family: inherit; }
    a quieter, half-there icon signaling "not running right now". */
 .pin.closed img {
   filter: grayscale(0.6) drop-shadow(0 2px 4px rgba(0,0,0,0.5)) drop-shadow(0 0 2px rgba(0,0,0,0.45));
-  opacity: 1; /*hon - 0.6*/
+  opacity: 0.6; /*hon - 0.6*/
 }
 
 /* ── all-rides wait bubbles (double-tap a pin to toggle) ──
