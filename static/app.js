@@ -37,7 +37,7 @@ const STATUS_POLL_MS = 8000;
 
 // ── ride catalogue (mirrors ride_names / raw_buttons / _ride_image_paths) ──
 const RIDES = [
-  { id: 'hulk',           name: 'The Incredible Hulk Coaster',                 displayName: 'Hulk',   icon: 'assets/logos/hulk_logo.png',            x: 435 , y: 659, sizeMult: 1 },
+  { id: 'hulk',           name: 'The Incredible Hulk Coaster',                 displayName: 'Hulk',   icon: 'assets/logos/hulk_logo.png',            x: 456  , y: 659, sizeMult: 1 },
   { id: 'stormForce',     name: 'Storm Force Accelatron',                      icon: 'assets/logos/stormForce_logo.png',      x: 418  , y: 762, sizeMult: 1 },
   { id: 'doctorDoom',     name: "Doctor Doom's Fearfall",                      icon: 'assets/logos/Doctor-dooms-fearfall-ride-logo-b.png', x: 305  , y: 695, sizeMult: 1 },
   { id: 'spiderMan',      name: 'The Amazing Adventures of Spider-Man',        icon: 'assets/logos/Amazing-adventures-spider-man-ride-logo-b.png', x: 319, y: 611, sizeMult: 1 },
@@ -47,12 +47,12 @@ const RIDES = [
   { id: 'velociCoaster',  name: 'Jurassic World VelociCoaster',                icon: 'assets/logos/velocicoaster.png',        x: 475 , y: 325, sizeMult: 1 },
   { id: 'riverAdventure', name: 'Jurassic Park River Adventure',               icon: 'assets/logos/jurrasicPark.png',         x: 246, y: 164, sizeMult: 1 },
   { id: 'hogwartsTrain',  name: 'Hogwarts Express',                            icon: 'assets/logos/express.png',              x: 728   , y: 315, sizeMult: 1 },
-  { id: 'hippogriff',     name: 'Flight of the Hippogriff',                    icon: 'assets/logos/hippogriph.png',           x: 666   , y: 113, sizeMult: 1 },
+  { id: 'hippogriff',     name: 'Flight of the Hippogriff',                    icon: 'assets/logos/hippogriph.png',           x: 657    , y: 106, sizeMult: 1 },
   { id: 'hagrid',         name: "Hagrid's Magical Creatures Motorbike Adventure", icon: 'assets/logos/Hagrid27s_Magical_Creatures_Motorbike_Adventure.png', x: 714  , y: 228, sizeMult: 1 },
   { id: 'drSeussAirRide', name: 'High in the Sky Seuss Trolley Train Ride',    icon: 'assets/logos/seuss.png',                x: 684 , y: 541, sizeMult: 1.1 },
   { id: 'caroSeussel',    name: 'Caro-Seuss-el',                               icon: 'assets/logos/caro.png',                 x: 587   , y: 603, sizeMult: 1.1 },
-  { id: 'oneFishtwoFish', name: 'One Fish, Two Fish, Red Fish, Blue Fish',     icon: 'assets/logos/blue.png',                 x: 703   , y: 655, sizeMult: 1 },
-  { id: 'catInTheHat',    name: 'The Cat in the Hat',                          icon: 'assets/logos/cat.png',                  x: 634 , y: 727, sizeMult: 1 },
+  { id: 'oneFishtwoFish', name: 'One Fish, Two Fish, Red Fish, Blue Fish',     icon: 'assets/logos/blue.png',                 x: 712    , y: 655, sizeMult: 1 },
+  { id: 'catInTheHat',    name: 'The Cat in the Hat',                          icon: 'assets/logos/cat.png',                  x: 634 , y: 744, sizeMult: 1 },
   { id: 'harryPotter',    name: 'Harry Potter and the Forbidden Journey',      icon: 'assets/logos/hogwarts.png',             x: 536  , y: 167, sizeMult: 1 },
 ];
 const MAP_NATIVE_W = 1000;
