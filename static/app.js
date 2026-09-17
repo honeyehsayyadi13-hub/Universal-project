@@ -656,8 +656,18 @@ function renderPins() {
     const img = document.createElement('img');
     img.src = r.icon;
     img.alt = r.name;
+    // Without these, Android can hijack a touch-and-hold on this <img>
+    // for its own native "download image" / drag-ghost gesture before
+    // our pointerdown handler below ever gets a clean shot at it.
+    img.draggable = false;
     img.onerror = () => { img.style.display = 'none'; pin.textContent = r.name.split(' ')[0]; };
     pin.appendChild(img);
+
+    // Belt-and-suspenders alongside draggable=false: explicitly block
+    // the native long-press context menu ("Download image", "Open in
+    // new tab", etc.) that Android/Chrome shows on <img> elements on
+    // long-press, independent of touch-action or draggable.
+    pin.addEventListener('contextmenu', e => e.preventDefault());
 
     const pinEntry = { el: pin, mx: r.x, my: r.y };
     pinElements.push(pinEntry);
@@ -671,6 +681,13 @@ function renderPins() {
     pin.addEventListener('pointerdown', e => {
       if (!advancedModeOn) return;
       e.stopPropagation();
+      // Without this, the browser can still start its own gesture
+      // recognition (long-press context menu, native image drag) on
+      // this same touch before our own pointermove-based drag logic
+      // below gets an uninterrupted stream of events -- preventDefault
+      // here claims the gesture immediately, before any of that can
+      // kick in.
+      e.preventDefault();
       refreshMapViewportRect();
       pinPointerId = e.pointerId;
       pinDragStartX = e.clientX;
