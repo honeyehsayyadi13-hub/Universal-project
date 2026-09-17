@@ -786,6 +786,11 @@ input { font-family: inherit; }
   transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+.pin-zoom-anim .pin,
+.pin-zoom-anim .wait-bubble {
+  transition: left 0.25s cubic-bezier(0.22, 1, 0.36, 1), top 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
 #mapImage {
   display: block;
   max-width: 100%;

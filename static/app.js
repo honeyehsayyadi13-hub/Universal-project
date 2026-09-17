@@ -37,23 +37,23 @@ const STATUS_POLL_MS = 8000;
 
 // ── ride catalogue (mirrors ride_names / raw_buttons / _ride_image_paths) ──
 const RIDES = [
-  { id: 'hulk',           name: 'The Incredible Hulk Coaster',                 displayName: 'Hulk',   icon: 'assets/logos/hulk_logo.png',            x: 456  , y: 668, sizeMult: 1 },
-  { id: 'stormForce',     name: 'Storm Force Accelatron',                      icon: 'assets/logos/stormForce_logo.png',      x: 429   , y: 762, sizeMult: 1 },
-  { id: 'doctorDoom',     name: "Doctor Doom's Fearfall",                      icon: 'assets/logos/Doctor-dooms-fearfall-ride-logo-b.png', x: 305  , y: 695, sizeMult: 1 },
-  { id: 'spiderMan',      name: 'The Amazing Adventures of Spider-Man',        icon: 'assets/logos/Amazing-adventures-spider-man-ride-logo-b.png', x: 305, y: 607, sizeMult: 1 },
-  { id: 'bilgeRat',       name: "Popeye & Bluto's Bilge-Rat Barges",           icon: 'assets/logos/bilge_rat.png',            x: 321, y: 398, sizeMult: 1 },
-  { id: 'ripsawFalls',    name: "Dudley Do-Right's Ripsaw Falls",              icon: 'assets/logos/Dudley-do-rights-ripsaw-falls-water-ride-logo-b.png', x: 166, y: 411, sizeMult: 1 },
-  { id: 'skullIsland',    name: 'Skull Island: Reign of Kong',                 icon: 'assets/logos/Skull_Island-_Reign_of_Kong_Logo.png', x: 179, y: 246, sizeMult: 0.95 },
-  { id: 'velociCoaster',  name: 'Jurassic World VelociCoaster',                icon: 'assets/logos/velocicoaster.png',        x: 475 , y: 325, sizeMult: 1 },
-  { id: 'riverAdventure', name: 'Jurassic Park River Adventure',               icon: 'assets/logos/jurrasicPark.png',         x: 246, y: 164, sizeMult: 1 },
-  { id: 'hogwartsTrain',  name: 'Hogwarts Express',                            icon: 'assets/logos/express.png',              x: 728   , y: 331, sizeMult: 1 },
-  { id: 'hippogriff',     name: 'Flight of the Hippogriff',                    icon: 'assets/logos/hippogriph.png',           x: 657    , y: 106, sizeMult: 1 },
-  { id: 'hagrid',         name: "Hagrid's Magical Creatures Motorbike Adventure", icon: 'assets/logos/Hagrid27s_Magical_Creatures_Motorbike_Adventure.png', x: 714  , y: 228, sizeMult: 1 },
-  { id: 'drSeussAirRide', name: 'High in the Sky Seuss Trolley Train Ride',    icon: 'assets/logos/seuss.png',                x: 684 , y: 531, sizeMult: 1.1 },
-  { id: 'caroSeussel',    name: 'Caro-Seuss-el',                               icon: 'assets/logos/caro.png',                 x: 587   , y: 603, sizeMult: 1.1 },
-  { id: 'oneFishtwoFish', name: 'One Fish, Two Fish, Red Fish, Blue Fish',     icon: 'assets/logos/blue.png',                 x: 720     , y: 655, sizeMult: 1 },
-  { id: 'catInTheHat',    name: 'The Cat in the Hat',                          icon: 'assets/logos/cat.png',                  x: 634 , y: 744, sizeMult: 1 },
-  { id: 'harryPotter',    name: 'Harry Potter and the Forbidden Journey',      icon: 'assets/logos/hogwarts.png',             x: 536  , y: 167, sizeMult: 1 },
+  { id: 'hulk',           name: 'The Incredible Hulk Coaster',                 displayName: 'Hulk',   icon: 'assets/logos/hulk_logo.png',            x: 456  , y: 668, realX: 456, realY: 668, sizeMult: 1 },
+  { id: 'stormForce',     name: 'Storm Force Accelatron',                      icon: 'assets/logos/stormForce_logo.png',      x: 429   , y: 762, realX: 429, realY: 762, sizeMult: 1 },
+  { id: 'doctorDoom',     name: "Doctor Doom's Fearfall",                      icon: 'assets/logos/Doctor-dooms-fearfall-ride-logo-b.png', x: 305  , y: 695, realX: 305, realY: 695, sizeMult: 1 },
+  { id: 'spiderMan',      name: 'The Amazing Adventures of Spider-Man',        icon: 'assets/logos/Amazing-adventures-spider-man-ride-logo-b.png', x: 305, y: 607, realX: 305, realY: 607, sizeMult: 1 },
+  { id: 'bilgeRat',       name: "Popeye & Bluto's Bilge-Rat Barges",           icon: 'assets/logos/bilge_rat.png',            x: 321, y: 398, realX: 321, realY: 398, sizeMult: 1 },
+  { id: 'ripsawFalls',    name: "Dudley Do-Right's Ripsaw Falls",              icon: 'assets/logos/Dudley-do-rights-ripsaw-falls-water-ride-logo-b.png', x: 166, y: 411, realX: 166, realY: 411, sizeMult: 1 },
+  { id: 'skullIsland',    name: 'Skull Island: Reign of Kong',                 icon: 'assets/logos/Skull_Island-_Reign_of_Kong_Logo.png', x: 179, y: 246, realX: 179, realY: 246, sizeMult: 0.95 },
+  { id: 'velociCoaster',  name: 'Jurassic World VelociCoaster',                icon: 'assets/logos/velocicoaster.png',        x: 475 , y: 325, realX: 475, realY: 325, sizeMult: 1 },
+  { id: 'riverAdventure', name: 'Jurassic Park River Adventure',               icon: 'assets/logos/jurrasicPark.png',         x: 246, y: 164, realX: 246, realY: 164, sizeMult: 1 },
+  { id: 'hogwartsTrain',  name: 'Hogwarts Express',                            icon: 'assets/logos/express.png',              x: 728   , y: 331, realX: 728, realY: 331, sizeMult: 1 },
+  { id: 'hippogriff',     name: 'Flight of the Hippogriff',                    icon: 'assets/logos/hippogriph.png',           x: 657    , y: 106, realX: 657, realY: 106, sizeMult: 1 },
+  { id: 'hagrid',         name: "Hagrid's Magical Creatures Motorbike Adventure", icon: 'assets/logos/Hagrid27s_Magical_Creatures_Motorbike_Adventure.png', x: 714  , y: 228, realX: 714, realY: 228, sizeMult: 1 },
+  { id: 'drSeussAirRide', name: 'High in the Sky Seuss Trolley Train Ride',    icon: 'assets/logos/seuss.png',                x: 684 , y: 531, realX: 684, realY: 531, sizeMult: 1.1 },
+  { id: 'caroSeussel',    name: 'Caro-Seuss-el',                               icon: 'assets/logos/caro.png',                 x: 587   , y: 603, realX: 587, realY: 603, sizeMult: 1.1 },
+  { id: 'oneFishtwoFish', name: 'One Fish, Two Fish, Red Fish, Blue Fish',     icon: 'assets/logos/blue.png',                 x: 720     , y: 655, realX: 720, realY: 655, sizeMult: 1 },
+  { id: 'catInTheHat',    name: 'The Cat in the Hat',                          icon: 'assets/logos/cat.png',                  x: 634 , y: 744, realX: 634, realY: 744, sizeMult: 1 },
+  { id: 'harryPotter',    name: 'Harry Potter and the Forbidden Journey',      icon: 'assets/logos/hogwarts.png',             x: 536  , y: 167, realX: 536, realY: 167, sizeMult: 1 },
 ];
 const MAP_NATIVE_W = 1000;
 const MAP_NATIVE_H = 800;
@@ -669,7 +669,7 @@ function renderPins() {
     // long-press, independent of touch-action or draggable.
     pin.addEventListener('contextmenu', e => e.preventDefault());
 
-    const pinEntry = { el: pin, mx: r.x, my: r.y, sizeMult: r.sizeMult ?? 1 };
+    const pinEntry = { el: pin, rideId: r.id, mx: r.x, my: r.y, sizeMult: r.sizeMult ?? 1 };
     pinElements.push(pinEntry);
 
     // ── drag-to-reposition (Advanced Mode only) ──
@@ -716,13 +716,13 @@ function renderPins() {
       const newMY = pinDragStartMY + dy / scaleY;
 
       // Update every copy of this ride's position: the RIDES entry
-      // (source of truth), the pinElements array entry (what
+      // (source of truth -- written into x/y or realX/realY depending
+      // on current zoom level), the pinElements array entry (what
       // updatePinLayout reads for every pin on every future frame),
       // AND -- belt and suspenders -- this exact element's own
       // left/top directly, right now, so the icon moves immediately
       // even if something else about the shared array were ever stale.
-      r.x = newMX;
-      r.y = newMY;
+      setPinEffectivePosition(r, newMX, newMY, zoomT());
       pinEntry.mx = newMX;
       pinEntry.my = newMY;
 
@@ -839,6 +839,35 @@ document.addEventListener('click', e => {
 
 const MIN_MAP_ZOOM = 1;
 const MAX_MAP_ZOOM = 4;
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+// 0 at fully zoomed out, 1 at fully zoomed in, eased so the shift feels
+// gradual rather than linear/abrupt.
+function zoomT() {
+  const raw = (mapZoom - MIN_MAP_ZOOM) / (MAX_MAP_ZOOM - MIN_MAP_ZOOM);
+  const c = Math.min(1, Math.max(0, raw));
+  return c * c * (3 - 2 * c);
+}
+
+// Lets a drag set a pin's CURRENT on-screen (effective) position while
+// only writing into whichever underlying field (spread vs real) that
+// zoom level "owns" -- solved so lerp(x, realX, t) reproduces effX exactly.
+function setPinEffectivePosition(r, effX, effY, t) {
+  if (t >= 0.5) {
+    if (t > 0.999) { r.realX = effX; r.realY = effY; }
+    else {
+      r.realX = r.x + (effX - r.x) / t;
+      r.realY = r.y + (effY - r.y) / t;
+    }
+  } else {
+    if (t < 0.001) { r.x = effX; r.y = effY; }
+    else {
+      r.x = (effX - r.realX * t) / (1 - t);
+      r.y = (effY - r.realY * t) / (1 - t);
+    }
+  }
+}
 const WHEEL_ZOOM_RATIO = 1.12; // used only by the double-click step-zoom
 // Tuned so a standard mouse's single wheel notch (deltaY ~100) still lands
 // close to the old flat WHEEL_ZOOM_RATIO step. Bumped up from 0.0011 for
@@ -876,7 +905,7 @@ function renderWaitBubbles() {
     bubble.className = 'wait-bubble' + (isOpen === false ? ' closed' : '');
     bubble.textContent = isOpen === false ? 'Closed' : `${wait}m`;
     waitBubbleLayerEl.appendChild(bubble);
-    waitBubbleElements.push({ el: bubble, mx: r.x, my: r.y });
+    waitBubbleElements.push({ el: bubble, rideId: r.id });
   });
   updateBubbleLayout();
 }
@@ -884,9 +913,11 @@ function renderWaitBubbles() {
 function updateBubbleLayout() {
   if (!mapFitWidth) return;
   const fitH = mapFitWidth * (MAP_NATIVE_H / MAP_NATIVE_W);
-  waitBubbleElements.forEach(({ el, mx, my }) => {
-    const centerX = mapPanX + (mx / MAP_NATIVE_W) * mapFitWidth * mapZoom;
-    const centerY = mapPanY + (my / MAP_NATIVE_H) * fitH * mapZoom;
+  const t = zoomT();
+  waitBubbleElements.forEach(({ el, rideId }) => {
+    const r = rideById[rideId];
+    const centerX = mapPanX + (lerp(r.x, r.realX, t) / MAP_NATIVE_W) * mapFitWidth * mapZoom;
+    const centerY = mapPanY + (lerp(r.y, r.realY, t) / MAP_NATIVE_H) * fitH * mapZoom;
     el.style.left = centerX + 'px';
     el.style.top  = (centerY - PIN_SIZE / 2) + 'px'; // pin's exact top edge -- the arrow's own geometry supplies the visual gap
   });
@@ -912,15 +943,21 @@ function pinSizeForZoom() {
 function updatePinLayout() {
   if (!mapFitWidth) return; // map dimensions not known yet -- see renderPins()/initMapView() ordering
   const fitH = mapFitWidth * (MAP_NATIVE_H / MAP_NATIVE_W);
-  pinElements.forEach(({ el, mx, my, sizeMult }) => {
+  const t = zoomT();
+  pinElements.forEach(entry => {
+    const r = rideById[entry.rideId];
+    const mx = lerp(r.x, r.realX, t);
+    const my = lerp(r.y, r.realY, t);
+    entry.mx = mx;
+    entry.my = my;
     // Per-ride size override: sizeMult on a RIDES entry scales that
     // pin's icon relative to PIN_SIZE, so specific rides can render
     // bigger/smaller than the rest without touching the global constant.
-    const size = PIN_SIZE * (sizeMult ?? 1);
-    el.style.width  = size + 'px';
-    el.style.height = size + 'px';
-    el.style.left   = (mapPanX + (mx / MAP_NATIVE_W) * mapFitWidth * mapZoom) + 'px';
-    el.style.top    = (mapPanY + (my / MAP_NATIVE_H) * fitH * mapZoom) + 'px';
+    const size = PIN_SIZE * (entry.sizeMult ?? 1);
+    entry.el.style.width  = size + 'px';
+    entry.el.style.height = size + 'px';
+    entry.el.style.left   = (mapPanX + (mx / MAP_NATIVE_W) * mapFitWidth * mapZoom) + 'px';
+    entry.el.style.top    = (mapPanY + (my / MAP_NATIVE_H) * fitH * mapZoom) + 'px';
   });
   // Keep an open popup glued to its pin during every pan/zoom frame --
   // positionPopup() was previously only called once, at the moment the
@@ -1045,9 +1082,15 @@ mapImageEl.addEventListener('dblclick', e => {
     ? MIN_MAP_ZOOM
     : Math.min(MAX_MAP_ZOOM, mapZoom * WHEEL_ZOOM_RATIO * WHEEL_ZOOM_RATIO);
   mapInnerEl.classList.add('map-zoom-anim');
+  pinLayerEl.classList.add('pin-zoom-anim');
+  waitBubbleLayerEl.classList.add('pin-zoom-anim');
   zoomAtPoint(targetZoom, e.clientX, e.clientY, mapZoom, mapPanX, mapPanY);
   clearTimeout(zoomAnimClearTimer);
-  zoomAnimClearTimer = setTimeout(() => mapInnerEl.classList.remove('map-zoom-anim'), 260);
+  zoomAnimClearTimer = setTimeout(() => {
+    mapInnerEl.classList.remove('map-zoom-anim');
+    pinLayerEl.classList.remove('pin-zoom-anim');
+    waitBubbleLayerEl.classList.remove('pin-zoom-anim');
+  }, 260);
 });
 
 // ── mouse drag-to-pan ──
