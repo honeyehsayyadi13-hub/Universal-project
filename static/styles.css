@@ -580,6 +580,7 @@ input { font-family: inherit; }
   font-weight: 600;
   color: var(--ink-soft);
   margin: 0;
+  text-align: center;
 }
 
 #routeItems {
@@ -854,7 +855,7 @@ input { font-family: inherit; }
      (filter functions apply left-to-right, so these affect the pixels
      first, then the shadows are cast from that brighter result). Tune
      the three numbers to taste -- 1.0 is "no change" for all of them. */
-  filter: brightness(1.15) saturate(1.2) contrast(1.05)
+  filter: brightness(1.4) saturate(1.4) contrast(1.1)
           drop-shadow(0 2px 4px rgba(0,0,0,0.5)) drop-shadow(0 0 2px rgba(0,0,0,0.45));
   transition: filter 0.15s ease;
 }

@@ -1550,6 +1550,18 @@ async function generateRoute(triggerBtn) {
   triggerBtn.classList.add('flash');
   setTimeout(() => triggerBtn.classList.remove('flash'), 220);
 
+  const allCheckedClosed = Object.keys(ride_counts).length > 0 &&
+    Object.keys(ride_counts).every(id => state.liveOpen[id] === false);
+  if (allCheckedClosed) {
+    routePlaceholderEl.textContent = 'All rides are currently closed.';
+    routePlaceholderEl.style.color = 'var(--danger)';
+    routePlaceholderEl.style.display = 'block';
+    routeItemsEl.classList.remove('active');
+    routeGenerating = false;
+    btns.forEach(b => { if (b) b.disabled = false; });
+    return;
+  }
+  routePlaceholderEl.style.color = '';
   // Always show a loading state regardless of whether a route already exists
   routePlaceholderEl.textContent = 'Generating…';
   routePlaceholderEl.style.display = 'block';
