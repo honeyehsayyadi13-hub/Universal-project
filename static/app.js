@@ -836,7 +836,9 @@ let mapFitWidth = 0; // px width the map renders at when mapZoom === 1
 // Pins are intentionally NOT scaled with zoom -- fixed at 90% of their
 // original base size regardless of how far in/out the map is zoomed, so
 // they always stay a consistent, easy-to-tap size on screen.
-const PIN_SIZE = 54 * 0.9; // was 54px; now 10% smaller, and constant
+const PIN_SIZE = 54; // circle backing is gone (styles.css), so the bare
+                      // icon can use the full original footprint again
+                      // without looking oversized or crowded
 
 // ── all-rides wait bubbles (toggled by double-tapping any wait chip) ──
 const waitBubbleLayerEl = document.getElementById('waitBubbleLayer');

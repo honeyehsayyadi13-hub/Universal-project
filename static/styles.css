@@ -672,7 +672,7 @@ input { font-family: inherit; }
 
 .route-pill { position: relative; }   /* needed for the ::after pin icon */
 
-.route-pill img { width: 92%; height: 92%; object-fit: contain; }
+.route-pill img { width: 90%; height: 90%; object-fit: contain; }
 .route-pill span { font-size: 10px; font-weight: 700; text-align: center; padding: 2px; }
 
 .wait-chip {
@@ -805,25 +805,61 @@ input { font-family: inherit; }
 #pinLayer { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
 
 .pin {
+  /* No circle/background/border anymore -- just the bare logo, floating
+     directly on the map. Legibility against both the light and dark map
+     comes from the drop-shadow on the image itself (below), not from a
+     filled shape behind it. */
   position: absolute;
   pointer-events: auto;
   width: 54px;
   height: 54px;
   transform: translate(-50%, -50%);
-  border-radius: 50%;
-  background: var(--white);
-  border: 2px solid var(--gold);
-  box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 4px;
-  transition: transform 0.1s ease;
+  transition: transform 0.15s ease;
 }
 
-.pin:hover { transform: translate(-50%, -50%) scale(1.08); z-index: 5; }
-.pin img { width: 100%; height: 100%; object-fit: contain; }
-.pin.closed { border-color: var(--danger); filter: grayscale(0.6); opacity: 0.75; }
+.pin:hover { transform: translate(-50%, -50%) scale(1.1); z-index: 5; }
+
+.pin img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  /* Two stacked drop-shadows: a soft directional one for depth, and a
+     tight near-black one that hugs the artwork's edges so it stays
+     readable over both the pale sand paths (light mode) and the dark
+     navy water/trees (dark mode) without needing a filled backing
+     shape at all. */
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5)) drop-shadow(0 0 2px rgba(0,0,0,0.45));
+  transition: filter 0.15s ease;
+}
+
+/* Closed rides: grayscale + a red-tinted glow instead of a colored
+   border (there's no shape left to put a border on), plus a small red
+   dot badge in the corner so "closed" is still unmistakable at a
+   glance even on icons that are mostly one dark color. */
+.pin.closed img {
+  filter: grayscale(0.75) drop-shadow(0 2px 4px rgba(0,0,0,0.5)) drop-shadow(0 0 4px var(--danger));
+  opacity: 0.85;
+}
+
+.pin.closed::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--danger);
+  border: 1.5px solid var(--white);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.4);
+}
 
 /* ── all-rides wait bubbles (double-tap a pin to toggle) ──
    Styled to match .popup -- rounded rect + a downward arrow pointing at
