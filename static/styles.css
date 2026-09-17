@@ -822,6 +822,25 @@ input { font-family: inherit; }
   align-items: center;
   justify-content: center;
   transition: transform 0.15s ease;
+  /* Belt-and-suspenders for touch dragging (Advanced Mode): without an
+     explicit touch-action here, mobile browsers can still intercept a
+     touch-and-hold on this element for their own gesture recognition
+     before app.js's pointer handlers get a clean, uninterrupted stream
+     of pointermove events -- touch-action:none on the ancestor
+     (#mapViewport) covers scrolling/pinch, but the pin itself also
+     needs it declared directly for reliable dragging. */
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.pin img {
+  /* Prevents iOS's long-press "save image" callout menu and Android's
+     native image drag-ghost from hijacking the same touch-and-hold
+     gesture app.js is trying to use for repositioning. */
+  -webkit-touch-callout: none;
+  -webkit-user-drag: none;
+  user-select: none;
 }
 
 .pin:hover { transform: translate(-50%, -50%) scale(1.1); z-index: 5; }
@@ -844,7 +863,7 @@ input { font-family: inherit; }
    a quieter, half-there icon signaling "not running right now". */
 .pin.closed img {
   filter: grayscale(0.6) drop-shadow(0 2px 4px rgba(0,0,0,0.5)) drop-shadow(0 0 2px rgba(0,0,0,0.45));
-  opacity: 0.7;
+  opacity: 0.5;
 }
 
 /* ── all-rides wait bubbles (double-tap a pin to toggle) ──
