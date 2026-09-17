@@ -839,26 +839,12 @@ input { font-family: inherit; }
   transition: filter 0.15s ease;
 }
 
-/* Closed rides: grayscale + a red-tinted glow instead of a colored
-   border (there's no shape left to put a border on), plus a small red
-   dot badge in the corner so "closed" is still unmistakable at a
-   glance even on icons that are mostly one dark color. */
+/* Closed rides: same grayscale + drop-shadow as an open pin, just
+   faded down to a low opacity -- no red badge, no colored glow, just
+   a quieter, half-there icon signaling "not running right now". */
 .pin.closed img {
-  filter: grayscale(0.75) drop-shadow(0 2px 4px rgba(0,0,0,0.5)) drop-shadow(0 0 4px var(--danger));
-  opacity: 0.85;
-}
-
-.pin.closed::after {
-  content: '';
-  position: absolute;
-  top: 2px;
-  right: 2px;
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-  background: var(--danger);
-  border: 1.5px solid var(--white);
-  box-shadow: 0 1px 2px rgba(0,0,0,0.4);
+  filter: grayscale(0.6) drop-shadow(0 2px 4px rgba(0,0,0,0.5)) drop-shadow(0 0 2px rgba(0,0,0,0.45));
+  opacity: 0.4;
 }
 
 /* ── all-rides wait bubbles (double-tap a pin to toggle) ──
