@@ -1620,12 +1620,19 @@ function updateTogglePositions() {
   }
 
 if (sidebarToggle) {
-  // Centered on the whole map pane, not the (shrinking/shifting) map
-  // viewport -- so a long top bar pushes the viewport down without
-  // dragging the arrow with it, letting the arrow sit under/behind
-  // the top bar once it's tall enough.
-  const paneMid = mapPaneEl.clientHeight / 2;
-  sidebarToggle.style.top = paneMid + 'px';
+  // Prefer the vertical center of the map pane, but never let the
+  // toggle sit inside the top bar's own space -- push it down below
+  // the top bar's bottom edge instead. If the top bar (plus the
+  // bottom bar's reserved space) leaves no room to fully clear it,
+  // stop at the lowest point available; the z-index bump in CSS then
+  // keeps the toggle visible ON TOP of the top bar instead of
+  // disappearing underneath it.
+  const half = sidebarToggle.offsetHeight / 2;
+  const minTop = topBarEl.offsetHeight + half;
+  const maxTop = mapPaneEl.clientHeight - bottomBarEl.offsetHeight - half;
+  let top = Math.max(mapPaneEl.clientHeight / 2, minTop);
+  top = Math.min(top, maxTop);
+  sidebarToggle.style.top = top + 'px';
 }
 }
 
