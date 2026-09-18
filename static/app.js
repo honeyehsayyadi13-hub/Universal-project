@@ -621,10 +621,6 @@ const popupState = { rideId: null, anchorEl: null };
 
 let pinElements = [];
 
-function updateCoordDisplay(mx, my) {
-  const el = document.getElementById('coordDisplay');
-  if (el) el.textContent = `X: ${Math.round(mx)}  Y: ${Math.round(my)}`;
-}
 
 function renderPins() {
   pinLayerEl.innerHTML = '';
@@ -649,65 +645,8 @@ function renderPins() {
     const pinEntry = { el: pin, rideId: r.id, mx: r.x, my: r.y, sizeMult: r.sizeMult ?? 1 };
     pinElements.push(pinEntry);
 
-    // ── drag-to-reposition (Advanced Mode only) ──
-    let pinPointerId = null;
-    let pinDragStartX = 0, pinDragStartY = 0;
-    let pinDragStartMX = 0, pinDragStartMY = 0;
-    let pinDragMoved = false;
-
-    pin.addEventListener('pointerdown', e => {
-      if (!advancedModeOn) return;
-      e.stopPropagation();
-
-      e.preventDefault();
-      refreshMapViewportRect();
-      pinPointerId = e.pointerId;
-      pinDragStartX = e.clientX;
-      pinDragStartY = e.clientY;
-      pinDragStartMX = pinEntry.mx;
-      pinDragStartMY = pinEntry.my;
-      pinDragMoved = false;
-      pin.setPointerCapture(pinPointerId);
-    });
-
-    pin.addEventListener('pointermove', e => {
-      if (pinPointerId !== e.pointerId) return;
-      const dx = e.clientX - pinDragStartX;
-      const dy = e.clientY - pinDragStartY;
-      if (!pinDragMoved && Math.hypot(dx, dy) < 4) return;
-      pinDragMoved = true;
-
-      if (!mapFitWidth) return; // map not sized yet -- nothing to compute against
-
-      // Screen-pixel delta -> map-space delta (inverse of the scaling
-      // updatePinLayout uses to go the other direction).
-      const fitH = mapFitWidth * (MAP_NATIVE_H / MAP_NATIVE_W);
-      const scaleX = (mapFitWidth * mapZoom) / MAP_NATIVE_W;
-      const scaleY = (fitH * mapZoom) / MAP_NATIVE_H;
-      const newMX = pinDragStartMX + dx / scaleX;
-      const newMY = pinDragStartMY + dy / scaleY;
-
-      setPinEffectivePosition(r, newMX, newMY, zoomT());
-      pinEntry.mx = newMX;
-      pinEntry.my = newMY;
-
-      pin.style.left = (mapPanX + (newMX / MAP_NATIVE_W) * mapFitWidth * mapZoom) + 'px';
-      pin.style.top  = (mapPanY + (newMY / MAP_NATIVE_H) * fitH * mapZoom) + 'px';
-
-      updateCoordDisplay(newMX, newMY);
-    });
-
-    function endPinDrag(e) {
-      if (pinPointerId !== e.pointerId) return;
-      pin.releasePointerCapture(pinPointerId);
-      pinPointerId = null;
-    }
-    pin.addEventListener('pointerup', endPinDrag);
-    pin.addEventListener('pointercancel', endPinDrag);
-
     pin.addEventListener('click', e => {
       e.stopPropagation();
-      if (pinDragMoved) { pinDragMoved = false; return; } // a drag just ended -- not a tap
       const now = Date.now();
       if (now - lastPinTapTime < DOUBLE_TAP_MS && lastPinTapRideId === r.id) {
         lastPinTapTime = 0;
@@ -785,21 +724,7 @@ function zoomT() {
   return c * c * (3 - 2 * c);
 }
 
-function setPinEffectivePosition(r, effX, effY, t) {
-  if (t >= 0.5) {
-    if (t > 0.999) { r.realX = effX; r.realY = effY; }
-    else {
-      r.realX = r.x + (effX - r.x) / t;
-      r.realY = r.y + (effY - r.y) / t;
-    }
-  } else {
-    if (t < 0.001) { r.x = effX; r.y = effY; }
-    else {
-      r.x = (effX - r.realX * t) / (1 - t);
-      r.y = (effY - r.realY * t) / (1 - t);
-    }
-  }
-}
+
 const WHEEL_ZOOM_RATIO = 1.12; 
 
 const WHEEL_ZOOM_SENSITIVITY = 0.0015;

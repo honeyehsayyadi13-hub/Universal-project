@@ -61,12 +61,6 @@ input { font-family: inherit; }
   gap: 14px;
 }
 
-#coordDisplay {
-  font: 600 14px/1 monospace;
-  color: var(--ink);
-  white-space: nowrap;
-  padding-bottom: max(10px, env(safe-area-inset-bottom));
-}
 
 #backBtn {
   width: auto;
