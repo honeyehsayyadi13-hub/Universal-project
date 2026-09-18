@@ -67,8 +67,8 @@ from collections import defaultdict
 from supabase import create_client, Client
 
 
-SUPABASE_URL = "https://azbjjemtcpaeqfqauzod.supabase.co"
-SUPABASE_KEY = "sb_publishable_4oD2QwAuB39Sd9KInIRnsw_jEMOY7pK"
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 
 _supabase_client = None
 

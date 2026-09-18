@@ -2,6 +2,9 @@
 import requests
 from datetime import datetime
 import time
+from dotenv import load_dotenv
+
+load_dotenv()
 
 _cache: dict = {}          # last successful payload
 _cache_ts: float = 0.0     # unix timestamp of that fetch
