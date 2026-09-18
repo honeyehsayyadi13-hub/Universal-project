@@ -24,7 +24,6 @@ def home():
 def rides():
     payload = Data.get_live_wait_times()
     Data._sync_legacy_dicts(payload)
-
     # If we're past closing time, don't trust the source — mark everything closed.
     park_hours = Data.get_park_close_time()
     if park_hours:

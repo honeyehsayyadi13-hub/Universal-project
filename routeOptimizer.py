@@ -40,7 +40,7 @@ Rules this version enforces:
      schedule runs all the way to park close instead of stopping early.
 
 Call `compute_and_print_route(...)` from a button press on the
-frontend. Results print to the terminal AND are returned as a list of
+frontend. Results are returned as a list of
 (ride_key, predicted_wait, queue_join_minutes) tuples for the rides that
 actually fit before closing.
 
@@ -772,30 +772,20 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
 
     checked = {k: c for k, c in ride_counts.items() if c and c > 0}
     if not checked:
-        print("\nNo rides selected -- check some boxes on the sidebar first.\n")
         return []
 
     # RULE 1: Drop closed rides completely
-    ignored_closed = sorted(k for k in checked if k in closed_ride_keys)
     checked = {k: c for k, c in checked.items() if k not in closed_ride_keys}
-    if ignored_closed:
-        print(f"Skipping currently-closed rides: {ignored_closed}")
     if not checked:
-        print("\nEverything selected is currently closed.\n")
         return []
 
     try:
         key_to_id, id_to_key = _load_ride_id_map()
-    except Exception as e:
-        print(f"\nCould not reach Supabase: {e}\n")
+    except Exception:
         return None
 
-    unknown = [k for k in checked if k not in key_to_id]
-    if unknown:
-        print(f"Warning: no DB entry found for rides {unknown} -- skipping them.")
     checked = {k: c for k, c in checked.items() if k in key_to_id}
     if not checked:
-        print("\nNone of the selected rides were found in the database.\n")
         return []
 
     all_db_ids = [key_to_id[k] for k in checked]
@@ -803,9 +793,7 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
     walk_map = _load_walk_times()
     try:
         durations = _load_ride_durations()
-    except Exception as e:
-        print(f"Warning: couldn't load ride_duration table ({e}); using "
-              f"{DEFAULT_RIDE_DURATION_MIN}-min default for every ride.")
+    except Exception:
         durations = {}
 
     current_waits = {}
@@ -827,8 +815,6 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
     close_hour = close_hour if close_hour is not None else DEFAULT_PARK_CLOSE_HOUR
     close_minute = close_minute if close_minute is not None else DEFAULT_PARK_CLOSE_MINUTE
     closing_time = start_time.replace(hour=close_hour, minute=close_minute, second=0, microsecond=0)
-    if closing_time <= start_time:
-        print(f"\nHeads up: it's already past {closing_time.strftime('%I:%M %p')} closing time.\n")
 
     max_counts_by_id = {}
     if max_counts:
@@ -948,62 +934,9 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
         committed.append(details[0])
         skipped_details = skipped_details[1:] if skipped_details else skipped_details
 
-    committed_total = sum(d["walk_from_prev"] + d["predicted_wait"] + d["ride_duration"] for d in committed)
-
-    start_label = "Entrance" if start_key == "entrance" else id_to_key.get(start_db_id, start_key)
-
-    print("\n" + "=" * 55)
-    print(f"OPTIMAL ROUTE  (starting {start_time.strftime('%A %I:%M %p')} from {start_label}, "
-          f"park closes {closing_time.strftime('%I:%M %p')})")
-    print("=" * 55)
-
-    for b_start, b_end in break_windows:
-        print(f"Break scheduled: {b_start.strftime('%I:%M %p')} - {b_end.strftime('%I:%M %p')}")
-
-    if not committed:
-        print("None of the selected rides fit before closing from this start time.")
-    for i, d in enumerate(committed, start=1):
-        name = id_to_key.get(d["db_id"], str(d["db_id"]))
-        walk_note = f"  (+{d['walk_from_prev']} min walk)" if d["walk_from_prev"] else ""
-        print(
-            f"{i}. {name:<16} predicted wait: {d['predicted_wait']:.0f} min"
-            f"  ride time: {d['ride_duration']:.0f} min"
-            f"{walk_note}   -> in line by ~{d['queue_join_clock'].strftime('%I:%M %p')}"
-        )
-
-    print("-" * 55)
-    print(f"Total estimated time (walking + waiting + riding): {committed_total:.0f} min")
-    print(f"Rides that fit before closing: {len(committed)} / {len(details)}")
-
-    if dropped_forced:
-        drop_msgs = [f"{it['ride_key']} ({it['kind']})" for it in dropped_forced]
-        print(f"\nCouldn't fit every locked/repeated ride -- had to drop: {', '.join(drop_msgs)}")
-
-    if skipped_optional:
-        names = sorted({it["ride_key"] for it in skipped_optional})
-        print(f"Didn't fit in the schedule: {', '.join(names)}")
-
-    if skipped_details:
-        skipped_names = [id_to_key.get(d["db_id"], str(d["db_id"])) for d in skipped_details]
-        print(f"\nWon't fit before closing today ({len(skipped_details)}): {', '.join(skipped_names)}")
-        print("Uncheck a few rides, or start earlier, to fit more of them in.")
-
-    print("=" * 55 + "\n")
-
     return [
         (id_to_key.get(d["db_id"], str(d["db_id"])),
          d["predicted_wait"],
          d["queue_join_clock"].hour * 60 + d["queue_join_clock"].minute)
         for d in committed
     ]
-
-
-if __name__ == "__main__":
-    result = compute_and_print_route(
-        ride_counts={"hulk": 2, "spiderMan": 1, "doctorDoom": 1, "stormForce": 1},
-        ride_locked={"spiderMan": True},
-        closed_ride_keys={"riverAdventure"},
-        breaks=[(12 * 60, 13 * 60)],
-        live_waits={"hulk": 45, "spiderMan": 20, "doctorDoom": 15, "stormForce": 5},
-    )
-    print("Returned route:", result)

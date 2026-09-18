@@ -3,16 +3,6 @@ import requests
 from datetime import datetime
 import time
 
-# ---------------------------------------------------------------------------
-# On-demand fetch with a short cache.
-# The old approach (background thread polling every 5s) is unreliable on
-# Render free tier: the service spins down after inactivity, the daemon
-# thread may die silently on wake-up, and outbound HTTP from a sleeping
-# container often fails on the first attempt -- leaving ride_waits empty
-# forever and /api/rides returning {}. Fetching on-demand and caching the
-# result for 30 s is simpler, more reliable, and uses far less CPU.
-# ---------------------------------------------------------------------------
-
 _cache: dict = {}          # last successful payload
 _cache_ts: float = 0.0     # unix timestamp of that fetch
 CACHE_TTL = 30             # seconds before we re-hit queue-times.com
@@ -54,9 +44,7 @@ def get_live_wait_times() -> dict:
         return _cache
 
     url = "https://queue-times.com/parks/64/queue_times.json"
-    # Some sites reject the default python-requests User-Agent (403), which
-    # would otherwise look identical to a timeout/network failure. Sending a
-    # normal browser-ish UA avoids that class of silent failure.
+
     headers = {
         "User-Agent": "Mozilla/5.0 (compatible; UniversalRoutePlanner/1.0; +https://universal-project.onrender.com)",
         "Accept": "application/json",
@@ -65,12 +53,9 @@ def get_live_wait_times() -> dict:
         response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status()
         data = response.json()
-    except requests.exceptions.RequestException as e:
-        status = getattr(getattr(e, "response", None), "status_code", None)
-        print(f"[data] fetch failed: {e!r} (status={status})")
-        return _cache          # stale cache beats an empty response
-    except ValueError as e:
-        print(f"[data] JSON parse failed: {e}")
+    except requests.exceptions.RequestException:
+        return _cache
+    except ValueError:
         return _cache
 
     result: dict = {}
@@ -84,27 +69,14 @@ def get_live_wait_times() -> dict:
                         "waittime": ride["wait_time"],
                         "is_open":  ride["is_open"],
                     }
-            except Exception as e:
-                print(f"[data] skipping malformed ride entry {ride!r}: {e}")
+            except Exception:
+                pass
 
     if result:                 # only promote to cache if we got real data
         _cache    = result
         _cache_ts = now
-    else:
-        print("[data] fetch succeeded but 0 rides matched RIDE_NAME_MAP "
-              "-- check for a name/encoding mismatch against the live API")
 
     return _cache
-
-
-# ---------------------------------------------------------------------------
-# Legacy aliases kept so routeOptimizer (and any other module that imports
-# Data.ride_waits / Data.ride_open directly) doesn't break.
-# They're populated lazily on the first /api/rides call rather than by a
-# background thread, which is fine because routeOptimizer reads them after
-# the frontend has already loaded the page (and therefore after at least
-# one /api/rides call has warmed the cache).
-# ---------------------------------------------------------------------------
 
 ride_waits: dict = {}
 ride_open:  dict = {}
@@ -129,8 +101,8 @@ def update_backend():
         try:
             payload = get_live_wait_times()
             _sync_legacy_dicts(payload)
-        except Exception as e:
-            print(f"[data] update_backend unexpected error: {e}")
+        except Exception:
+            pass
         time.sleep(60)
 
 
@@ -168,8 +140,7 @@ def _resolve_ioa_entity_id():
         resp = requests.get(f"{THEMEPARKS_API_BASE}/destinations", headers=_themeparks_headers(), timeout=10)
         resp.raise_for_status()
         data = resp.json()
-    except (requests.exceptions.RequestException, ValueError) as e:
-        print(f"[data] themeparks.wiki destinations fetch failed: {e!r}")
+    except (requests.exceptions.RequestException, ValueError):
         return None
 
     for destination in data.get("destinations", []):
@@ -178,7 +149,6 @@ def _resolve_ioa_entity_id():
                 _ioa_entity_id_cache = park["id"]
                 return _ioa_entity_id_cache
 
-    print("[data] could not find Islands of Adventure in themeparks.wiki destinations")
     return None
 
 
@@ -214,8 +184,7 @@ def get_park_close_time(for_date=None):
         )
         resp.raise_for_status()
         data = resp.json()
-    except (requests.exceptions.RequestException, ValueError) as e:
-        print(f"[data] themeparks.wiki schedule fetch failed: {e!r}")
+    except (requests.exceptions.RequestException, ValueError):
         return None
 
     for entry in data.get("schedule", []):
@@ -238,13 +207,4 @@ def get_park_close_time(for_date=None):
         _park_hours_cache_ts = now
         return closing_dt.hour, closing_dt.minute
 
-    print(f"[data] no OPERATING schedule entry found for Islands of Adventure on {target_date}")
     return None
-
-
-# ---------------------------------------------------------------------------
-# Convenience: log current day/time (matches original module-level prints)
-# ---------------------------------------------------------------------------
-_now = datetime.now()
-print(_now.strftime("%A"))
-print(_now.strftime("%H:%M:%S"))

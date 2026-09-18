@@ -46,7 +46,7 @@ const RIDES = [
   { id: 'skullIsland',    name: 'Skull Island: Reign of Kong',                 displayName: "Skull Island", icon: 'assets/logos/Skull_Island-_Reign_of_Kong_Logo.png', x: 179, y: 246, realX: 179, realY: 246, sizeMult: 0.95, brightness: 1.6 },
   { id: 'velociCoaster',  name: 'Jurassic World VelociCoaster',                displayName: "VelociCoaster", icon: 'assets/logos/velocicoaster.png',        x: 475 , y: 325, realX: 475, realY: 325, sizeMult: 1, brightness: 1.4 },
   { id: 'riverAdventure', name: 'Jurassic Park River Adventure',               displayName: "River Adventure", icon: 'assets/logos/jurrasicPark.png',         x: 246, y: 164, realX: 329, realY: 194, sizeMult: 1, brightness: 1.6 },
-  { id: 'hogwartsTrain',  name: 'Hogwarts Express',                            displayName: "Hogwarts Express", icon: 'assets/logos/express.png',              x: 728   , y: 331, realX: 793, realY: 288, sizeMult: 1, brightness: 1 },
+  { id: 'hogwartsTrain',  name: 'Hogwarts Express',                            displayName: "Hogwarts Express", icon: 'assets/logos/express.png',              x: 728   , y: 331, realX: 793, realY: 288, sizeMult: 1, brightness: 0.8 },
   { id: 'hippogriff',     name: 'Flight of the Hippogriff',                    displayName: "Hippogriff", icon: 'assets/logos/hippogriph.png',           x: 657    , y: 106, realX: 587, realY: 152, sizeMult: 1, brightness: 1.4 },
   { id: 'hagrid',         name: "Hagrid's Magical Creatures Motorbike Adventure", displayName: "Hagrids", icon: 'assets/logos/Hagrid27s_Magical_Creatures_Motorbike_Adventure.png', x: 714  , y: 228, realX: 697, realY: 238, sizeMult: 1, brightness: 1.4 },
   { id: 'drSeussAirRide', name: 'High in the Sky Seuss Trolley Train Ride',    displayName: "Dr. Suess's Trolly", icon: 'assets/logos/seuss.png',                x: 684 , y: 531, realX: 680, realY: 578, sizeMult: 1.1, brightness: 1.4 },
@@ -66,16 +66,16 @@ const state = {
   lastCount: Object.fromEntries(RIDES.map(r => [r.id, 1])),
   locked:  Object.fromEntries(RIDES.map(r => [r.id, false])),
   lockBeforeBump: Object.fromEntries(RIDES.map(r => [r.id, false])),
-  breaks: [],          // { id, label, startMin, endMin }
+  breaks: [],
   selectedStart: 'entrance',
-  route: [],            // [{ rideId, predictedWait }]
-  liveWaits: {},         // rideId -> minutes|null
-  liveOpen: {},           // rideId -> bool|null
+  route: [],
+  liveWaits: {},
+  liveOpen: {},
   timePinned: {},
   maxCounts: Object.fromEntries(RIDES.map(r => [r.id, Infinity])),
   maxBeforeInfinity: Object.fromEntries(RIDES.map(r => [r.id, 0])),
   maxWasZeroBeforeLock: Object.fromEntries(RIDES.map(r => [r.id, false])),
-  pinnedLocked: {},  // rideIds locked due to top-bar selection (not sidebar lock)
+  pinnedLocked: {},
 };
 
 function getInstanceIndex(route, pos) {
@@ -113,10 +113,8 @@ function minsToTime(mins) {
   const hour = h % 12 || 12;
   return `${hour}:${String(m).padStart(2, '0')} ${period}`;
 }
+
 // ── advanced / dark mode ─────────────────────────────────────────
-// Kept as standalone flags rather than added to `state`, since these are
-// app-wide UI preferences (persisted across sessions) rather than
-// route-planning data that gets bundled into presets.
 const DARK_MODE_KEY = 'urp.darkMode';
 const ADVANCED_MODE_KEY = 'urp.advancedMode';
 const LIGHT_MAP_SRC = 'assets/lightMap.png';
@@ -148,8 +146,7 @@ function applyDarkMode() {
 
 function applyAdvancedMode() {
   document.getElementById('advancedModeCheckbox')?.classList.toggle('checked', advancedModeOn);
-  // Hook point for future advanced-mode behavior -- just persisted and
-  // reflected in the checkbox for now.
+  // Hook point for future advanced-mode behavior -- just persisted and reflected in the checkbox for now.
 }
 
 document.getElementById('advancedModeToggle')?.addEventListener('click', () => {
@@ -171,22 +168,10 @@ let touchDragClone   = null;
 let touchStartX = 0, touchStartY = 0;
 let touchDragging = false;
 
-// Only one stop can ever hold the "force first" (0) or "force last" (1440)
-// sentinel at a time — otherwise the backend would receive two conflicting
-// "put me first" / "put me last" requests and have to pick one arbitrarily,
-// which is exactly what let a stale pin quietly stop being honored before.
-// Whenever a stop newly claims a sentinel, strip that same sentinel off of
-// every other pin first.
 function clearConflictingSentinelPins(sentinelValue, exceptKey) {
   for (const [key, pin] of Object.entries(state.timePinned)) {
     if (key === exceptKey) continue;
     if (pin.targetMinutes === sentinelValue) {
-      // Downgrade rather than delete: only one stop can hold "always
-      // first" (or "always last") at a time, but the ride that just lost
-      // that slot should still read as selected/highlighted -- deleting
-      // its pin outright used to clear both its highlight AND its lock,
-      // making it look fully deselected instead of merely bumped from
-      // that one slot.
       pin.targetMinutes = null;
     }
   }
@@ -634,10 +619,6 @@ function renderSidebarList() {
 
 const popupState = { rideId: null, anchorEl: null };
 
-// Cached once per renderPins() call instead of re-querying/re-parsing the
-// DOM every animation frame during a drag or pinch -- that repeated
-// per-frame querySelectorAll + parseFloat work was adding avoidable jank
-// on top of the actual math.
 let pinElements = [];
 
 function updateCoordDisplay(mx, my) {
@@ -656,18 +637,13 @@ function renderPins() {
     const img = document.createElement('img');
     img.src = r.icon;
     img.alt = r.name;
-    // Without these, Android can hijack a touch-and-hold on this <img>
-    // for its own native "download image" / drag-ghost gesture before
-    // our pointerdown handler below ever gets a clean shot at it.
+
     img.draggable = false;
     img.style.setProperty('--icon-brightness', r.brightness ?? 1.4);
     img.onerror = () => { img.style.display = 'none'; pin.textContent = r.name.split(' ')[0]; };
     pin.appendChild(img);
 
-    // Belt-and-suspenders alongside draggable=false: explicitly block
-    // the native long-press context menu ("Download image", "Open in
-    // new tab", etc.) that Android/Chrome shows on <img> elements on
-    // long-press, independent of touch-action or draggable.
+
     pin.addEventListener('contextmenu', e => e.preventDefault());
 
     const pinEntry = { el: pin, rideId: r.id, mx: r.x, my: r.y, sizeMult: r.sizeMult ?? 1 };
@@ -682,12 +658,7 @@ function renderPins() {
     pin.addEventListener('pointerdown', e => {
       if (!advancedModeOn) return;
       e.stopPropagation();
-      // Without this, the browser can still start its own gesture
-      // recognition (long-press context menu, native image drag) on
-      // this same touch before our own pointermove-based drag logic
-      // below gets an uninterrupted stream of events -- preventDefault
-      // here claims the gesture immediately, before any of that can
-      // kick in.
+
       e.preventDefault();
       refreshMapViewportRect();
       pinPointerId = e.pointerId;
@@ -716,13 +687,6 @@ function renderPins() {
       const newMX = pinDragStartMX + dx / scaleX;
       const newMY = pinDragStartMY + dy / scaleY;
 
-      // Update every copy of this ride's position: the RIDES entry
-      // (source of truth -- written into x/y or realX/realY depending
-      // on current zoom level), the pinElements array entry (what
-      // updatePinLayout reads for every pin on every future frame),
-      // AND -- belt and suspenders -- this exact element's own
-      // left/top directly, right now, so the icon moves immediately
-      // even if something else about the shared array were ever stale.
       setPinEffectivePosition(r, newMX, newMY, zoomT());
       pinEntry.mx = newMX;
       pinEntry.my = newMY;
@@ -774,10 +738,6 @@ function showPopup(rideId, anchorEl) {
   else { waitLine = `Wait: ${wait} min`; }
 
   popupEl.innerHTML = `${(r.displayName ?? r.name).replace(/\n/g, '<br>')}<div class="wait-line ${waitCls}">${waitLine}</div>`;
-  // Recolor the whole popup (border + arrow), not just the inner
-  // wait-line text, when the ride is closed -- matches how .pin.closed
-  // and .wait-bubble.closed both turn fully red rather than just their
-  // label text.
   popupEl.classList.toggle('closed', isOpen === false);
   popupEl.classList.remove('hidden');
   positionPopup(anchorEl);
@@ -785,16 +745,6 @@ function showPopup(rideId, anchorEl) {
 
 function positionPopup(anchorEl) {
   if (!anchorEl || popupState.rideId == null) return;
-  // getBoundingClientRect() is already relative to the browser viewport,
-  // accounting for every ancestor's offset AND scroll automatically — no
-  // need to subtract #mapViewport's rect or add its scroll manually. The
-  // old code computed coordinates relative to #mapViewport, but #popup is
-  // actually a child of #app (position: relative), which is #popup's real
-  // positioning ancestor. That mismatch silently shifted every popup up
-  // and to the left by the sidebar width / topbar height, pushing many of
-  // them off-screen or behind other elements. Using `position: fixed` on
-  // .popup (see styles.css) plus the pin's own rect directly sidesteps the
-  // whole ancestor-offset problem.
   const pinRect = anchorEl.getBoundingClientRect();
   popupEl.style.left = (pinRect.left + pinRect.width / 2) + 'px';
   popupEl.style.top  = pinRect.top + 'px';
@@ -809,13 +759,6 @@ function hidePopup() {
 document.addEventListener('click', e => {
   if (!e.target.closest('.pin') && !e.target.closest('.popup')) hidePopup();
 
-  // Double-tap toggles the wait bubbles on; a tap anywhere else on the
-  // map (or empty space generally) should toggle them back off, same as
-  // if you'd double-tapped again. Excludes taps on a pin itself (which
-  // already has its own single/double-tap handling above) and on any of
-  // the surrounding UI chrome -- sidebar, top route bar, bottom bar, the
-  // collapse toggles, and dropdowns -- so opening a menu or collapsing a
-  // bar doesn't also dismiss the bubbles as a side effect.
   if (showWaitBubbles
       && !e.target.closest('.pin')
       && !e.target.closest('#sidebar')
@@ -828,15 +771,6 @@ document.addEventListener('click', e => {
 });
 
 // ═══════════════ MAP ZOOM & PAN ═══════════════
-//
-// Positioning is fully JS-owned via a CSS transform (translate + scale) on
-// #mapInner, rather than the browser's native scrollLeft/scrollTop. See the
-// comment on #mapViewport in styles.css for why: native scroll combined
-// with flex centering has an inconsistent "safe alignment" behavior right
-// at the point content starts overflowing, which is what was causing the
-// map to jump/drift sideways as soon as a zoom or pinch began. A directly
-// controlled transform has no such ambiguity -- the algebra below is the
-// only thing deciding where the image sits.
 
 const MIN_MAP_ZOOM = 1;
 const MAX_MAP_ZOOM = 4;
@@ -851,9 +785,6 @@ function zoomT() {
   return c * c * (3 - 2 * c);
 }
 
-// Lets a drag set a pin's CURRENT on-screen (effective) position while
-// only writing into whichever underlying field (spread vs real) that
-// zoom level "owns" -- solved so lerp(x, realX, t) reproduces effX exactly.
 function setPinEffectivePosition(r, effX, effY, t) {
   if (t >= 0.5) {
     if (t > 0.999) { r.realX = effX; r.realY = effY; }
@@ -869,29 +800,24 @@ function setPinEffectivePosition(r, effX, effY, t) {
     }
   }
 }
-const WHEEL_ZOOM_RATIO = 1.12; // used only by the double-click step-zoom
-// Tuned so a standard mouse's single wheel notch (deltaY ~100) still lands
-// close to the old flat WHEEL_ZOOM_RATIO step. Bumped up from 0.0011 for
-// slightly punchier response per notch/scroll tick.
+const WHEEL_ZOOM_RATIO = 1.12; 
+
 const WHEEL_ZOOM_SENSITIVITY = 0.0015;
 
 let mapZoom = 1;
 let mapPanX = 0;
 let mapPanY = 0;
-let mapFitWidth = 0; // px width the map renders at when mapZoom === 1
+let mapFitWidth = 0;
 
-// Pins are intentionally NOT scaled with zoom -- fixed at 90% of their
-// original base size regardless of how far in/out the map is zoomed, so
-// they always stay a consistent, easy-to-tap size on screen.
-const PIN_SIZE = 54 * 0.9 * 1.1; // was 54px; now 10% smaller, and constant
+const PIN_SIZE = 54 * 0.9 * 1.1;
 
 // ── all-rides wait bubbles (toggled by double-tapping any wait chip) ──
 const waitBubbleLayerEl = document.getElementById('waitBubbleLayer');
 let showWaitBubbles = false;
-let waitBubbleElements = []; // cached per renderWaitBubbles(), same pattern as pinElements
-let lastWaitChipTapTime = 0; // for manual double-tap detection (see toggle listener below)
+let waitBubbleElements = [];
+let lastWaitChipTapTime = 0; 
 const DOUBLE_TAP_MS = 350;
-let lastPinTapTime = 0;      // for double-tap detection without delaying the first tap's popup
+let lastPinTapTime = 0;
 let lastPinTapRideId = null;
 
 function renderWaitBubbles() {
@@ -901,7 +827,7 @@ function renderWaitBubbles() {
   RIDES.forEach(r => {
     const wait = state.liveWaits[r.id];
     const isOpen = state.liveOpen[r.id];
-    if (wait == null && isOpen !== false) return; // unknown -- nothing real to show
+    if (wait == null && isOpen !== false) return;
     const bubble = document.createElement('div');
     bubble.className = 'wait-bubble' + (isOpen === false ? ' closed' : '');
     bubble.textContent = isOpen === false ? 'Closed' : `${wait}m`;
@@ -920,7 +846,7 @@ function updateBubbleLayout() {
     const centerX = mapPanX + (lerp(r.x, r.realX, t) / MAP_NATIVE_W) * mapFitWidth * mapZoom;
     const centerY = mapPanY + (lerp(r.y, r.realY, t) / MAP_NATIVE_H) * fitH * mapZoom;
     el.style.left = centerX + 'px';
-    el.style.top  = (centerY - PIN_SIZE / 2) + 'px'; // pin's exact top edge -- the arrow's own geometry supplies the visual gap
+    el.style.top  = (centerY - PIN_SIZE / 2) + 'px'; 
   });
 }
 
@@ -933,16 +859,8 @@ function pinSizeForZoom() {
   return PIN_SIZE;
 }
 
-// Restored: renderPins() and applyMapTransform() both { id: 'hulk', name: 'The Incredible Hulk Coaster', icon: '...', x: 488, y: 620 },call this, but the
-// function itself had been dropped in an earlier edit, leaving
-// renderPins() throwing a ReferenceError on every page load -- which in
-// turn silently aborted the rest of init() (see the comment above init()
-// for the full chain of what that broke). Reads from the cached
-// `pinElements` array (populated in renderPins()) rather than
-// querySelectorAll + dataset attributes, since those attributes are no
-// longer set on the pin elements at all in the current renderPins().
 function updatePinLayout() {
-  if (!mapFitWidth) return; // map dimensions not known yet -- see renderPins()/initMapView() ordering
+  if (!mapFitWidth) return;
   const fitH = mapFitWidth * (MAP_NATIVE_H / MAP_NATIVE_W);
   const t = zoomT();
   pinElements.forEach(entry => {
@@ -951,33 +869,22 @@ function updatePinLayout() {
     const my = lerp(r.y, r.realY, t);
     entry.mx = mx;
     entry.my = my;
-    // Per-ride size override: sizeMult on a RIDES entry scales that
-    // pin's icon relative to PIN_SIZE, so specific rides can render
-    // bigger/smaller than the rest without touching the global constant.
+
     const size = PIN_SIZE * (entry.sizeMult ?? 1);
     entry.el.style.width  = size + 'px';
     entry.el.style.height = size + 'px';
     entry.el.style.left   = (mapPanX + (mx / MAP_NATIVE_W) * mapFitWidth * mapZoom) + 'px';
     entry.el.style.top    = (mapPanY + (my / MAP_NATIVE_H) * fitH * mapZoom) + 'px';
   });
-  // Keep an open popup glued to its pin during every pan/zoom frame --
-  // positionPopup() was previously only called once, at the moment the
-  // pin was tapped, so the popup stayed frozen at that screen coordinate
-  // while the pin moved out from under it on any subsequent zoom/pan.
+
   if (popupState.rideId && popupState.anchorEl) {
     positionPopup(popupState.anchorEl);
   }
-  // Wait bubbles use the exact same map-space -> screen-space math, and
-  // this function already runs on every pan/zoom/drag frame -- piggyback
-  // on it instead of wiring up a second geometry-update loop.
+
   updateBubbleLayout();
 }
 
-// Cached instead of re-read on every gesture frame: calling
-// getBoundingClientRect() mid-gesture forces the browser to synchronously
-// recompute layout right then, which on a 30-120Hz stream of touch/pointer
-// events is exactly what produced the stutter. Refreshed once per gesture
-// (at touchstart/pointerdown) and on resize -- never mid-drag.
+
 let mapViewportRect = mapViewportEl.getBoundingClientRect();
 function refreshMapViewportRect() { mapViewportRect = mapViewportEl.getBoundingClientRect(); }
 
@@ -1024,10 +931,6 @@ function clampZoom(z) {
 }
 
 // ── zoom/pan gesture engine ──
-//
-// Anchor math: for any zoom change, solve for the pan that keeps
-// whatever image-space point was under the anchor (cursor / pinch
-// midpoint) glued to that same screen position after the zoom applies.
 function zoomAtPoint(targetZoomRaw, clientX, clientY, baseZoom, basePanX, basePanY) {
   const targetZoom = clampZoom(targetZoomRaw);
   const rect = mapViewportRect;
@@ -1043,11 +946,6 @@ function zoomAtPoint(targetZoomRaw, clientX, clientY, baseZoom, basePanX, basePa
 }
 
 // ── wheel / trackpad zoom, centered on the cursor ──
-//
-// Raw wheel events only record intent (a cumulative ratio + latest
-// cursor position); the solve + DOM write happens once per animation
-// frame, so a flood of tiny trackpad events between two paints gets
-// coalesced into a single smooth step instead of many redundant ones.
 let wheelRatioAccum = 1;
 let wheelClientX = 0, wheelClientY = 0;
 let wheelFrameQueued = false;
@@ -1070,12 +968,6 @@ mapViewportEl.addEventListener('wheel', e => {
   }
 }, { passive: false });
 
-// Double-click to step in (or reset if already maxed), centered on the
-// click. This is the one zoom gesture that's a single discrete jump
-// rather than a continuous drag, so it's the one place a brief CSS
-// transition (.map-zoom-anim, see styles.css) actually helps instead of
-// fighting live tracking -- it turns the jump into a quick, organic
-// glide instead of an instant snap.
 let zoomAnimClearTimer = null;
 mapImageEl.addEventListener('dblclick', e => {
   refreshMapViewportRect();
@@ -1138,39 +1030,10 @@ mapViewportEl.addEventListener('pointerup', endMapPan);
 mapViewportEl.addEventListener('pointercancel', endMapPan);
 
 // ── touch: single-finger pan, two-finger pinch-to-zoom ──
-//
-// touchBaseline is captured fresh every time the gesture changes shape
-// (finger added/removed), and every frame's math is solved directly
-// from that fixed baseline rather than the previous frame's output, so
-// small per-frame errors can't compound and drift the anchor away from
-// your fingers.
-//
-// CRITICAL: raw Touch/TouchList objects from the browser are only safe
-// to read SYNCHRONOUSLY, inside the event handler that received them.
-// Several mobile browsers recycle and mutate those same Touch objects
-// in place for the NEXT touch event rather than allocating new ones --
-// so if you hang onto a Touch object and read its .clientX/.clientY a
-// frame later (e.g. from inside requestAnimationFrame, which is what
-// the old code did by queuing `e.touches` itself), you can end up
-// reading coordinates that already belong to a different, later event
-// -- or a finger that has since lifted. That's exactly what produced
-// the occasional jump/drift toward a wrong (often centre-ish) point:
-// it wasn't math error, it was reading stale/rewritten touch data.
-//
-// Fix: extract plain {x, y} numbers out of the TouchList IMMEDIATELY,
-// synchronously, inside the event handler -- and only ever queue/read
-// those plain numbers afterward. Plain objects can't be mutated out
-// from under us by the browser, so the deferred, frame-coalesced
-// zoom/pan math is now reading exactly the data it was given.
-// ── touch: single-finger pan, two-finger pinch-to-zoom ──
-// Classic anchor pinch-zoom: compute the map-space point under the
-// initial midpoint ONCE at gesture start, then keep it pinned under
-// the live midpoint every frame — gives smooth simultaneous zoom+pan.
-
 let t1Id = null, t2Id = null;
 let t1 = { x: 0, y: 0 }, t2 = { x: 0, y: 0 };
-let panBase = null;   // { startX, startY, startPanX, startPanY }
-let pinchBase = null; // { imgX, imgY, startDist, startZoom }
+let panBase = null;
+let pinchBase = null; 
 let touchFlushPending = false;
 
 function startPanBase() {
@@ -1266,14 +1129,6 @@ mapViewportEl.addEventListener('touchcancel', () => {
 }, { passive: true });
 
 // ═══════════════ TOP ROUTE BAR ═══════════════
-
-// Flex-wrap breaks rows based on available width, so we can't know in
-// advance which arrow ends up at the right edge of a line — only the
-// browser knows that after layout. An arrow whose own top sits above the
-// element right after it has wrapped to a new line, meaning that arrow
-// is pointing off the edge into nothing. Hide those.
-
-
 function renderRouteBar() {
   if (!state.route.length) {
     routePlaceholderEl.style.display = 'block';
@@ -1473,11 +1328,6 @@ function renderRouteBar() {
       const chip = document.createElement('span');
       chip.className = 'wait-chip';
       chip.textContent = stop.predictedWait == null ? '--' : `${Math.round(stop.predictedWait)}m`;
-      // 'dblclick' doesn't fire reliably from real touch double-taps on
-      // mobile browsers (it's normally synthesized alongside the native
-      // double-tap-zoom gesture, which our viewport meta tag already
-      // disables) -- so detect the double-tap manually off 'click' timing
-      // instead, which fires consistently for both touch and mouse.
       chip.addEventListener('click', e => {
         e.stopPropagation();
         const now = Date.now();
@@ -1540,21 +1390,6 @@ function renderRouteBar() {
 
 // ═══════════════ ROUTE GENERATION ═══════════════
 
-/**
- * Normalizes one entry of the /api/route response into { rideId, predictedWait }.
- *
- * compute_and_print_route() returns a list of (ride_key, predicted_wait)
- * TUPLES. Flask's jsonify() serializes each tuple as a plain JSON ARRAY,
- * e.g. ["hulk", 45.2] — not an object with a `.ride_id` property. The
- * previous version of this function only handled the object shape
- * (`entry.ride_id`), so `rideId` came back `undefined` for every single
- * stop, renderRouteBar() silently skipped all of them (rideById[undefined]
- * is falsy), and the top bar rendered as blank even though a route had
- * been computed successfully. This mirrors frontEnd.py's
- * `_extract_ride_id_and_predicted_wait`, which already handled all three
- * shapes the backend might send (string / tuple-array / dict) — app.js
- * just never got the same treatment.
- */
 function extractRideIdAndWait(entry) {
   if (Array.isArray(entry)) {
     return {
@@ -1648,23 +1483,6 @@ async function generateRoute(triggerBtn) {
 
     state.route = data.map(extractRideIdAndWait);
 
-    // Remap timePinned entries onto the freshly-generated route.
-    //
-    // The old approach re-derived each pin's "instance number" by walking
-    // the NEW route left-to-right and re-counting occurrences, then hoping
-    // that count happened to match the OLD instance number the pin was
-    // filed under. That only holds if occurrence order across generations
-    // stays perfectly stable -- it isn't guaranteed to, and when it drifts
-    // the pin silently vanishes (the lookup just misses), which is exactly
-    // why a dragged "stays last" ride could quietly stop staying last after
-    // a regenerate even though the backend honored the pin correctly.
-    //
-    // Instead, anchor directly to what the backend actually guarantees:
-    // a "first" pin (targetMinutes === 0) is state.route[0], a "last" pin
-    // (targetMinutes === 1440) is the final element of state.route -- full
-    // stop, no counting required. A plain (mid-route) pin re-attaches to
-    // whichever occurrence of that ride now has a queue-join time closest
-    // to the original target.
     const oldPins = Object.values(state.timePinned);
     const newTP = {};
 
@@ -1677,10 +1495,6 @@ async function generateRoute(triggerBtn) {
 
     oldPins.forEach(pin => {
       if (pin.targetMinutes === 0) {
-        // Only relabel slot 0 as "pinned first" if the ride actually
-        // sitting there is the one that was pinned -- otherwise we'd
-        // hand the first-slot highlight to some unrelated ride just
-        // because it happened to land at index 0.
         if (state.route[0]?.rideId === pin.rideId) pinAt(0, 0);
       } else if (pin.targetMinutes === 1440) {
         const lastIdx = state.route.length - 1;
@@ -1695,10 +1509,6 @@ async function generateRoute(triggerBtn) {
         });
         if (bestIdx >= 0) pinAt(bestIdx, pin.targetMinutes);
       } else {
-        // targetMinutes === null: a "just selected" pin with no forced
-        // position (e.g. one that just got bumped off first/last by
-        // another drop). Keep it highlighted on the closest surviving
-        // instance of that ride instead of losing the selection.
         const occurrences = [];
         state.route.forEach((stop, idx) => { if (stop.rideId === pin.rideId) occurrences.push(idx); });
         if (occurrences.length) {
@@ -1710,11 +1520,6 @@ async function generateRoute(triggerBtn) {
 
     state.timePinned = newTP;
 
-    // A pin that didn't survive the regenerate (its ride got dropped, or
-    // the backend genuinely couldn't seat it) shouldn't leave behind a
-    // lock the user never asked for. Only pins that carried over above are
-    // in newTP now, so anything pin-locked that isn't referenced there
-    // anymore should release its lock.
     const stillPinnedRideIds = new Set(Object.values(newTP).map(p => p.rideId));
     Object.keys(state.pinnedLocked).forEach(rideId => {
       if (!stillPinnedRideIds.has(rideId)) {
@@ -1749,9 +1554,6 @@ async function pollStatus() {
     const res = await fetch(`${API_BASE}/api/rides`);
     if (!res.ok) return;
     const data = await res.json();
-    // data shape: { "<rideId>": { waittime, is_open }, ... } — a ride
-    // missing from this dict is "unknown" (the poller hasn't reported it
-    // yet), not "closed".
     const waits = {}, open = {};
     RIDES.forEach(r => {
       const entry = data[r.id];
@@ -1785,25 +1587,11 @@ topBarEl.addEventListener('transitionend', (e) => {
   if (e.propertyName === 'grid-template-rows') updateTogglePositions();
 });
 
-// #topBar now floats above #mapViewport (position: absolute) instead of
-// pushing it down as a flex sibling. So #mapViewport's box never changes
-// size/position as #topBar expands or collapses, and #bottomBar never
-// needs to hide itself -- it's always in flow, always in the same place.
-// #topBarToggle floats too now, so it has to be told where #topBar's live
-// bottom edge is whenever that edge can move.
-// Shared with updateTopBarMaxHeight(): the gap the map (and the arrow)
-// keep above the Back button matches whatever gap the Back button
-// already keeps from the true bottom of the screen -- read live off
-// the element so it can't drift out of sync with it.
 function getBackButtonGap() {
   const backBtnEl = document.getElementById('backBtn');
   return parseFloat(getComputedStyle(backBtnEl).paddingBottom) || 10;
 }
 
-// Floor on how short the visible map can get before it stops tracking
-// the arrow downward and just holds at this minimum instead. Matches
-// #mapViewport's own CSS min-height so the JS-computed cap and that
-// CSS floor never disagree.
 const MIN_MAP_HEIGHT = 64;
 
 function updateTogglePositions() {
@@ -1813,19 +1601,9 @@ function updateTogglePositions() {
   const toggleTop = topBarEl.offsetHeight;
   topBarToggleEl.style.top = toggleTop + 'px';
 
-  // The map's visible content should start below the arrow's own
-  // bottom edge, not underneath it -- push #mapViewport's padding-top
-  // (see styles.css) down to exactly that edge every time it moves.
+
   const toggleBottom = toggleTop + topBarToggleEl.offsetHeight;
 
-  // The map's bottom edge sits at a fixed gap above the Back button at
-  // all times, so as the arrow moves down, the map's top edge follows
-  // it and the map just gets shorter -- it doesn't slide as a whole.
-  // But only down to a point: once tracking the arrow would shrink the
-  // map below MIN_MAP_HEIGHT, the top edge stops advancing and holds
-  // there. The map stays at that minimum height -- with #topBar now
-  // overlapping the portion it can no longer make room for -- until
-  // #topBar shrinks again and there's slack to follow the arrow back up.
   const gap = getBackButtonGap();
   const bottomBarEl = document.getElementById('bottomBar');
   const available = mapPaneEl.clientHeight - bottomBarEl.offsetHeight;
@@ -1835,42 +1613,28 @@ function updateTogglePositions() {
   mapPaneEl.style.setProperty('--map-top-offset', topOffset + 'px');
   mapPaneEl.style.setProperty('--map-bottom-gap', gap + 'px');
 
-  // Changing padding-top changes #mapViewport's own clientHeight, which
-  // shifts where a zoomed/panned map should be clamped to -- recompute
-  // immediately so the image doesn't sit stale relative to its new,
-  // shorter box.
+
   if (typeof clampMapPan === 'function' && mapFitWidth) {
     clampMapPan();
     applyMapTransform();
   }
 
-  if (sidebarToggle) {
-    // mapViewport's box is static now, so this is just its (unchanging)
-    // vertical midpoint -- no longer needs topBar/toggle height at all.
-    const mapMid = mapViewportEl.offsetTop + mapViewportEl.offsetHeight / 2;
-    sidebarToggle.style.top = mapMid + 'px';
-  }
+if (sidebarToggle) {
+  // Centered on the whole map pane, not the (shrinking/shifting) map
+  // viewport -- so a long top bar pushes the viewport down without
+  // dragging the arrow with it, letting the arrow sit under/behind
+  // the top bar once it's tall enough.
+  const paneMid = mapPaneEl.clientHeight / 2;
+  sidebarToggle.style.top = paneMid + 'px';
+}
 }
 
-// Keeps #topBar's max-height in sync with how much room is actually
-// left above #bottomBar. Computed as a plain pixel number here instead
-// of a CSS calc(100% - ...) -- that percentage only resolves correctly
-// if every ancestor up to #topBar's containing block (#app -> #mapPane,
-// both sized via flex-stretch rather than an explicit height) reports a
-// definite used height, and that chain isn't reliable across every
-// browser/webview. Reading #mapPane's and #bottomBar's real rendered
-// heights directly and doing the subtraction ourselves leaves nothing
-// for the CSS engine to infer -- which is what was letting #topBar grow
-// taller than it should and shove/overlap #bottomBar.
 function updateTopBarMaxHeight() {
   const bottomBarEl = document.getElementById('bottomBar');
   const topBarToggleEl = document.getElementById('topBarToggle');
   const gap = getBackButtonGap();
 
-  // #topBar's own content should stop short of #bottomBar by however
-  // much space the arrow (which sits directly below #topBar's bottom
-  // edge) plus that gap needs -- so it's the arrow's bottom edge that
-  // ends up `gap` px above the Back button, not #topBar's content.
+
   const reserved = bottomBarEl.offsetHeight + topBarToggleEl.offsetHeight + gap;
   const maxH = mapPaneEl.clientHeight - reserved;
   mapPaneEl.style.setProperty('--topbar-max-h', Math.max(0, maxH) + 'px');
@@ -1889,13 +1653,6 @@ function init() {
   applyDarkMode();
   applyAdvancedMode();
 
-  // Recomputes map sizing/positioning whenever the image finishes loading
-  // -- both on first page load AND every time dark-mode toggling swaps
-  // mapImageEl.src to a different file. Pins don't need re-rendering here:
-  // updatePinLayout() (called via applyMapTransform) re-reads the already
-  // -cached pinElements array, so it correctly (re)positions pins that
-  // were created earlier but couldn't be placed yet because mapFitWidth
-  // was still 0 at the time.
   function refreshMapImageSizing() {
     computeMapFitWidth();
     refreshMapViewportRect();
@@ -1911,18 +1668,9 @@ function init() {
   renderPins();
   renderRouteBar();
   pollStatus();
-  updateTogglePositions(); // sets --map-top-offset before first paint settles
+  updateTogglePositions(); 
 
-  // On phones the sidebar is `position: absolute` and nearly full-width
-  // (`--sidebar-w: calc(100vw - 36px)`), and it sits ABOVE the map pane
-  // (z-index 20 vs 16). Left un-collapsed, it covers almost the entire
-  // screen on load -- including the route bar up top, which is exactly
-  // where a locked/pinned stop's gold highlighting shows up. So on a
-  // phone you could drag a ride, have it pin correctly, and never see
-  // any indication of it because the sidebar was covering the route bar
-  // the whole time. Start collapsed on narrow screens so the route is
-  // visible without the user first having to know to tap the sidebar
-  // toggle.
+
   if (window.matchMedia('(max-width: 760px)').matches) {
     sidebarEl.classList.add('collapsed');
   }

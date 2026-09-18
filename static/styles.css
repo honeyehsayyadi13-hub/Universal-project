@@ -37,10 +37,6 @@ html, body {
   color-scheme: light only;
 }
 
-/* Belt-and-suspenders against browsers' automatic dark-mode repainting:
-   some "force dark" implementations look specifically for background-color
-   (not the shorthand) on html/body, and can otherwise ignore an explicit
-   light design and paint their own dark background underneath it. */
 @media (prefers-color-scheme: dark) {
   html, body {
     background-color: #FFFFFF !important;
@@ -51,16 +47,6 @@ button { font-family: inherit; cursor: pointer; }
 input { font-family: inherit; }
 
 #app {
-  /* Fixed + inset:0 pins #app to the browser's actual visual-viewport
-     edges at all times. The old width/height: 100vw/100dvh instead
-     measures the layout viewport, which some mobile browsers (Samsung
-     Internet included) don't reliably resize when their own toolbar
-     chrome shows/hides -- #app's real box could end up shorter than
-     what's actually on screen, and the browser then cosmetically fills
-     that leftover strip with an extrapolated edge color. That's the
-     dark gap that was appearing below #bottomBar/the Back button.
-     Anchoring to inset:0 on a fixed element sidesteps the ambiguity
-     entirely -- #app's box is always exactly the visible screen. */
   position: fixed;
   inset: 0;
   display: flex;
@@ -93,7 +79,6 @@ input { font-family: inherit; }
 
 #backBtn:hover { background: var(--danger-dark); }
 #backBtn:active { transform: scale(0.98); }
-
 
 /* ═══════════════ SIDEBAR ═══════════════ */
 
@@ -225,7 +210,6 @@ input { font-family: inherit; }
 .mini-x:hover { background: var(--danger); color: var(--white); }
 
 /* ── breaks ── */
-
 .break-section {
   display: flex;
   flex-direction: column;
@@ -273,7 +257,6 @@ input { font-family: inherit; }
 .pill-btn--success:hover { background: var(--success-dark); }
 
 /* ── ride list ── */
-
 .sidebar-list {
   flex: 1;
   overflow-y: auto;
@@ -437,12 +420,6 @@ input { font-family: inherit; }
 .route-cta.flash  { background: var(--success) !important; }
 
 .route-cta--compact {
-  /* No margin-top here anymore -- it was stacking on top of
-     #topBarContent's own flex `gap`, making the space above this
-     button larger than the space below it (topBar's padding-bottom)
-     even though the numbers looked like they should match. Spacing
-     above is now purely the flex gap, which is set to equal topBar's
-     padding-bottom below -- see both. */
   padding: 10px 16px;
   font-size: 13.5px;
   align-self: center;
@@ -450,7 +427,6 @@ input { font-family: inherit; }
 }
 
 /* ═══════════════ TOGGLES ═══════════════ */
-
 .edge-toggle {
   position: absolute;
   z-index: 15;
@@ -480,17 +456,9 @@ input { font-family: inherit; }
 #sidebar.collapsed ~ .edge-toggle--left { left: 0; }
 #sidebar.collapsed ~ .edge-toggle--left svg { transform: rotate(180deg); }
 
-/* The left arrow normally sits behind #topBar (z-index 15 vs 16) so
-   the top bar can grow/overlay over it undisturbed while the sidebar
-   is closed. But while the sidebar is open, the arrow should read as
-   part of the sidebar's own UI and stay clickable/visible on top of
-   whatever #topBar is doing -- so only in that state, lift it above
-   #topBar's z-index. */
 #sidebar:not(.collapsed) ~ .edge-toggle--left { z-index: 17; }
 
 .edge-toggle--top {
-  /* Tracks the live bottom edge of #topBar via `top` (set in app.js) --
-     there's no "next flex sibling" position to fall into anymore. */
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
@@ -503,7 +471,6 @@ input { font-family: inherit; }
 #topBar:not(.collapsed) ~ .edge-toggle--top svg { transform: rotate(180deg); }
 
 /* ═══════════════ MAP PANE ═══════════════ */
-
 #mapPane {
   position: relative;
   flex: 1;
@@ -518,37 +485,23 @@ input { font-family: inherit; }
   grid-template-rows: 1fr;
   background: var(--paper);
   border-bottom: 2px solid var(--paper-line);
-  padding: 10px 12px 10px; /* bottom matches #topBarContent's gap, on purpose */
-  /* Floats above #mapViewport instead of sitting in mapPane's flex flow --
-     anchored to the top of #mapPane (its nearest positioned ancestor).
-     Height is left unset so it still just hugs its content, same as
-     before -- only the containing/stacking model changed. */
+  padding: 10px 12px 10px;
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
-  /* Grows all the way to the top edge of #bottomBar, no further.
-     --bottom-bar-h is kept live by updateBottomBarHeightVar() in app.js
-     since a fixed px number can't track safe-area insets / text wrap.
-     There's no reserved "always-visible map floor" anymore -- the map is
-     static now (see #mapViewport), so #topBar is covering it, not
-     shrinking it, and it's fine for it to go all the way down. */
+
   max-height: var(--topbar-max-h, 400px);
   z-index: 16;
   transition: grid-template-rows 0.28s ease, padding-top 0.28s ease, padding-bottom 0.28s ease, border-bottom-width 0.28s ease;
 }
 
-/* Grid items default to min-height: auto, which would stop the row from
-   ever reaching truly 0 (it'd stay pinned to the content's min-content
-   height). min-height: 0 + overflow: hidden let it collapse all the way,
-   while keeping the *content* (routeTrack + button) laid out at natural
-   size at all times -- #topBar's row track is the only thing that animates,
-   revealing more of this fixed-size content from the top as it grows. */
+
 #topBarContent {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 10px; /* matches #topBar's padding-bottom below, on purpose */
+  gap: 10px;
   min-height: 0;
   overflow: hidden;
 }
@@ -589,7 +542,6 @@ input { font-family: inherit; }
   padding: 4px 0;
 }
 
-/* NEW */
 #routeItems.active {
   display: flex;
   flex-direction: column;
@@ -636,8 +588,6 @@ input { font-family: inherit; }
   box-shadow: 0 1px 4px rgba(0,0,0,0.12);
 }
 
-
-
 /* ── draggable route stops ── */
 .route-stop[draggable="true"] { cursor: grab; }
 .route-stop[draggable="true"]:active { cursor: grabbing; }
@@ -671,7 +621,7 @@ input { font-family: inherit; }
   line-height: 1;
 }
 
-.route-pill { position: relative; }   /* needed for the ::after pin icon */
+.route-pill { position: relative; }  
 
 .route-pill img { width: 90%; height: 90%; object-fit: contain; }
 .route-pill span { font-size: 10px; font-weight: 700; text-align: center; padding: 2px; }
@@ -725,52 +675,20 @@ input { font-family: inherit; }
   opacity: 0.6; 
 }
 #mapViewport {
-  /* Pushes the map's own content down below #topBarToggle (the gray
-     arrow), which floats above the map at a live-tracked position.
-     --map-top-offset is kept in sync with that arrow's bottom edge by
-     updateTogglePositions() in app.js. Padding (not margin) so it
-     comes out of #mapViewport's own box-sizing: border-box area --
-     clampMapPan()/computeMapFitWidth() already read clientWidth/Height,
-     which already accounts for padding, so the map image and its
-     pan/zoom clamping shrink to fit above by themselves. */
   margin-top: var(--map-top-offset, 0px);
-  /* Fixed gap between the map and the Back button, matching the
-     arrow's own gap above it -- set alongside --map-top-offset in
-     updateTogglePositions() (app.js), which is also what caps how far
-     the top offset can grow so this bottom gap and the top tracking
-     never fight over the same space. */
   margin-bottom: var(--map-bottom-gap, 0px);
-  /* The only thing (besides #bottomBar) left in #mapPane's normal flex
-     flow -- #topBar and its toggle float above it now, so flex:1 here
-     always resolves to "all of mapPane's height minus #bottomBar's",
-     full stop. The map's box never changes size or position as #topBar
-     expands/collapses; #topBar just covers more or less of it. */
   flex: 1;
   min-height: 64px;
-  /* overflow:hidden, not auto -- we no longer use native scrolling at
-     all. Panning/zooming is done entirely via a CSS transform on
-     #mapInner (see app.js), which sidesteps a real browser quirk: when
-     content is centered via flexbox and then grows past the container's
-     width, browsers silently change how scrollLeft:0 maps to the
-     content's edge ("safe alignment" fallback). That's what was causing
-     the map to visibly jump sideways right as a zoom crossed that
-     threshold -- our math was correct, but the ground it was standing on
-     kept moving. A directly-controlled transform has no such ambiguity. */
   overflow: hidden;
   background: var(--white);
   position: relative;
   cursor: grab;
-  touch-action: none;  /* all pan/zoom gestures are handled by our own JS */
+  touch-action: none;  
 }
 
 #mapViewport.panning { cursor: grabbing; }
 
-
-
 #mapInner {
-  /* Absolutely positioned and moved purely via `transform` (translate +
-     scale) from app.js -- its on-screen position and size are fully
-     owned by JS state now, not by document flow or scroll. */
   position: absolute;
   top: 0;
   left: 0;
@@ -778,10 +696,6 @@ input { font-family: inherit; }
   will-change: transform;
 }
 
-/* Only applied momentarily for the double-click step-zoom (see app.js) --
-   never during a live drag/pinch/wheel, since a transition would fight
-   with (and lag behind) continuous per-frame updates there. This is what
-   turns that one discrete zoom jump into a quick organic glide. */
 #mapInner.map-zoom-anim {
   transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
 }
@@ -800,22 +714,9 @@ input { font-family: inherit; }
   filter: brightness(1.25);
 }
 
-/* pinLayer now sits OUTSIDE #mapInner (see index.html) rather than inside
-   it, specifically so it's never touched by #mapInner's CSS transform:
-   scale(). Pins were living inside the scaled element before, so shrinking
-   a pin's own size via JS was immediately undone by the ancestor's scale
-   re-enlarging it -- rendering an upscaled, blurry icon instead of a
-   crisp small one. Pins are now positioned in real screen pixels (see
-   updatePinPositions in app.js), independent of any transform.
-   pointer-events:none here lets empty space pass clicks/drags through to
-   the map underneath; individual .pin elements opt back into auto below. */
 #pinLayer { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
 
 .pin {
-  /* No circle/background/border anymore -- just the bare logo, floating
-     directly on the map. Legibility against both the light and dark map
-     comes from the drop-shadow on the image itself (below), not from a
-     filled shape behind it. */
   position: absolute;
   pointer-events: auto;
   width: 54px;
@@ -829,22 +730,12 @@ input { font-family: inherit; }
   align-items: center;
   justify-content: center;
   transition: transform 0.15s ease;
-  /* Belt-and-suspenders for touch dragging (Advanced Mode): without an
-     explicit touch-action here, mobile browsers can still intercept a
-     touch-and-hold on this element for their own gesture recognition
-     before app.js's pointer handlers get a clean, uninterrupted stream
-     of pointermove events -- touch-action:none on the ancestor
-     (#mapViewport) covers scrolling/pinch, but the pin itself also
-     needs it declared directly for reliable dragging. */
   touch-action: none;
   -webkit-user-select: none;
   user-select: none;
 }
 
 .pin img {
-  /* Prevents iOS's long-press "save image" callout menu and Android's
-     native image drag-ghost from hijacking the same touch-and-hold
-     gesture app.js is trying to use for repositioning. */
   -webkit-touch-callout: none;
   -webkit-user-drag: none;
   user-select: none;
@@ -856,28 +747,16 @@ input { font-family: inherit; }
   width: 100%;
   height: 100%;
   object-fit: contain;
-  /* brightness/saturate/contrast bump make the raw artwork punchier
-     against the map, stacked in front of the two drop-shadows below
-     (filter functions apply left-to-right, so these affect the pixels
-     first, then the shadows are cast from that brighter result). Tune
-     the three numbers to taste -- 1.0 is "no change" for all of them. */
     filter: brightness(var(--icon-brightness, 1.4)) saturate(1.4) contrast(1.1)
           drop-shadow(0 2px 4px rgba(0,0,0,0.5)) drop-shadow(0 0 2px rgba(0,0,0,0.45));
   transition: filter 0.15s ease;
 }
 
-/* Closed rides: same grayscale + drop-shadow as an open pin, just
-   faded down to a low opacity -- no red badge, no colored glow, just
-   a quieter, half-there icon signaling "not running right now". */
 .pin.closed img {
   filter: grayscale(0.6) drop-shadow(0 2px 4px rgba(0,0,0,0.5)) drop-shadow(0 0 2px rgba(0,0,0,0.45));
   opacity: 0.6; /*hon - 0.6*/
 }
 
-/* ── all-rides wait bubbles (double-tap a pin to toggle) ──
-   Styled to match .popup -- rounded rect + a downward arrow pointing at
-   the ride's pin, instead of the old plain circle with no visual link
-   back to which ride it belongs to. */
 .wait-bubble {
   position: absolute;
   pointer-events: none;
@@ -897,12 +776,6 @@ input { font-family: inherit; }
   padding: 3px 7px;
 }
 
-/* clip-path triangle instead of the border trick -- with borders, the
-   visible tip actually sits one border-width ABOVE the pseudo-element's
-   own bottom edge (not at it), which is why the arrow kept falling short
-   of the icon no matter how the offsets were tuned. top: 100% here means
-   this element starts exactly at .wait-bubble's own bottom edge with zero
-   ambiguity, and its tip is then exactly `height` (6px) below that. */
 .wait-bubble::after {
   content: '';
   position: absolute;
@@ -925,7 +798,6 @@ input { font-family: inherit; }
 }
 
 /* ═══════════════ POPUP ═══════════════ */
-
 .popup {
   position: absolute;
   z-index: 50;
@@ -944,10 +816,6 @@ input { font-family: inherit; }
   max-width: 160px;
 }
 
-/* clip-path triangle -- see .wait-bubble::after above for why this
-   replaces the old border-triangle trick. Color matches .wait-bubble's
-   teal so the single-tap popup and the double-tap all-rides bubbles
-   read as the same family of UI element. */
 .popup::after {
   content: '';
   position: absolute;
@@ -961,18 +829,12 @@ input { font-family: inherit; }
 }
 
 .popup.hidden { display: none; }
-
 .popup .wait-line { margin-top: 3px; color: var(--teal); font-weight: 700; }
 .popup .wait-line.closed { color: var(--danger); }
-
-/* When the ride is closed, recolor the whole popup (border + arrow) to
-   red, matching .pin.closed / .wait-bubble.closed's treatment, rather
-   than only the wait-line text. */
 .popup.closed { border-color: var(--danger); }
 .popup.closed::after { background: var(--danger); }
 
 /* ═══════════════ RESPONSIVE ═══════════════ */
-
 @media (max-width: 760px) {
   :root { --sidebar-w: calc(100vw - 36px); }
   #sidebar { position: absolute; inset: 0 auto 0 0; height: 100%; }
@@ -980,7 +842,6 @@ input { font-family: inherit; }
 }
 
 /* ═══════════════ MODE TOGGLES ═══════════════ */
-
 .mode-toggle-row {
   display: flex;
   justify-content: space-between;
@@ -1003,9 +864,6 @@ input { font-family: inherit; }
   white-space: nowrap;
 }
 
-/* Dark-mode map override. Specificity (id + class) beats the plain
-   #mapPane / #mapViewport rules regardless of source order, so this is
-   safe to declare anywhere in the file. */
 #mapPane.map-dark,
 #mapViewport.map-dark {
   background: var(--navy);
