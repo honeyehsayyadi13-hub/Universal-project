@@ -451,12 +451,11 @@ input { font-family: inherit; }
   width: 36px; height: 70px;
   border-radius: 10px;
   transition: left 0.28s ease;
+  z-index: 21;
 }
 
 #sidebar.collapsed ~ .edge-toggle--left { left: 0; }
 #sidebar.collapsed ~ .edge-toggle--left svg { transform: rotate(180deg); }
-
-#sidebar:not(.collapsed) ~ .edge-toggle--left { z-index: 17; }
 
 .edge-toggle--top {
   position: absolute;
