@@ -57,6 +57,7 @@ def route():
             max_counts=payload.get("max_counts"),
             close_hour=close_hour,
             close_minute=close_minute,
+            override_closed_keys=payload.get("override_closed_keys"),
             )
     except Exception as e:
         app.logger.exception("route computation failed")

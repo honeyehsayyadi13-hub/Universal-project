@@ -733,7 +733,7 @@ def _reorder_for_time_pins(order, pin_targets, histories, walk_map, durations,
 def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None,
                              breaks=None, start_time=None, start_key="entrance",
                              live_waits=None, time_pinned=None, max_counts=None,
-                             close_hour=None, close_minute=None):
+                             close_hour=None, close_minute=None, override_closed_keys=None):
     """
     Main entry point for route computation.
 
@@ -747,6 +747,10 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
         live_waits: {ride_key: current_wait_minutes} today's live readings
         time_pinned: list of {ride_key, instance_index, target_minutes} dicts
         max_counts: {ride_key: max_visits} upper limit per ride
+        override_closed_keys: iterable of ride_keys that are closed but have
+            been manually checked (Advanced Mode "yellow check") -- these
+            are exempted from RULE 1's closed-ride drop and scheduled
+            normally, using whatever live/historical wait data exists
 
     Returns:
         List of (ride_key, predicted_wait, queue_join_minutes) tuples for
@@ -763,6 +767,11 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
                 ride_locked[key] = True
 
     closed_ride_keys = set(closed_ride_keys or [])
+    override_closed_keys = set(override_closed_keys or [])
+    # A yellow-checked override wins over the closed flag entirely --
+    # remove it from the drop set so RULE 1 below treats it as a normal,
+    # open ride for scheduling purposes.
+    closed_ride_keys -= override_closed_keys
     breaks = breaks or []
 
     if start_time is None:

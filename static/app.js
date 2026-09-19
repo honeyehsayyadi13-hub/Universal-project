@@ -1391,6 +1391,7 @@ async function generateRoute(triggerBtn) {
   RIDES.forEach(r => { if (state.locked[r.id]) ride_locked[r.id] = true; });
 
   const closed_ride_keys = RIDES.filter(r => state.liveOpen[r.id] === false).map(r => r.id);
+  const override_closed_keys = RIDES.filter(r => state.closedChecked[r.id]).map(r => r.id);
   const breaks = state.breaks.map(b => [b.startMin, b.endMin]);
 
   const time_pinned = Object.values(state.timePinned)
@@ -1411,7 +1412,7 @@ async function generateRoute(triggerBtn) {
   setTimeout(() => triggerBtn.classList.remove('flash'), 220);
 
   const allCheckedClosed = Object.keys(ride_counts).length > 0 &&
-    Object.keys(ride_counts).every(id => state.liveOpen[id] === false);
+    Object.keys(ride_counts).every(id => state.liveOpen[id] === false && !state.closedChecked[id]);
   if (allCheckedClosed) {
     routePlaceholderEl.textContent = 'All rides are currently closed.';
     routePlaceholderEl.style.color = 'var(--danger)';
@@ -1432,7 +1433,7 @@ async function generateRoute(triggerBtn) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        ride_counts, ride_locked, closed_ride_keys, breaks,
+        ride_counts, ride_locked, closed_ride_keys, override_closed_keys, breaks,
         start_key: state.selectedStart,
         live_waits: state.liveWaits,
         time_pinned,
