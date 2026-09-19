@@ -1,10 +1,11 @@
 # data.py
+import os
 import requests
 from datetime import datetime
 import time
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 
 _cache: dict = {}          # last successful payload
 _cache_ts: float = 0.0     # unix timestamp of that fetch
