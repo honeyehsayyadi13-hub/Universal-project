@@ -59,6 +59,7 @@ input { font-family: inherit; }
   align-items: center;
   justify-content: center;
   gap: 14px;
+  min-height: var(--bottombar-min-h, 0px);
 }
 
 
@@ -669,7 +670,6 @@ input { font-family: inherit; }
 }
 #mapViewport {
   margin-top: var(--map-top-offset, 0px);
-  margin-bottom: var(--map-bottom-gap, 0px);
   flex: 1;
   min-height: 64px;
   overflow: hidden;

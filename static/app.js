@@ -1519,6 +1519,20 @@ function getBackButtonGap() {
 
 const MIN_MAP_HEIGHT = 64;
 
+// Reserves the same safe-area gap below the back button as the space
+// above it, by giving #bottomBar a min-height of (button height + gap)
+// instead of leaving that gap as blank margin above the bar. That way
+// the button -- centered via align-items on #bottomBar -- sits centered
+// in the full space between the bottom of the map and the bottom of the
+// screen, rather than being pushed low with a dead gap above it.
+function updateBottomBarMinHeight() {
+  const backBtnEl = document.getElementById('backBtn');
+  const gap = getBackButtonGap();
+  const minHeight = backBtnEl.offsetHeight + gap;
+  mapPaneEl.style.setProperty('--bottombar-min-h', minHeight + 'px');
+  return minHeight;
+}
+
 function updateTogglePositions() {
   const sidebarToggle = document.getElementById('sidebarToggle');
   const topBarToggleEl = document.getElementById('topBarToggle');
@@ -1530,13 +1544,12 @@ function updateTogglePositions() {
   const toggleBottom = toggleTop + topBarToggleEl.offsetHeight;
 
   const gap = getBackButtonGap();
-  const bottomBarEl = document.getElementById('bottomBar');
-  const available = mapPaneEl.clientHeight - bottomBarEl.offsetHeight;
+  const bottomBarMinHeight = updateBottomBarMinHeight();
+  const available = mapPaneEl.clientHeight - bottomBarMinHeight;
   const maxTopOffset = Math.max(0, available - gap - MIN_MAP_HEIGHT);
   const topOffset = Math.min(toggleBottom, maxTopOffset);
 
   mapPaneEl.style.setProperty('--map-top-offset', topOffset + 'px');
-  mapPaneEl.style.setProperty('--map-bottom-gap', gap + 'px');
 
 
   if (typeof clampMapPan === 'function' && mapFitWidth) {
@@ -1554,7 +1567,7 @@ if (sidebarToggle) {
   // disappearing underneath it.
   const half = sidebarToggle.offsetHeight / 2;
   const minTop = topBarEl.offsetHeight + half;
-  const maxTop = mapPaneEl.clientHeight - bottomBarEl.offsetHeight - half;
+  const maxTop = mapPaneEl.clientHeight - bottomBarMinHeight - half;
   let top = Math.max(mapPaneEl.clientHeight / 2, minTop);
   top = Math.min(top, maxTop);
   sidebarToggle.style.top = top + 'px';
@@ -1562,12 +1575,12 @@ if (sidebarToggle) {
 }
 
 function updateTopBarMaxHeight() {
-  const bottomBarEl = document.getElementById('bottomBar');
+  const bottomBarMinHeight = updateBottomBarMinHeight();
   const topBarToggleEl = document.getElementById('topBarToggle');
   const gap = getBackButtonGap();
 
 
-  const reserved = bottomBarEl.offsetHeight + topBarToggleEl.offsetHeight + gap;
+  const reserved = bottomBarMinHeight + topBarToggleEl.offsetHeight + gap;
   const maxH = mapPaneEl.clientHeight - reserved;
   mapPaneEl.style.setProperty('--topbar-max-h', Math.max(0, maxH) + 'px');
 }
