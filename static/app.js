@@ -76,6 +76,7 @@ const state = {
   maxBeforeInfinity: Object.fromEntries(RIDES.map(r => [r.id, 0])),
   maxWasZeroBeforeLock: Object.fromEntries(RIDES.map(r => [r.id, false])),
   pinnedLocked: {},
+  closedChecked: Object.fromEntries(RIDES.map(r => [r.id, false])),
 };
 
 function getInstanceIndex(route, pos) {
@@ -452,9 +453,50 @@ function renderSidebarList() {
     const row = document.createElement('div');
     row.className = 'row';
 
+    const isClosed = state.liveOpen[r.id] === false;
+
+    // A closed ride reverts to plain, non-interactive, unchecked every
+    // render -- unless someone deliberately checked it via Advanced Mode
+    // (closedChecked). That override survives leaving Advanced Mode, but
+    // the box still can't be touched again until Advanced Mode is back on.
+    if (isClosed && !state.closedChecked[r.id]) {
+      if (state.visible[r.id]) state.lastCount[r.id] = state.counts[r.id] || state.lastCount[r.id];
+      state.visible[r.id] = false;
+      state.counts[r.id] = 0;
+      state.locked[r.id] = false;
+    } else if (!isClosed && state.closedChecked[r.id]) {
+      // Ride re-opened -- the override no longer applies; treat it as a
+      // normal ride again from here on.
+      state.closedChecked[r.id] = false;
+    }
+
+    const closedOverride = isClosed && state.closedChecked[r.id];
+    const closedLocked = isClosed && !advancedModeOn;
+
     const cb = document.createElement('div');
-    cb.className = 'checkbox' + (state.visible[r.id] ? ' checked' : '');
+    cb.className = 'checkbox'
+      + (state.visible[r.id] ? ' checked' : '')
+      + (closedOverride ? ' checked-closed' : '')
+      + (closedLocked ? ' closed-disabled' : '');
     cb.addEventListener('click', () => {
+      if (isClosed) {
+        if (!advancedModeOn) return; // closed rides can't be touched outside Advanced Mode
+        if (state.closedChecked[r.id]) {
+          state.closedChecked[r.id] = false;
+          state.lastCount[r.id] = state.counts[r.id] || state.lastCount[r.id];
+          state.visible[r.id] = false;
+          state.counts[r.id] = 0;
+          state.locked[r.id] = false;
+          if (popupState.rideId === r.id) hidePopup();
+        } else {
+          state.closedChecked[r.id] = true;
+          state.visible[r.id] = true;
+          state.counts[r.id] = state.lastCount[r.id] > 0 ? state.lastCount[r.id] : 1;
+        }
+        renderSidebarList();
+        renderPins();
+        return;
+      }
       state.visible[r.id] = !state.visible[r.id];
       if (state.visible[r.id]) {
         state.counts[r.id] = state.lastCount[r.id];
@@ -1492,6 +1534,7 @@ async function pollStatus() {
     });
     state.liveWaits = waits;
     state.liveOpen  = open;
+    renderSidebarList();
     renderPins();
     if (showWaitBubbles) renderWaitBubbles(); // keep bubble text fresh while they're showing
     if (popupState.rideId) showPopup(popupState.rideId, [...pinLayerEl.children].find(p => p.querySelector('img')?.alt === rideById[popupState.rideId]?.name));

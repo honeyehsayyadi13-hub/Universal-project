@@ -306,6 +306,12 @@ input { font-family: inherit; }
   transform: rotate(-45deg) translate(0, -1px);
 }
 
+/* Closed ride, checked via Advanced Mode override -- yellow instead of green */
+.checkbox.checked-closed { background: var(--gold); border-color: var(--gold-dark); }
+
+/* Closed ride, not overridden and Advanced Mode is off -- not interactive */
+.checkbox.closed-disabled { opacity: 0.4; cursor: default; }
+
 .ride-name {
   flex: 1;
   min-width: 0;
