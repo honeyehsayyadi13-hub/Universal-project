@@ -101,7 +101,12 @@ ANCHOR_RATIO_MAX = 4.0           # max ratio clamp for live anchor
 DEFAULT_WAIT_MIN = 30            # fallback if a ride has zero usable history
 DEFAULT_WALK_MIN = 10            # fallback if a ride pair has no walk_times row
 DEFAULT_RIDE_DURATION_MIN = 3    # fallback if a ride has no ride_duration row
-BRUTE_FORCE_LIMIT = 8            # exact solve (permutations) up to this many stops
+BRUTE_FORCE_LIMIT = 7            # exact solve (permutations) up to this many stops -- each
+                                  # extra stop multiplies the brute-force search by roughly
+                                  # that many times over, so keeping this small matters a lot
+MAX_2OPT_PASSES = 3              # cap full 2-opt sweeps for larger stop lists -- most of the
+                                  # improvement happens in the first couple of passes, so this
+                                  # avoids looping until full convergence on big lists
 DEFAULT_PARK_CLOSE_HOUR = 20     # 8:00 PM -- fallback used only when live park hours can't be fetched
 DEFAULT_PARK_CLOSE_MINUTE = 0
 ENTRANCE_DB_ID = 0               # matches the "id" of the entrance row in `rides`
@@ -445,8 +450,10 @@ def _solve_order(db_ids, histories, walk_map, durations, start_time, closing_tim
     score = (fits, total)
 
     improved = True
-    while improved:
+    passes = 0
+    while improved and passes < MAX_2OPT_PASSES:
         improved = False
+        passes += 1
         for i in range(len(order) - 1):
             for j in range(i + 1, len(order)):
                 candidate = order[:i] + order[i:j + 1][::-1] + order[j + 1:]
@@ -461,6 +468,37 @@ def _solve_order(db_ids, histories, walk_map, durations, start_time, closing_tim
 
 
 # ── forced (locked + counted-up) scheduling ───────────────────────────
+def _quick_fits_count(db_ids, histories, walk_map, durations, start_time, closing_time, break_windows, start_db_id,
+                       current_waits=None, historical_now_by_id=None):
+    """
+    Cheap feasibility check used ONLY to decide which forced items survive
+    the elimination loop below -- a plain nearest-neighbor ordering, with
+    no 2-opt/brute-force optimization pass. This is much faster than a
+    full _solve_order call, which matters a lot here since the elimination
+    loop may need to re-check feasibility many times over as items get
+    dropped one at a time. The actual best-possible order for whichever
+    items survive is still computed once, properly, right after this loop
+    decides the final surviving set -- this function only ever affects how
+    many items get dropped, never the final route quality for the ones
+    that are kept.
+    """
+    if not db_ids:
+        return 0
+    remaining = list(db_ids)
+    order = []
+    last = start_db_id
+    while remaining:
+        nxt = min(remaining, key=lambda r: _walk_time(walk_map, last, r))
+        order.append(nxt)
+        remaining.remove(nxt)
+        last = nxt
+    fits, _, _ = _route_score(
+        order, histories, walk_map, durations, start_time, closing_time, break_windows, start_db_id,
+        current_waits=current_waits, historical_now_by_id=historical_now_by_id
+    )
+    return fits
+
+
 def _fit_forced(forced_items, histories, walk_map, durations, start_time, closing_time, break_windows, start_db_id,
                  current_waits=None, historical_now_by_id=None):
     """
@@ -468,18 +506,28 @@ def _fit_forced(forced_items, histories, walk_map, durations, start_time, closin
     If they don't all fit before closing, drop the lowest-priority ones --
     EXTRA (counted-up) visits first, then LOCKED base visits.
     Returns (kept_items, dropped_items, order, details).
+
+    The elimination loop below uses the cheap `_quick_fits_count` check
+    rather than a full `_solve_order` on every iteration -- with a lot of
+    locked/counted rides that don't all fit, the old approach re-ran full
+    brute-force/2-opt optimization once per dropped item, which compounds
+    fast. The full optimization now only runs once, on the final surviving
+    set, right before returning.
     """
     forced_items = list(forced_items)
     dropped = []
 
     while forced_items:
         ids = [it["db_id"] for it in forced_items]
-        order, _, details = _solve_order(
+        fits = _quick_fits_count(
             ids, histories, walk_map, durations, start_time, closing_time, break_windows, start_db_id,
             current_waits=current_waits, historical_now_by_id=historical_now_by_id
         )
-        fits = sum(1 for d in details if d["queue_join_clock"] <= closing_time)
         if fits >= len(forced_items):
+            order, _, details = _solve_order(
+                ids, histories, walk_map, durations, start_time, closing_time, break_windows, start_db_id,
+                current_waits=current_waits, historical_now_by_id=historical_now_by_id
+            )
             return forced_items, dropped, order, details
 
         drop_kind = "extra" if any(it["kind"] == "extra" for it in forced_items) else "locked"
