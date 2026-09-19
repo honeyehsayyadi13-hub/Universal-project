@@ -790,7 +790,12 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
 
     try:
         key_to_id, id_to_key = _load_ride_id_map()
-    except Exception:
+    except Exception as e:
+        import traceback
+        print("DEBUG route computation failed while loading ride ID map:")
+        print("DEBUG SUPABASE_URL =", repr(SUPABASE_URL))
+        print("DEBUG SUPABASE_KEY set? ", bool(SUPABASE_KEY))
+        traceback.print_exc()
         return None
 
     checked = {k: c for k, c in checked.items() if k in key_to_id}
