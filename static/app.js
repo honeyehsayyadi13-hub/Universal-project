@@ -1528,7 +1528,11 @@ const MIN_MAP_HEIGHT = 64;
 function updateBottomBarMinHeight() {
   const backBtnEl = document.getElementById('backBtn');
   const gap = getBackButtonGap();
-  const minHeight = backBtnEl.offsetHeight + gap;
+  // Reserve the gap on BOTH sides of the button -- above it (between the
+  // button and the map) and below it (between the button and the screen
+  // edge) -- so centering produces a real, visible symmetric strip
+  // instead of collapsing back down to just the button's own size.
+  const minHeight = backBtnEl.offsetHeight + gap * 2;
   mapPaneEl.style.setProperty('--bottombar-min-h', minHeight + 'px');
   return minHeight;
 }
