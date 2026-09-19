@@ -323,6 +323,8 @@ input { font-family: inherit; }
   color: #EDF1F5;
 }
 
+.ride-name.ride-name-closed { color: var(--danger); }
+
 .spinner {
   flex-shrink: 0;
   display: flex;

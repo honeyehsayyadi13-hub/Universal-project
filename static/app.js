@@ -511,7 +511,7 @@ function renderSidebarList() {
     });
 
     const name = document.createElement('span');
-    name.className = 'ride-name';
+    name.className = 'ride-name' + (isClosed ? ' ride-name-closed' : '');
     // displayName (if set on a RIDES entry) overrides just the sidebar
     // label -- everything else (popup title... see showPopup below,
     // pin/img alt text, route-pill fallback text) still reads r.name.
