@@ -277,6 +277,16 @@ input { font-family: inherit; }
 .row.break-row { justify-content: space-between; }
 
 /* ── Advanced Mode tier-drag view ── */
+.tier-block {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.09);
+  border-radius: 10px;
+  margin: 0 0 10px;
+  overflow: hidden;
+}
+
+.tier-block:first-child { margin-top: 2px; }
+
 .tier-divider {
   font-family: 'Baloo 2', sans-serif;
   font-size: 11px;
@@ -284,24 +294,45 @@ input { font-family: inherit; }
   letter-spacing: 0.4px;
   text-transform: uppercase;
   color: var(--gold);
-  padding: 10px 4px 4px;
-  border-top: 1px solid rgba(255,255,255,0.12);
-  margin-top: 4px;
+  background: rgba(0,0,0,0.22);
+  padding: 7px 10px;
+  border-bottom: 1px solid rgba(255,255,255,0.09);
 }
 
-.tier-divider:first-child { border-top: none; margin-top: 0; padding-top: 2px; }
-
-.tier-group { display: flex; flex-direction: column; min-height: 20px; }
-
-.tier-group.drag-over {
-  outline: 2px dashed var(--gold);
-  outline-offset: -2px;
-  border-radius: 6px;
+.tier-group {
+  display: flex;
+  flex-direction: column;
+  min-height: 36px;
+  padding: 2px 4px;
+  transition: background 0.12s ease;
 }
 
+.tier-group.drag-over { background: rgba(231, 169, 60, 0.14); }
+
+.tier-empty {
+  font-size: 11.5px;
+  font-style: italic;
+  color: #93A0B2;
+  text-align: center;
+  padding: 8px 4px;
+}
+
+.row.tier-row { border-bottom: 1px solid rgba(255,255,255,0.06); }
+.row.tier-row:last-child { border-bottom: none; }
 .row.tier-row[draggable="true"] { cursor: grab; }
 .row.tier-row[draggable="true"]:active { cursor: grabbing; }
 .row.tier-row.dragging { opacity: 0.35; }
+
+.drag-handle {
+  flex-shrink: 0;
+  width: 12px;
+  text-align: center;
+  color: #6B7686;
+  font-size: 13px;
+  line-height: 1;
+  cursor: grab;
+  user-select: none;
+}
 
 .break-row-label {
   font-size: 12.5px;

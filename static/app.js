@@ -677,10 +677,18 @@ function buildRideRow(r) {
 // tier a ride ends up in.
 function renderTieredRideList() {
   for (let tier = 1; tier <= 4; tier++) {
+    // Each tier is its own visually self-contained card (border + background
+    // + a solid-banner label) rather than a bare text divider sitting
+    // directly among the rows -- at small sizes a plain colored label next
+    // to colored (closed-ride) row text was hard to visually separate from
+    // the rows themselves.
+    const block = document.createElement('div');
+    block.className = 'tier-block';
+
     const divider = document.createElement('div');
     divider.className = 'tier-divider';
     divider.textContent = `Tier ${tier} — ${TIER_LABELS[tier - 1]}`;
-    sidebarListEl.appendChild(divider);
+    block.appendChild(divider);
 
     const group = document.createElement('div');
     group.className = 'tier-group';
@@ -702,10 +710,27 @@ function renderTieredRideList() {
       renderSidebarList();
     });
 
-    RIDES.filter(r => state.rideTiers[r.id] === tier).forEach(r => {
+    const ridesInTier = RIDES.filter(r => state.rideTiers[r.id] === tier);
+    if (!ridesInTier.length) {
+      const empty = document.createElement('div');
+      empty.className = 'tier-empty';
+      empty.textContent = 'Drop a ride here';
+      group.appendChild(empty);
+    }
+
+    ridesInTier.forEach(r => {
       const row = buildRideRow(r);
       row.classList.add('tier-row');
       row.draggable = true;
+
+      // A visible grip icon makes it obvious the row can be dragged --
+      // without one, nothing in a dense row full of small buttons signals
+      // that the whole row itself (not just a control) is interactive.
+      const handle = document.createElement('span');
+      handle.className = 'drag-handle';
+      handle.textContent = '⠿';
+      row.insertBefore(handle, row.firstChild);
+
       row.addEventListener('dragstart', e => {
         e.dataTransfer.setData('text/plain', r.id);
         e.dataTransfer.effectAllowed = 'move';
@@ -715,7 +740,8 @@ function renderTieredRideList() {
       group.appendChild(row);
     });
 
-    sidebarListEl.appendChild(group);
+    block.appendChild(group);
+    sidebarListEl.appendChild(block);
   }
 }
 
