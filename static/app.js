@@ -668,7 +668,12 @@ function renderPins() {
   pinLayerEl.innerHTML = '';
   pinElements = [];
   RIDES.forEach(r => {
-    if (!state.visible[r.id]) return;
+    const isClosed = state.liveOpen[r.id] === false;
+    // A closed ride always still shows on the map, transparent, even though
+    // it's auto-unchecked in the sidebar -- same as a ride that's simply not
+    // selected while the park is open shouldn't be confused with one that's
+    // actually closed. Only a genuinely deselected-but-open ride is skipped.
+    if (!state.visible[r.id] && !isClosed) return;
     const pin = document.createElement('button');
     pin.className = 'pin';
     if (state.liveOpen[r.id] === false) pin.classList.add('closed');
