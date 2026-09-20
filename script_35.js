@@ -1,1 +1,0 @@
-freestar.queue.push(function(){ freestar.newAdSlots([{ placementName:"thrill-data-com_leaderboard_atf", slotId:"freestar-ad-lb", publisher:"thrill-data-com" }]); });

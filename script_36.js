@@ -1,1 +1,0 @@
-freestar.queue.push(function(){ freestar.newAdSlots([{ placementName:"thrill-data-com_160x600_sticky_left", slotId:"freestar-ad-sl", publisher:"thrill-data-com" }]); });
