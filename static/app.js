@@ -77,6 +77,7 @@ const state = {
   maxWasZeroBeforeLock: Object.fromEntries(RIDES.map(r => [r.id, false])),
   pinnedLocked: {},
   closedChecked: Object.fromEntries(RIDES.map(r => [r.id, false])),
+  rideTiers: null, // filled in below, once DEFAULT_RIDE_TIERS exists
 };
 
 function getInstanceIndex(route, pos) {
@@ -132,6 +133,42 @@ function getInitialDarkMode() {
 let darkModeOn = getInitialDarkMode();
 let advancedModeOn = localStorage.getItem(ADVANCED_MODE_KEY) === 'true';
 
+// ── ride priority tiers (Advanced Mode drag-to-rank) ──────────────
+// Tier 1 = most important, 4 = least. Drives ONLY how leftover daylight
+// gets filled once every checked/locked ride's guaranteed visits are
+// already scheduled (see routeOptimizer.py's TIER_WEIGHTS) -- this
+// replaces the old hardcoded per-ride weight dict that used to live
+// entirely server-side.
+const RIDE_TIERS_KEY = 'urp.rideTiers';
+const DEFAULT_RIDE_TIERS = {
+  velociCoaster: 1, hulk: 1, hagrid: 1,
+  harryPotter: 2, spiderMan: 2, hippogriff: 2,
+  stormForce: 3, doctorDoom: 3, skullIsland: 3, hogwartsTrain: 3, riverAdventure: 3,
+  caroSeussel: 4, oneFishtwoFish: 4, drSeussAirRide: 4, catInTheHat: 4, ripsawFalls: 4, bilgeRat: 4,
+};
+const TIER_LABELS = ['Most Important', 'Important', 'Less Important', 'Least Important'];
+
+function getInitialRideTiers() {
+  let stored = null;
+  try { stored = JSON.parse(localStorage.getItem(RIDE_TIERS_KEY) || 'null'); } catch (e) { stored = null; }
+  const tiers = {};
+  RIDES.forEach(r => {
+    const val = stored && stored[r.id];
+    // A saved pick always wins once one exists. Anything missing or
+    // invalid there (e.g. a ride added since the person last saved)
+    // falls to the bottom tier -- "if you don't know, it goes in the
+    // bottom row" -- rather than back to the DEFAULT_RIDE_TIERS pick.
+    tiers[r.id] = stored ? ([1, 2, 3, 4].includes(val) ? val : 4) : (DEFAULT_RIDE_TIERS[r.id] || 4);
+  });
+  return tiers;
+}
+
+function saveRideTiers() {
+  try { localStorage.setItem(RIDE_TIERS_KEY, JSON.stringify(state.rideTiers)); } catch (e) {}
+}
+
+state.rideTiers = getInitialRideTiers();
+
 function applyDarkMode() {
   const mapPaneEl = document.getElementById('mapPane');
   mapPaneEl?.classList.toggle('map-dark', darkModeOn);
@@ -154,6 +191,7 @@ document.getElementById('advancedModeToggle')?.addEventListener('click', () => {
   advancedModeOn = !advancedModeOn;
   localStorage.setItem(ADVANCED_MODE_KEY, advancedModeOn);
   applyAdvancedMode();
+  renderSidebarList(); // switch between the flat list and the tier-drag view
 });
 
 document.getElementById('darkModeToggle')?.addEventListener('click', () => {
@@ -428,6 +466,259 @@ $('#addPresetBtn').addEventListener('click', addPreset);
 
 // ═══════════════ SIDEBAR RIDE LIST ═══════════════
 
+// Builds one ride's row (checkbox, name, both spinners, lock button) --
+// identical logic to before, just returned rather than appended, so both
+// the flat list (Advanced Mode off) and the tiered drag view (on) can
+// reuse it.
+function buildRideRow(r) {
+  const row = document.createElement('div');
+  row.className = 'row';
+
+  const isClosed = state.liveOpen[r.id] === false;
+
+  // A closed ride reverts to plain, non-interactive, unchecked every
+  // render -- unless someone deliberately checked it via Advanced Mode
+  // (closedChecked). That override survives leaving Advanced Mode, but
+  // the box still can't be touched again until Advanced Mode is back on.
+  if (isClosed && !state.closedChecked[r.id]) {
+    if (state.visible[r.id]) state.lastCount[r.id] = state.counts[r.id] || state.lastCount[r.id];
+    state.visible[r.id] = false;
+    state.counts[r.id] = 0;
+    state.locked[r.id] = false;
+  } else if (!isClosed && state.closedChecked[r.id]) {
+    // Ride re-opened -- the override no longer applies; treat it as a
+    // normal ride again from here on.
+    state.closedChecked[r.id] = false;
+  }
+
+  const closedOverride = isClosed && state.closedChecked[r.id];
+  const closedLocked = isClosed && !advancedModeOn;
+
+  const cb = document.createElement('div');
+  cb.className = 'checkbox'
+    + (state.visible[r.id] ? ' checked' : '')
+    + (closedOverride ? ' checked-closed' : '')
+    + (closedLocked ? ' closed-disabled' : '');
+  cb.addEventListener('click', () => {
+    if (isClosed) {
+      if (!advancedModeOn) return; // closed rides can't be touched outside Advanced Mode
+      if (state.closedChecked[r.id]) {
+        state.closedChecked[r.id] = false;
+        state.lastCount[r.id] = state.counts[r.id] || state.lastCount[r.id];
+        state.visible[r.id] = false;
+        state.counts[r.id] = 0;
+        state.locked[r.id] = false;
+        if (popupState.rideId === r.id) hidePopup();
+      } else {
+        state.closedChecked[r.id] = true;
+        state.visible[r.id] = true;
+        state.counts[r.id] = state.lastCount[r.id] > 0 ? state.lastCount[r.id] : 1;
+      }
+      renderSidebarList();
+      renderPins();
+      return;
+    }
+    state.visible[r.id] = !state.visible[r.id];
+    if (state.visible[r.id]) {
+      state.counts[r.id] = state.lastCount[r.id];
+    } else {
+      state.lastCount[r.id] = state.counts[r.id];
+      state.counts[r.id] = 0;
+      state.locked[r.id] = false;
+      if (popupState.rideId === r.id) hidePopup();
+    }
+    renderSidebarList();
+    renderPins();
+  });
+
+  const name = document.createElement('span');
+  name.className = 'ride-name' + (isClosed ? ' ride-name-closed' : '');
+  name.textContent = (r.displayName ?? r.name).replace(/\n/g, ' ');
+
+  const spinner = document.createElement('div');
+  spinner.className = 'spinner';
+
+  const down = document.createElement('button');
+  down.className = 'spin-btn';
+  down.disabled = state.counts[r.id] <= 0;
+  down.innerHTML = '<svg viewBox="0 0 10 10"><polygon points="1,2 9,2 5,8"/></svg>';
+  down.addEventListener('click', () => {
+    const old = state.counts[r.id];
+    const next = Math.max(0, old - 1);
+    state.counts[r.id] = next;
+    if (old === 2 && next === 1) {
+      state.locked[r.id] = state.lockBeforeBump[r.id];
+      if (!state.lockBeforeBump[r.id] && state.maxWasZeroBeforeLock[r.id]) {
+        state.maxCounts[r.id] = 0;
+        state.maxWasZeroBeforeLock[r.id] = false;
+      }
+    }
+    if (next === 0 && old > 0) {
+      state.lastCount[r.id] = old;
+      state.visible[r.id] = false;
+      state.locked[r.id] = false;
+      if (popupState.rideId === r.id) hidePopup();
+    }
+    renderSidebarList();
+    renderPins();
+  });
+
+  const count = document.createElement('span');
+  count.className = 'spin-count';
+  count.textContent = state.counts[r.id];
+
+  const up = document.createElement('button');
+  up.className = 'spin-btn';
+  up.innerHTML = '<svg viewBox="0 0 10 10"><polygon points="1,8 9,8 5,2"/></svg>';
+  up.addEventListener('click', () => {
+    const old = state.counts[r.id];
+    state.counts[r.id] = old + 1;
+    if (!state.visible[r.id]) state.visible[r.id] = true;
+    if (old === 1) {
+      state.lockBeforeBump[r.id] = state.locked[r.id];
+      state.locked[r.id] = true;
+      if (state.maxCounts[r.id] === 0) {
+        state.maxWasZeroBeforeLock[r.id] = true;
+        state.maxCounts[r.id] = 1;
+      } else {
+        state.maxWasZeroBeforeLock[r.id] = false;
+      }
+    }
+    renderSidebarList();
+    renderPins();
+  });
+
+  spinner.append(down, count, up);
+
+  const maxSpinner = document.createElement('div');
+  maxSpinner.className = 'spinner';
+
+  const maxDown = document.createElement('button');
+  maxDown.className = 'spin-btn max-spin-btn';
+  maxDown.disabled = state.maxCounts[r.id] !== Infinity && (
+    state.maxCounts[r.id] === 0 ||
+    (state.locked[r.id] && state.maxCounts[r.id] <= 1)
+  );
+  maxDown.innerHTML = '<svg viewBox="0 0 10 10"><polygon points="1,2 9,2 5,8"/></svg>';
+  maxDown.addEventListener('click', () => {
+    const floor = state.locked[r.id] ? 1 : 0;
+    if (state.maxCounts[r.id] === Infinity) {
+      state.maxCounts[r.id] = Math.max(floor, state.maxBeforeInfinity[r.id] || 0);
+    } else {
+      state.maxCounts[r.id] = Math.max(floor, state.maxCounts[r.id] - 1);
+    }
+    renderSidebarList();
+  });
+
+  const maxCountEl = document.createElement('span');
+  maxCountEl.className = 'spin-count max-count';
+  maxCountEl.textContent = state.maxCounts[r.id] === Infinity ? '∞' : state.maxCounts[r.id];
+
+  const maxUp = document.createElement('button');
+  maxUp.className = 'spin-btn max-spin-btn';
+  maxUp.innerHTML = '<svg viewBox="0 0 10 10"><polygon points="1,8 9,8 5,2"/></svg>';
+  maxUp.addEventListener('click', () => {
+    if (state.maxCounts[r.id] === Infinity) {
+      state.maxCounts[r.id] = (state.maxBeforeInfinity[r.id] > 0 ? state.maxBeforeInfinity[r.id] : 0) + 1;
+    } else {
+      state.maxCounts[r.id]++;
+    }
+    renderSidebarList();
+  });
+
+  maxSpinner.append(maxDown, maxCountEl, maxUp);
+
+  const infBtn = document.createElement('button');
+  infBtn.className = 'infinity-btn' + (state.maxCounts[r.id] === Infinity ? ' active' : '');
+  infBtn.textContent = '∞';
+  infBtn.title = 'No maximum';
+  infBtn.addEventListener('click', () => {
+    if (state.maxCounts[r.id] !== Infinity) {
+      state.maxBeforeInfinity[r.id] = state.maxCounts[r.id];
+      state.maxCounts[r.id] = Infinity;
+      renderSidebarList();
+    }
+  });
+
+  const lockable = state.visible[r.id] && state.counts[r.id] > 0;
+  if (!lockable) state.locked[r.id] = false;
+  const lock = document.createElement('button');
+  lock.className = 'lock-btn' + (state.locked[r.id] ? ' locked' : '') + (lockable ? '' : ' disabled');
+  lock.innerHTML = state.locked[r.id]
+    ? '<svg viewBox="0 0 14 14"><rect x="3" y="6" width="8" height="6" rx="1"/><path d="M4.5 6V4a2.5 2.5 0 0 1 5 0v2"/></svg>'
+    : '<svg viewBox="0 0 14 14"><rect x="3" y="6" width="8" height="6" rx="1"/><path d="M4.5 6V4a2.5 2.5 0 0 1 5 0"/></svg>';
+  lock.addEventListener('click', () => {
+    if (!lockable) return;
+    const newLocked = !state.locked[r.id];
+    state.locked[r.id] = newLocked;
+    if (newLocked) {
+      if (state.maxCounts[r.id] === 0) {
+        state.maxWasZeroBeforeLock[r.id] = true;
+        state.maxCounts[r.id] = 1;
+      } else {
+        state.maxWasZeroBeforeLock[r.id] = false;
+      }
+    } else {
+      if (state.maxWasZeroBeforeLock[r.id]) {
+        state.maxCounts[r.id] = 0;
+        state.maxWasZeroBeforeLock[r.id] = false;
+      }
+    }
+    renderSidebarList();
+  });
+
+  row.append(cb, name, spinner, maxSpinner, infBtn, lock);
+  return row;
+}
+
+// Advanced Mode's view: 4 draggable tiers, divided by labeled bars.
+// Dropping a row into a different tier's group updates and persists its
+// tier -- order within a tier doesn't matter to the backend, only which
+// tier a ride ends up in.
+function renderTieredRideList() {
+  for (let tier = 1; tier <= 4; tier++) {
+    const divider = document.createElement('div');
+    divider.className = 'tier-divider';
+    divider.textContent = `Tier ${tier} — ${TIER_LABELS[tier - 1]}`;
+    sidebarListEl.appendChild(divider);
+
+    const group = document.createElement('div');
+    group.className = 'tier-group';
+    group.dataset.tier = tier;
+
+    group.addEventListener('dragover', e => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      group.classList.add('drag-over');
+    });
+    group.addEventListener('dragleave', () => group.classList.remove('drag-over'));
+    group.addEventListener('drop', e => {
+      e.preventDefault();
+      group.classList.remove('drag-over');
+      const rideId = e.dataTransfer.getData('text/plain');
+      if (!rideId || !(rideId in state.rideTiers) || state.rideTiers[rideId] === tier) return;
+      state.rideTiers[rideId] = tier;
+      saveRideTiers();
+      renderSidebarList();
+    });
+
+    RIDES.filter(r => state.rideTiers[r.id] === tier).forEach(r => {
+      const row = buildRideRow(r);
+      row.classList.add('tier-row');
+      row.draggable = true;
+      row.addEventListener('dragstart', e => {
+        e.dataTransfer.setData('text/plain', r.id);
+        e.dataTransfer.effectAllowed = 'move';
+        row.classList.add('dragging');
+      });
+      row.addEventListener('dragend', () => row.classList.remove('dragging'));
+      group.appendChild(row);
+    });
+
+    sidebarListEl.appendChild(group);
+  }
+}
+
 function renderSidebarList() {
   sidebarListEl.innerHTML = '';
 
@@ -449,212 +740,11 @@ function renderSidebarList() {
     sidebarListEl.appendChild(row);
   });
 
-  RIDES.forEach(r => {
-    const row = document.createElement('div');
-    row.className = 'row';
-
-    const isClosed = state.liveOpen[r.id] === false;
-
-    // A closed ride reverts to plain, non-interactive, unchecked every
-    // render -- unless someone deliberately checked it via Advanced Mode
-    // (closedChecked). That override survives leaving Advanced Mode, but
-    // the box still can't be touched again until Advanced Mode is back on.
-    if (isClosed && !state.closedChecked[r.id]) {
-      if (state.visible[r.id]) state.lastCount[r.id] = state.counts[r.id] || state.lastCount[r.id];
-      state.visible[r.id] = false;
-      state.counts[r.id] = 0;
-      state.locked[r.id] = false;
-    } else if (!isClosed && state.closedChecked[r.id]) {
-      // Ride re-opened -- the override no longer applies; treat it as a
-      // normal ride again from here on.
-      state.closedChecked[r.id] = false;
-    }
-
-    const closedOverride = isClosed && state.closedChecked[r.id];
-    const closedLocked = isClosed && !advancedModeOn;
-
-    const cb = document.createElement('div');
-    cb.className = 'checkbox'
-      + (state.visible[r.id] ? ' checked' : '')
-      + (closedOverride ? ' checked-closed' : '')
-      + (closedLocked ? ' closed-disabled' : '');
-    cb.addEventListener('click', () => {
-      if (isClosed) {
-        if (!advancedModeOn) return; // closed rides can't be touched outside Advanced Mode
-        if (state.closedChecked[r.id]) {
-          state.closedChecked[r.id] = false;
-          state.lastCount[r.id] = state.counts[r.id] || state.lastCount[r.id];
-          state.visible[r.id] = false;
-          state.counts[r.id] = 0;
-          state.locked[r.id] = false;
-          if (popupState.rideId === r.id) hidePopup();
-        } else {
-          state.closedChecked[r.id] = true;
-          state.visible[r.id] = true;
-          state.counts[r.id] = state.lastCount[r.id] > 0 ? state.lastCount[r.id] : 1;
-        }
-        renderSidebarList();
-        renderPins();
-        return;
-      }
-      state.visible[r.id] = !state.visible[r.id];
-      if (state.visible[r.id]) {
-        state.counts[r.id] = state.lastCount[r.id];
-      } else {
-        state.lastCount[r.id] = state.counts[r.id];
-        state.counts[r.id] = 0;
-        state.locked[r.id] = false;
-        if (popupState.rideId === r.id) hidePopup();
-      }
-      renderSidebarList();
-      renderPins();
-    });
-
-    const name = document.createElement('span');
-    name.className = 'ride-name' + (isClosed ? ' ride-name-closed' : '');
-    // displayName (if set on a RIDES entry) overrides just the sidebar
-    // label -- everything else (popup title... see showPopup below,
-    // pin/img alt text, route-pill fallback text) still reads r.name.
-    name.textContent = (r.displayName ?? r.name).replace(/\n/g, ' ');
-
-    // ── min (white) spinner ──────────────────────────────────────
-    const spinner = document.createElement('div');
-    spinner.className = 'spinner';
-
-    const down = document.createElement('button');
-    down.className = 'spin-btn';
-    down.disabled = state.counts[r.id] <= 0;
-    down.innerHTML = '<svg viewBox="0 0 10 10"><polygon points="1,2 9,2 5,8"/></svg>';
-    down.addEventListener('click', () => {
-      const old = state.counts[r.id];
-      const next = Math.max(0, old - 1);
-      state.counts[r.id] = next;
-      if (old === 2 && next === 1) {
-        state.locked[r.id] = state.lockBeforeBump[r.id];
-        if (!state.lockBeforeBump[r.id] && state.maxWasZeroBeforeLock[r.id]) {
-          state.maxCounts[r.id] = 0;
-          state.maxWasZeroBeforeLock[r.id] = false;
-        }
-      }
-      if (next === 0 && old > 0) {
-        state.lastCount[r.id] = old;
-        state.visible[r.id] = false;
-        state.locked[r.id] = false;
-        if (popupState.rideId === r.id) hidePopup();
-      }
-      renderSidebarList();
-      renderPins();
-    });
-
-    const count = document.createElement('span');
-    count.className = 'spin-count';
-    count.textContent = state.counts[r.id];
-
-    const up = document.createElement('button');
-    up.className = 'spin-btn';
-    up.innerHTML = '<svg viewBox="0 0 10 10"><polygon points="1,8 9,8 5,2"/></svg>';
-    up.addEventListener('click', () => {
-      const old = state.counts[r.id];
-      state.counts[r.id] = old + 1;
-      if (!state.visible[r.id]) state.visible[r.id] = true;
-      if (old === 1) {
-        state.lockBeforeBump[r.id] = state.locked[r.id];
-        state.locked[r.id] = true;
-        if (state.maxCounts[r.id] === 0) {
-          state.maxWasZeroBeforeLock[r.id] = true;
-          state.maxCounts[r.id] = 1;
-        } else {
-          state.maxWasZeroBeforeLock[r.id] = false;
-        }
-      }
-      renderSidebarList();
-      renderPins();
-    });
-
-    spinner.append(down, count, up);
-
-    // ── max (maroon) spinner ─────────────────────────────────────
-    const maxSpinner = document.createElement('div');
-    maxSpinner.className = 'spinner';
-
-    const maxDown = document.createElement('button');
-    maxDown.className = 'spin-btn max-spin-btn';
-    maxDown.disabled = state.maxCounts[r.id] !== Infinity && (
-      state.maxCounts[r.id] === 0 ||
-      (state.locked[r.id] && state.maxCounts[r.id] <= 1)
-    );
-    maxDown.innerHTML = '<svg viewBox="0 0 10 10"><polygon points="1,2 9,2 5,8"/></svg>';
-    maxDown.addEventListener('click', () => {
-      const floor = state.locked[r.id] ? 1 : 0;
-      if (state.maxCounts[r.id] === Infinity) {
-        state.maxCounts[r.id] = Math.max(floor, state.maxBeforeInfinity[r.id] || 0);
-      } else {
-        state.maxCounts[r.id] = Math.max(floor, state.maxCounts[r.id] - 1);
-      }
-      renderSidebarList();
-    });
-
-    const maxCountEl = document.createElement('span');
-    maxCountEl.className = 'spin-count max-count';
-    maxCountEl.textContent = state.maxCounts[r.id] === Infinity ? '∞' : state.maxCounts[r.id];
-
-    const maxUp = document.createElement('button');
-    maxUp.className = 'spin-btn max-spin-btn';
-    maxUp.innerHTML = '<svg viewBox="0 0 10 10"><polygon points="1,8 9,8 5,2"/></svg>';
-    maxUp.addEventListener('click', () => {
-      if (state.maxCounts[r.id] === Infinity) {
-        state.maxCounts[r.id] = (state.maxBeforeInfinity[r.id] > 0 ? state.maxBeforeInfinity[r.id] : 0) + 1;
-      } else {
-        state.maxCounts[r.id]++;
-      }
-      renderSidebarList();
-    });
-
-    maxSpinner.append(maxDown, maxCountEl, maxUp);
-
-    const infBtn = document.createElement('button');
-    infBtn.className = 'infinity-btn' + (state.maxCounts[r.id] === Infinity ? ' active' : '');
-    infBtn.textContent = '∞';
-    infBtn.title = 'No maximum';
-    infBtn.addEventListener('click', () => {
-      if (state.maxCounts[r.id] !== Infinity) {
-        state.maxBeforeInfinity[r.id] = state.maxCounts[r.id];
-        state.maxCounts[r.id] = Infinity;
-        renderSidebarList();
-      }
-    });
-
-    // ── lock button ──────────────────────────────────────────────
-    const lockable = state.visible[r.id] && state.counts[r.id] > 0;
-    if (!lockable) state.locked[r.id] = false;
-    const lock = document.createElement('button');
-    lock.className = 'lock-btn' + (state.locked[r.id] ? ' locked' : '') + (lockable ? '' : ' disabled');
-    lock.innerHTML = state.locked[r.id]
-      ? '<svg viewBox="0 0 14 14"><rect x="3" y="6" width="8" height="6" rx="1"/><path d="M4.5 6V4a2.5 2.5 0 0 1 5 0v2"/></svg>'
-      : '<svg viewBox="0 0 14 14"><rect x="3" y="6" width="8" height="6" rx="1"/><path d="M4.5 6V4a2.5 2.5 0 0 1 5 0"/></svg>';
-    lock.addEventListener('click', () => {
-      if (!lockable) return;
-      const newLocked = !state.locked[r.id];
-      state.locked[r.id] = newLocked;
-      if (newLocked) {
-        if (state.maxCounts[r.id] === 0) {
-          state.maxWasZeroBeforeLock[r.id] = true;
-          state.maxCounts[r.id] = 1;
-        } else {
-          state.maxWasZeroBeforeLock[r.id] = false;
-        }
-      } else {
-        if (state.maxWasZeroBeforeLock[r.id]) {
-          state.maxCounts[r.id] = 0;
-          state.maxWasZeroBeforeLock[r.id] = false;
-        }
-      }
-      renderSidebarList();
-    });
-
-    row.append(cb, name, spinner, maxSpinner, infBtn, lock);
-    sidebarListEl.appendChild(row);
-  });
+  if (advancedModeOn) {
+    renderTieredRideList();
+  } else {
+    RIDES.forEach(r => sidebarListEl.appendChild(buildRideRow(r)));
+  }
 }
 
 // ═══════════════ MAP PINS + POPUP ═══════════════
@@ -1442,6 +1532,7 @@ async function generateRoute(triggerBtn) {
         start_key: state.selectedStart,
         live_waits: state.liveWaits,
         time_pinned,
+        ride_priority_tiers: state.rideTiers,
         max_counts: Object.fromEntries(
           RIDES
             .filter(r => state.visible[r.id] && state.counts[r.id] > 0)

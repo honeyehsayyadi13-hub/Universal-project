@@ -276,6 +276,33 @@ input { font-family: inherit; }
 
 .row.break-row { justify-content: space-between; }
 
+/* ── Advanced Mode tier-drag view ── */
+.tier-divider {
+  font-family: 'Baloo 2', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--gold);
+  padding: 10px 4px 4px;
+  border-top: 1px solid rgba(255,255,255,0.12);
+  margin-top: 4px;
+}
+
+.tier-divider:first-child { border-top: none; margin-top: 0; padding-top: 2px; }
+
+.tier-group { display: flex; flex-direction: column; min-height: 20px; }
+
+.tier-group.drag-over {
+  outline: 2px dashed var(--gold);
+  outline-offset: -2px;
+  border-radius: 6px;
+}
+
+.row.tier-row[draggable="true"] { cursor: grab; }
+.row.tier-row[draggable="true"]:active { cursor: grabbing; }
+.row.tier-row.dragging { opacity: 0.35; }
+
 .break-row-label {
   font-size: 12.5px;
   overflow: hidden;

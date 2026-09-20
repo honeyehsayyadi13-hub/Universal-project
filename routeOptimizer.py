@@ -117,18 +117,14 @@ MAX_DRAG_DRIFT_MIN = 30          # a dragged-and-dropped ride must land within t
                                   # displaced, whenever a slot like that exists at all
 
 # ── ride "importance" tiers ─────────────────────────────────────────
-RIDE_PRIORITY_WEIGHT = {
-    "velociCoaster": 3.0,
-    "hulk":           3.0,
-    "hagrid":         3.0,
-    "spiderMan":      2.0,
-    "harryPotter":    2.0,
-    "riverAdventure": 2.0,
-    "skullIsland":    1.5,
-    "stormForce":     1.5,
-    "doctorDoom":     1.5,
-    "hippogriff":     1.5,
-}
+# Importance used to be hardcoded per-ride. Now Advanced Mode lets the
+# person drag rides into 4 priority tiers on the sidebar (1 = most
+# important, 4 = least); the frontend sends the result as
+# `ride_priority_tiers` ({ride_key: 1|2|3|4}). This maps a tier number to
+# the round-robin fill weight it carries -- same style of spread the old
+# hardcoded dict used, just now user-assignable instead of fixed in code.
+TIER_WEIGHTS = {1: 4.0, 2: 3.0, 3: 2.0, 4: 1.0}
+DEFAULT_TIER_WEIGHT = 1.0
 
 
 # ── data loading ─────────────────────────────────────────────────────
@@ -781,7 +777,8 @@ def _reorder_for_time_pins(order, pin_targets, histories, walk_map, durations,
 def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None,
                              breaks=None, start_time=None, start_key="entrance",
                              live_waits=None, time_pinned=None, max_counts=None,
-                             close_hour=None, close_minute=None, override_closed_keys=None):
+                             close_hour=None, close_minute=None, override_closed_keys=None,
+                             ride_priority_tiers=None):
     """
     Main entry point for route computation.
 
@@ -799,6 +796,14 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
             been manually checked (Advanced Mode "yellow check") -- these
             are exempted from RULE 1's closed-ride drop and scheduled
             normally, using whatever live/historical wait data exists
+        ride_priority_tiers: {ride_key: 1|2|3|4} from Advanced Mode's
+            drag-to-rank sidebar -- 1 is most important, 4 is least. Only
+            affects RULE 6's round-robin fill of remaining daylight (see
+            TIER_WEIGHTS above); never affects forced/locked scheduling.
+        ride_priority_tiers: {ride_key: 1|2|3} from Advanced Mode's drag-to-
+            rank sidebar -- 1 is most important, 3 is least. Only affects
+            RULE 6's round-robin fill of remaining daylight (see
+            TIER_WEIGHTS above); does not affect forced/locked scheduling.
 
     Returns:
         List of (ride_key, predicted_wait, queue_join_minutes) tuples for
@@ -925,8 +930,9 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
     # unchanged, meaning the ride kept its same claim on EXTRA daylight
     # slots instead of yielding to less-visited rides -- which is what
     # produced an unwanted 3rd/4th visit right after pinning 2.
+    ride_priority_tiers = ride_priority_tiers or {}
     fill_weights = {
-        key_to_id[k]: RIDE_PRIORITY_WEIGHT.get(k, 1.0)
+        key_to_id[k]: TIER_WEIGHTS.get(ride_priority_tiers.get(k), DEFAULT_TIER_WEIGHT)
         for k in checked
     }
     final_order = _fill_until_close(
