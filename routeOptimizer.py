@@ -28,12 +28,13 @@ Rules this version enforces:
   5. Wait-time predictions are anchored to today's live reading (see
      `Data.ride_waits` / the `live_waits` argument below) and decay
      toward the plain historical time-of-day curve the further out the
-     prediction reaches. This keeps near-term forecasts consistent with
-     how busy the park is actually running *today*, instead of just
-     reporting a generic historical average for that time slot.
+     prediction reaches.
   6. Time-pinned rides (from drag-to-slot or click-to-lock) are forced
      to specific times of day or positions (first/last), as long as
      doing so doesn't cause other forced rides to drop before closing.
+     A ride pinned first/last is a HARD constraint and is honored
+     unconditionally, even overriding rule 1's ordinary elimination if
+     needed -- see _reorder_for_time_pins.
   7. The plan doesn't stop the moment every checked/locked/counted ride
      has been visited once -- it keeps cycling back through every
      selected ride, for as long as there's still daylight left, so the
@@ -101,12 +102,8 @@ ANCHOR_RATIO_MAX = 4.0           # max ratio clamp for live anchor
 DEFAULT_WAIT_MIN = 30            # fallback if a ride has zero usable history
 DEFAULT_WALK_MIN = 10            # fallback if a ride pair has no walk_times row
 DEFAULT_RIDE_DURATION_MIN = 3    # fallback if a ride has no ride_duration row
-BRUTE_FORCE_LIMIT = 7            # exact solve (permutations) up to this many stops -- each
-                                  # extra stop multiplies the brute-force search by roughly
-                                  # that many times over, so keeping this small matters a lot
-MAX_2OPT_PASSES = 3              # cap full 2-opt sweeps for larger stop lists -- most of the
-                                  # improvement happens in the first couple of passes, so this
-                                  # avoids looping until full convergence on big lists
+BRUTE_FORCE_LIMIT = 7            # exact solve (permutations) up to this many stops
+MAX_2OPT_PASSES = 3              # cap full 2-opt sweeps for larger stop lists
 DEFAULT_PARK_CLOSE_HOUR = 20     # 8:00 PM -- fallback used only when live park hours can't be fetched
 DEFAULT_PARK_CLOSE_MINUTE = 0
 ENTRANCE_DB_ID = 0               # matches the "id" of the entrance row in `rides`
@@ -117,23 +114,10 @@ MAX_DRAG_DRIFT_MIN = 30          # a dragged-and-dropped ride must land within t
                                   # displaced, whenever a slot like that exists at all
 
 # ── ride importance ranking ──────────────────────────────────────────
-# Importance used to be hardcoded per-ride, then a 4-tier drag system.
-# Now Advanced Mode lets the person drag rides into ONE full ranking
-# (grouped into 4 labeled sections purely for display) -- the frontend
-# sends the whole order as `ride_priority_order`, a list of ride_keys from
-# most to least important. Position in that list, not just which of the 4
-# sections a ride sits in, decides round-robin fill weight: a ride dragged
-# higher within its own section outranks the others below it there, while
-# still always losing to every ride in an earlier section.
 def _priority_fill_weights(ride_priority_order, checked_keys):
     """
     Turns a full ride_key ranking (most -> least important) into a
     {ride_key: weight} map for _fill_until_close's round-robin fill.
-    Weight decreases by exactly 1 per rank step, so ordering within a
-    section always breaks ties the same way ordering BETWEEN sections
-    does -- there's no separate "tier" concept on this side at all, just
-    rank. A ride missing from the ranking (shouldn't normally happen,
-    since the UI always ranks every ride) sinks below every ranked ride.
     """
     order = list(ride_priority_order or [])
     rank = {key: i for i, key in enumerate(order)}
@@ -224,11 +208,7 @@ def _walk_time(walk_map, a_db_id, b_db_id):
 # ── prediction ───────────────────────────────────────────────────────
 def _historical_wait_curve(history_for_ride, target_time):
     """
-    Kernel-weighted historical average wait at this time-of-day, weighted by:
-      - how close the sample's time-of-day is to target_time (Gaussian kernel)
-      - whether the sample falls on the same weekday, similar day-type, or different
-      - how recent the sample is (older data counts less)
-
+    Kernel-weighted historical average wait at this time-of-day.
     Returns None if there's no history at all to work from.
     """
     if not history_for_ride:
@@ -260,7 +240,6 @@ def _historical_wait_curve(history_for_ride, target_time):
         weight_total += w
 
     if weight_total < 1e-6:
-        # Nothing matched time-of-day well -- fall back to recency-weighted average
         fb_sum, fb_weight = 0.0, 0.0
         for ts, wait in history_for_ride:
             age_days = max(0.0, (target_time - ts).total_seconds() / 86400.0)
@@ -276,16 +255,8 @@ def _historical_wait_curve(history_for_ride, target_time):
 
 def _predict_wait(history_for_ride, target_time, current_wait=None, now=None, historical_now=None):
     """
-    Predicts the wait at `target_time`.
-
-    When we have a live current reading (`current_wait`, taken at `now`), we
-    anchor to it: predicted wait = today's actual current wait, scaled by how
-    much the historical time-of-day curve typically *changes proportionally*
-    between `now` and `target_time`. The ratio is clamped so one noisy live
-    reading can't distort the whole curve.
-
-    As `target_time` moves further from `now`, we fade out from the anchor
-    and blend toward the plain historical time-of-day curve.
+    Predicts the wait at `target_time`, anchored to a live reading when
+    available and decaying toward the historical curve further out.
     """
     historical_target = _historical_wait_curve(history_for_ride, target_time)
 
@@ -449,7 +420,6 @@ def _solve_order(db_ids, histories, walk_map, durations, start_time, closing_tim
                 best_order, best_score, best_details = list(perm), (fits, total), details
         return best_order, best_score[1], best_details
 
-    # Nearest-neighbor construction, then 2-opt improvement
     remaining = list(db_ids)
     order = []
     last = start_db_id
@@ -486,15 +456,7 @@ def _quick_fits_count(db_ids, histories, walk_map, durations, start_time, closin
                        current_waits=None, historical_now_by_id=None):
     """
     Cheap feasibility check used ONLY to decide which forced items survive
-    the elimination loop below -- a plain nearest-neighbor ordering, with
-    no 2-opt/brute-force optimization pass. This is much faster than a
-    full _solve_order call, which matters a lot here since the elimination
-    loop may need to re-check feasibility many times over as items get
-    dropped one at a time. The actual best-possible order for whichever
-    items survive is still computed once, properly, right after this loop
-    decides the final surviving set -- this function only ever affects how
-    many items get dropped, never the final route quality for the ones
-    that are kept.
+    the elimination loop below.
     """
     if not db_ids:
         return 0
@@ -520,13 +482,6 @@ def _fit_forced(forced_items, histories, walk_map, durations, start_time, closin
     If they don't all fit before closing, drop the lowest-priority ones --
     EXTRA (counted-up) visits first, then LOCKED base visits.
     Returns (kept_items, dropped_items, order, details).
-
-    The elimination loop below uses the cheap `_quick_fits_count` check
-    rather than a full `_solve_order` on every iteration -- with a lot of
-    locked/counted rides that don't all fit, the old approach re-ran full
-    brute-force/2-opt optimization once per dropped item, which compounds
-    fast. The full optimization now only runs once, on the final surviving
-    set, right before returning.
     """
     forced_items = list(forced_items)
     dropped = []
@@ -655,32 +610,36 @@ def _fill_until_close(order, candidate_ids, weights, histories, walk_map, durati
 
 
 # ── time-pin reordering ──────────────────────────────────────────────
-def _reorder_for_time_pins(order, pin_targets, histories, walk_map, durations,
+def _reorder_for_time_pins(order, pins, histories, walk_map, durations,
                             start_time, closing_time, break_windows, start_db_id,
                             current_waits=None, historical_now_by_id=None):
     """
-    Reorders rides to honor time-pin targets (from drag-to-slot or click-to-lock).
+    Reorders / force-inserts rides to honor time-pin targets (from
+    drag-to-slot or click-to-lock).
+
+    `pins` is a list of {"db_id": int, "target_minutes": float} dicts, one
+    per pinned occurrence. Occurrences of the same ride are anonymous --
+    nothing in `order` distinguishes one visit from another -- so pins are
+    matched to occurrences purely by processing order, never by a caller-
+    supplied index (an index has no guaranteed correspondence once the
+    route has been rebuilt from scratch, and using one used to cause pins
+    to be silently dropped).
 
     Sentinel values (0 = force first, 1440 = force last) are HARD
-    constraints: a ride pinned first ALWAYS ends up first, and a ride
-    pinned last ALWAYS ends up last (with nothing appended after it,
-    since this reordering pass runs after every other scheduling step).
-    This is enforced unconditionally -- it does not back off even if it
-    costs the route some fits_count, because the whole point of pinning
-    something first/last is that the person wants exactly that.
+    constraints, honored UNCONDITIONALLY -- even if the ride isn't
+    currently anywhere in `order` (e.g. it was dropped earlier by
+    _fit_forced running out of daylight). This is what guarantees a ride
+    pinned first/last always actually ends up first/last.
 
-    For a normal (non-sentinel) pin -- i.e. a ride dragged onto some
-    other ride's slot -- we look at every possible insertion position and
-    require the result to land within MAX_DRAG_DRIFT_MIN minutes of the
-    target time (the queue-join time of whatever ride occupied that slot)
-    whenever any such position exists at all. Among those, we prefer ones
-    that also keep the existing fits_count, but the drift window always
-    wins over fits_count for a normal pin -- only if NO position keeps it
-    within the drift window do we fall back to fits-preserving-but-farther,
-    and only if that's empty too do we fall back to closest-overall.
+    A normal (non-sentinel) pin also always results in the ride being
+    included: if it isn't in `order`, it's inserted; if it is, one
+    occurrence is moved. Either way we prefer a position within
+    MAX_DRAG_DRIFT_MIN minutes of the target time, preferring ones that
+    also preserve the pre-pin fits_count, but the drift window always
+    wins over fits_count.
     """
     order = list(order)
-    if not order or not pin_targets:
+    if not pins:
         return order
 
     fits_baseline, _, _ = _route_score(
@@ -689,64 +648,41 @@ def _reorder_for_time_pins(order, pin_targets, histories, walk_map, durations,
         historical_now_by_id=historical_now_by_id,
     )
 
-    # Process pins in the order they're meant to occur through the day --
-    # forced-first, then ascending target time, then forced-last -- not by
-    # (db_id, instance), which is arbitrary with respect to time. Sorting
-    # by db_id could process a later-intended pin before an earlier one,
-    # letting the earlier ride get displaced by whichever pin happened to
-    # go first.
     ordered_pins = sorted(
-        pin_targets.items(),
-        key=lambda kv: (0 if kv[1] == 0 else 2 if kv[1] == 1440 else 1, kv[1]),
+        pins,
+        key=lambda p: (0 if p["target_minutes"] == 0 else 2 if p["target_minutes"] == 1440 else 1,
+                       p["target_minutes"]),
     )
-    # `last_anchor_index` tracks the exact index (in the current `order`
-    # list) that the most recently placed pin ended up at. Because pins
-    # are processed in ascending target-time order, every later pin's
-    # search is restricted to positions after this one -- that's what
-    # actually keeps the intended sequence intact, rather than letting
-    # each pin optimize purely for its own drift window and then trying
-    # to patch the order afterward (which was silently detaching rides
-    # from their own target time whenever a patch-up swap fired).
+
     last_anchor_index = -1
 
-    for (db_id, inst_idx), target_minutes in ordered_pins:
-        occurrences = [i for i, x in enumerate(order) if x == db_id]
-        if not occurrences:
-            continue
-        src_pos = occurrences[min(inst_idx, len(occurrences) - 1)]
-        order_without = order[:src_pos] + order[src_pos + 1:]
+    for pin in ordered_pins:
+        db_id = pin["db_id"]
+        target_minutes = pin["target_minutes"]
 
-        # Translate the anchor's index into order_without's index space
-        # (removing src_pos shifts everything after it down by one).
-        anchor_in_without = None
-        if last_anchor_index >= 0:
+        occ_pos = next((i for i, x in enumerate(order) if x == db_id), None)
+        if occ_pos is not None:
+            order_without = order[:occ_pos] + order[occ_pos + 1:]
             anchor_in_without = (
-                last_anchor_index - 1 if last_anchor_index > src_pos else last_anchor_index
+                last_anchor_index - 1 if last_anchor_index > occ_pos else last_anchor_index
             )
+        else:
+            order_without = list(order)
+            anchor_in_without = last_anchor_index
 
-        # Sentinel "force first" (0) -- unconditional, always honored.
         if target_minutes == 0:
             order = [db_id] + order_without
             last_anchor_index = 0
             continue
 
-        # Sentinel "force last" (1440) -- unconditional, always honored.
-        # Because this reordering pass is the last step before the route
-        # is simulated and returned, appending here guarantees nothing
-        # else ever lands after this ride.
         if target_minutes == 1440:
             order = order_without + [db_id]
             last_anchor_index = len(order) - 1
             continue
 
-        # Normal pin: find the insertion position closest to target_minutes,
-        # preferring positions within MAX_DRAG_DRIFT_MIN minutes of it --
-        # but never before the anchor, so this pin can't leapfrog an
-        # earlier-in-sequence one just because some earlier slot happens
-        # to land numerically close to this pin's own target time.
-        min_pos = anchor_in_without + 1 if anchor_in_without is not None else 0
+        min_pos = anchor_in_without + 1 if anchor_in_without is not None and anchor_in_without >= 0 else 0
 
-        candidates = []  # (distance_minutes, fits_ok, position)
+        candidates = []
         for pos in range(min_pos, len(order_without) + 1):
             candidate = order_without[:pos] + [db_id] + order_without[pos:]
             fits, _, details = _route_score(
@@ -761,8 +697,6 @@ def _reorder_for_time_pins(order, pin_targets, histories, walk_map, durations,
             candidates.append((dist, fits >= fits_baseline, pos))
 
         if not candidates:
-            # Nothing valid past the anchor -- place it right after the
-            # anchor rather than losing the sequence constraint.
             pos = min_pos
             order = order_without[:pos] + [db_id] + order_without[pos:]
             last_anchor_index = pos
@@ -775,9 +709,6 @@ def _reorder_for_time_pins(order, pin_targets, histories, walk_map, durations,
         if within_and_fits:
             pool = within_and_fits
         elif within_only:
-            # Guarantee the drift window even if it costs a fit -- staying
-            # close to the ride that was dropped onto matters more here
-            # than preserving fits_count for a plain (non-sentinel) pin.
             pool = within_only
         elif fits_only:
             pool = fits_only
@@ -808,22 +739,15 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
         start_time: datetime to start from (defaults to now)
         start_key: ride_key or "entrance" to start from
         live_waits: {ride_key: current_wait_minutes} today's live readings
-        time_pinned: list of {ride_key, instance_index, target_minutes} dicts
+        time_pinned: list of {ride_key, target_minutes} dicts (an
+            `instance_index` key may also be present from older clients
+            and is ignored -- occurrences are matched by processing
+            order now, not by a caller-supplied index)
         max_counts: {ride_key: max_visits} upper limit per ride
         override_closed_keys: iterable of ride_keys that are closed but have
-            been manually checked (Advanced Mode "yellow check") -- these
-            are exempted from RULE 1's closed-ride drop and scheduled
-            normally, using whatever live/historical wait data exists
+            been manually checked (Advanced Mode "yellow check")
         ride_priority_order: list of ride_keys, most important first, from
-            Advanced Mode's drag-to-rank sidebar (position within the list
-            is what matters -- the 4 labeled sections are a display
-            grouping only). Only affects RULE 6's round-robin fill of
-            remaining daylight (see _priority_fill_weights above); never
-            affects forced/locked scheduling.
-        ride_priority_tiers: {ride_key: 1|2|3} from Advanced Mode's drag-to-
-            rank sidebar -- 1 is most important, 3 is least. Only affects
-            RULE 6's round-robin fill of remaining daylight (see
-            TIER_WEIGHTS above); does not affect forced/locked scheduling.
+            Advanced Mode's drag-to-rank sidebar
 
     Returns:
         List of (ride_key, predicted_wait, queue_join_minutes) tuples for
@@ -832,7 +756,6 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
     """
     ride_locked = dict(ride_locked or {})
 
-    # Time-pinned rides are force-included (treated as locked)
     if time_pinned:
         for pin in time_pinned:
             key = pin.get('ride_key')
@@ -841,9 +764,6 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
 
     closed_ride_keys = set(closed_ride_keys or [])
     override_closed_keys = set(override_closed_keys or [])
-    # A yellow-checked override wins over the closed flag entirely --
-    # remove it from the drop set so RULE 1 below treats it as a normal,
-    # open ride for scheduling purposes.
     closed_ride_keys -= override_closed_keys
     breaks = breaks or []
 
@@ -886,15 +806,6 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
     current_waits = {}
     if live_waits:
         for key, wait in live_waits.items():
-            # An override-closed ride's "live" reading is meaningless -- it's
-            # whatever number the source reported for a ride that isn't
-            # actually running right now (often a flat 0 once the park's
-            # closed for the night), not a real current wait. Anchoring the
-            # prediction to that produced ~0-minute predictions for every
-            # yellow-checked ride. Skipping it here falls back to
-            # _predict_wait's pure historical time-of-day curve instead,
-            # which is the best available estimate for a ride with no
-            # trustworthy live signal.
             if key in override_closed_keys:
                 continue
             if key in checked and key in key_to_id and wait is not None:
@@ -908,8 +819,6 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
     start_db_id = ENTRANCE_DB_ID if start_key == "entrance" else key_to_id.get(start_key, ENTRANCE_DB_ID)
     break_windows = _resolve_break_windows(breaks, start_time.date())
 
-    # Use the real park close time if the caller has it (e.g. fetched live
-    # from Data.get_park_close_time()); otherwise fall back to 8 PM.
     close_hour = close_hour if close_hour is not None else DEFAULT_PARK_CLOSE_HOUR
     close_minute = close_minute if close_minute is not None else DEFAULT_PARK_CLOSE_MINUTE
     closing_time = start_time.replace(hour=close_hour, minute=close_minute, second=0, microsecond=0)
@@ -951,16 +860,6 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
     )
 
     # RULE 6: Fill remaining daylight with weighted round-robin
-    # Weight fill priority by the ride's importance tier ALONE, not by how
-    # many visits were requested/pinned. The requested count already gets
-    # its guaranteed visits via forced scheduling above -- multiplying by
-    # count here as well double-counts that preference: pinning a ride
-    # twice (or manually setting count=2) would double its weight, and
-    # since visit_counts also starts at that same doubled number, the
-    # ratio used for round-robin fairness (visit_counts / weight) came out
-    # unchanged, meaning the ride kept its same claim on EXTRA daylight
-    # slots instead of yielding to less-visited rides -- which is what
-    # produced an unwanted 3rd/4th visit right after pinning 2.
     priority_weights_by_key = _priority_fill_weights(ride_priority_order, checked.keys())
     fill_weights = {
         key_to_id[k]: priority_weights_by_key[k]
@@ -974,20 +873,20 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
     )
 
     # RULE 6b: Honor time-pin placement requests (drag-to-slot, click-to-lock)
-    # NOTE: this runs LAST, after forced scheduling, optional insertion, and
-    # daylight-filling are all done -- that ordering is what guarantees a
-    # ride pinned "last" truly ends up last with nothing appended after it.
+    # Runs LAST -- after forced scheduling, optional insertion, and
+    # daylight-filling -- so a ride pinned "last" truly ends up last with
+    # nothing appended after it, and a ride pinned "first" truly ends up
+    # first no matter what the fill pass did.
     if time_pinned:
-        pin_targets = {}
+        pins = []
         for pin in time_pinned:
             key  = pin.get('ride_key')
-            inst = pin.get('instance_index', 0)
             tmin = pin.get('target_minutes')
             if key and key in key_to_id and tmin is not None and key in checked:
-                pin_targets[(key_to_id[key], inst)] = tmin
-        if pin_targets:
+                pins.append({"db_id": key_to_id[key], "target_minutes": tmin})
+        if pins:
             final_order = _reorder_for_time_pins(
-                final_order, pin_targets, histories, walk_map, durations,
+                final_order, pins, histories, walk_map, durations,
                 start_time, closing_time, break_windows, start_db_id,
                 current_waits=current_waits, historical_now_by_id=historical_now_by_id,
             )
@@ -1005,10 +904,8 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
     skipped_details = details[len(committed):]
 
     # RULE 6b (cont.): a ride pinned "first" or "last" is a HARD constraint
-    # (see _reorder_for_time_pins) -- that has to hold even if the pinned
-    # ride's queue-join time technically lands after closing. Without this,
-    # a "force last" pin would get silently cut the moment the schedule ran
-    # tight, instead of showing up right where the person dragged it.
+    # -- has to hold even if its queue-join time technically lands after
+    # closing.
     forced_last_db_id = None
     forced_first_db_id = None
     if time_pinned:

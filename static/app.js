@@ -1,35 +1,6 @@
 /* app.js 
 ════════════════════════════════════════════════════════════════
    Universal Route Planner — front end
-   ────────────────────────────────────────────────────────────────
-   BACKEND CONTRACT (point API_BASE at your Flask app, or leave it as
-   '' if this file is served by the same Flask app):
-
-   GET  {API_BASE}/api/rides
-     -> { "<rideId>": { "waittime": <minutes>, "is_open": true|false|null }, ... }
-     A ride only appears in this dict when Data.py's background poller has
-     ever seen it. A ride missing from the dict means "unknown" (not
-     necessarily closed) — we don't force it into the closed list on that
-     basis alone.
-
-   POST {API_BASE}/api/route
-     body: {
-       "ride_counts":       { "<rideId>": <int quantity>, ... },  // only visible, qty>0 rides
-       "ride_locked":       { "<rideId>": true, ... },             // OBJECT, not array —
-                                                                    // routeOptimizer.py calls
-                                                                    // ride_locked.get(key) on this
-       "closed_ride_keys":  ["<rideId>", ...],
-       "breaks":            [[startMin, endMin], ...],             // minutes since midnight
-       "start_key":         "<rideId>|entrance",
-       "live_waits":        { "<rideId>": <minutes>, ... }          // straight from /api/rides
-     }
-     -> a list from compute_and_print_route(); each entry may be a plain
-        ride-id string, a [ride_id, predicted_wait] pair, or a dict with
-        ride_id/predicted_wait-style keys — the normalizer below handles
-        all three shapes. On failure the backend returns a JSON body of
-        { "error": "..." } with a non-200 status.
-
-   Adjust API_BASE / field names below to match your actual Flask routes.
    ════════════════════════════════════════════════════════════════ */
 
 const API_BASE = '';
@@ -89,8 +60,12 @@ function getInstanceIndex(route, pos) {
 
 function getUniqueKey(rideId, instanceIndex) { return `${rideId}:${instanceIndex}`; }
 
+// Stable per-stop id, generated once when a stop is created (in generateRoute)
+// and never recomputed from array position. Pins are keyed by this instead
+// of a recomputed "instance index", which used to collide whenever two
+// stops shared a rideId or the array got reordered.
 let routeUidCounter = 0;
-function nextUid() { return ++routeUidCounter; }
+function nextUid() { return 'r' + (++routeUidCounter); }
 
 // If a ride ends up pinned/selected at more distinct spots in the top bar
 // than its sidebar count currently allows, bump that count up to match --
@@ -129,19 +104,12 @@ function getInitialDarkMode() {
   const stored = localStorage.getItem(DARK_MODE_KEY);
   if (stored === 'true')  return true;
   if (stored === 'false') return false;
-  // No explicit choice saved yet -- match the browser/OS setting.
   return !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
 }
 
 let darkModeOn = getInitialDarkMode();
 let advancedModeOn = localStorage.getItem(ADVANCED_MODE_KEY) === 'true';
 
-// ── ride priority ranking (Advanced Mode drag-to-rank) ────────────
-// A single full ranking, most important first, grouped into 4 labeled
-// sections purely for display -- position within a section matters just
-// as much as which section a ride is in (see routeOptimizer.py's
-// _priority_fill_weights). Stored as one ordered array per section, so
-// both "which section" and "where within it" persist together.
 const DEFAULT_TIER_ORDER = {
   1: ['velociCoaster', 'hulk', 'hagrid'],
   2: ['harryPotter', 'spiderMan', 'hippogriff'],
@@ -151,10 +119,6 @@ const DEFAULT_TIER_ORDER = {
 const TIER_LABELS = ['Most Important', 'Important', 'Less Important', 'Least Important'];
 
 function getInitialTierLists() {
-  // No dedicated persistence -- this always starts from DEFAULT_TIER_ORDER
-  // on a fresh page load, same as any other un-pinned/un-broken default.
-  // Saving/restoring a specific arrangement happens only through presets
-  // (see addPreset/applyPreset), exactly like breaks, timePinned, etc.
   const lists = { 1: [], 2: [], 3: [], 4: [] };
   const seen = new Set();
 
@@ -175,13 +139,9 @@ function getInitialTierLists() {
 }
 
 function saveTierLists() {
-  // Intentionally a no-op -- tier order is preset-only now, not persisted
-  // on its own. Kept as a function (rather than removed) so every call
-  // site that already calls it after a drag-drop doesn't need touching.
+  // Intentionally a no-op -- tier order is preset-only now.
 }
 
-// Removes a ride from wherever it currently sits, so a drag-drop can
-// re-insert it at its new position without leaving a duplicate behind.
 function removeFromTierLists(rideId) {
   for (const tier of [1, 2, 3, 4]) {
     const idx = state.tierLists[tier].indexOf(rideId);
@@ -189,8 +149,6 @@ function removeFromTierLists(rideId) {
   }
 }
 
-// Shared by both mouse (HTML5 DnD) and touch drop handling: moves
-// draggedId into `tier`, positioned just before/after targetId.
 function moveRideInTierLists(draggedId, tier, targetId, before) {
   removeFromTierLists(draggedId);
   const arr = state.tierLists[tier];
@@ -201,15 +159,11 @@ function moveRideInTierLists(draggedId, tier, targetId, before) {
   saveTierLists();
 }
 
-// Touch-drag state for the Advanced Mode tier list (mirrors the top route
-// bar's touchDragSrcIdx/touchDragClone pattern).
 let tierTouchSrcId = null;
 let tierTouchClone = null;
 let tierTouchStartX = 0, tierTouchStartY = 0;
 let tierTouchDragging = false;
 
-// Flattens the 4 sections, top to bottom, into the single ranked list
-// (most important first) the backend actually scores against.
 function flattenPriorityOrder() {
   return [1, 2, 3, 4].flatMap(tier => state.tierLists[tier]);
 }
@@ -231,14 +185,13 @@ function applyDarkMode() {
 
 function applyAdvancedMode() {
   document.getElementById('advancedModeCheckbox')?.classList.toggle('checked', advancedModeOn);
-  // Hook point for future advanced-mode behavior -- just persisted and reflected in the checkbox for now.
 }
 
 document.getElementById('advancedModeToggle')?.addEventListener('click', () => {
   advancedModeOn = !advancedModeOn;
   localStorage.setItem(ADVANCED_MODE_KEY, advancedModeOn);
   applyAdvancedMode();
-  renderSidebarList(); // switch between the flat list and the tier-drag view
+  renderSidebarList();
 });
 
 document.getElementById('darkModeToggle')?.addEventListener('click', () => {
@@ -254,15 +207,24 @@ let touchDragClone   = null;
 let touchStartX = 0, touchStartY = 0;
 let touchDragging = false;
 
+// Clears any OTHER pin that's claiming the same sentinel slot (first or
+// last), so only one stop can ever be "force first" or "force last" at a
+// time. Comparison is done as strings on both sides so this can never
+// silently no-op due to a string/number id type mismatch (that mismatch
+// used to wipe out the pin you'd just created, immediately).
 function clearConflictingSentinelPins(sentinelValue, exceptKey) {
   for (const [key, pin] of Object.entries(state.timePinned)) {
-    if (key === exceptKey) continue;
+    if (String(key) === String(exceptKey)) continue;
     if (pin.targetMinutes === sentinelValue) {
       pin.targetMinutes = null;
     }
   }
 }
 
+// Moves the stop at srcIdx to destIdx, and pins it there. Uses stop.uid
+// (a stable id assigned once when the stop was created) as the pin key,
+// never a recomputed array-position-based index, so this can't collide
+// with another stop of the same ride and can't be lost on reorder.
 function executeDrop(srcIdx, destIdx) {
   if (srcIdx === null || destIdx === null || srcIdx === destIdx) return;
 
@@ -355,7 +317,10 @@ function applyPreset(id) {
   });
   state.breaks = JSON.parse(JSON.stringify(p.breaks));
   state.selectedStart = p.selectedStart;
-  state.timePinned = JSON.parse(JSON.stringify(p.timePinned || {}));
+  // Note: a preset's saved timePinned refers to route stops (by uid) that
+  // no longer exist once the app reloads/generates a new route, so it
+  // isn't meaningfully restorable here -- cleared rather than applied.
+  state.timePinned = {};
   RIDES.forEach(r => {
     const savedMax = (p.maxCounts || {})[r.id];
     state.maxCounts[r.id] = (savedMax === null || savedMax === undefined) ? Infinity : savedMax;
@@ -364,9 +329,6 @@ function applyPreset(id) {
   });
   state.pinnedLocked = { ...(p.pinnedLocked || {}) };
 
-  // A preset saved before this feature existed won't have tierLists --
-  // fall back to the same default a fresh page load would use, rather
-  // than leaving state.tierLists pointing at stale data.
   if (p.tierLists) {
     const lists = { 1: [], 2: [], 3: [], 4: [] };
     const seen = new Set();
@@ -381,16 +343,17 @@ function applyPreset(id) {
     state.tierLists = getInitialTierLists();
   }
 
-  // A preset saved before this feature existed won't have closedChecked --
-  // default every ride to false (no override) rather than leaving stale data.
   RIDES.forEach(r => {
     state.closedChecked[r.id] = (p.closedChecked || {})[r.id] || false;
   });
 
   selectedPresetId = p.id;
+  state.route = [];
   renderStartDropdown();
   renderSidebarList();
   renderPresetDropdown();
+  renderRouteBar();
+  renderPins();
 }
 
 // ── DOM refs ────────────────────────────────────────────────────
@@ -530,28 +493,18 @@ $('#addPresetBtn').addEventListener('click', addPreset);
 
 // ═══════════════ SIDEBAR RIDE LIST ═══════════════
 
-// Builds one ride's row (checkbox, name, both spinners, lock button) --
-// identical logic to before, just returned rather than appended, so both
-// the flat list (Advanced Mode off) and the tiered drag view (on) can
-// reuse it.
 function buildRideRow(r) {
   const row = document.createElement('div');
   row.className = 'row';
 
   const isClosed = state.liveOpen[r.id] === false;
 
-  // A closed ride reverts to plain, non-interactive, unchecked every
-  // render -- unless someone deliberately checked it via Advanced Mode
-  // (closedChecked). That override survives leaving Advanced Mode, but
-  // the box still can't be touched again until Advanced Mode is back on.
   if (isClosed && !state.closedChecked[r.id]) {
     if (state.visible[r.id]) state.lastCount[r.id] = state.counts[r.id] || state.lastCount[r.id];
     state.visible[r.id] = false;
     state.counts[r.id] = 0;
     state.locked[r.id] = false;
   } else if (!isClosed && state.closedChecked[r.id]) {
-    // Ride re-opened -- the override no longer applies; treat it as a
-    // normal ride again from here on.
     state.closedChecked[r.id] = false;
   }
 
@@ -565,7 +518,7 @@ function buildRideRow(r) {
     + (closedLocked ? ' closed-disabled' : '');
   cb.addEventListener('click', () => {
     if (isClosed) {
-      if (!advancedModeOn) return; // closed rides can't be touched outside Advanced Mode
+      if (!advancedModeOn) return;
       if (state.closedChecked[r.id]) {
         state.closedChecked[r.id] = false;
         state.lastCount[r.id] = state.counts[r.id] || state.lastCount[r.id];
@@ -735,10 +688,6 @@ function buildRideRow(r) {
   return row;
 }
 
-// Advanced Mode's view: 4 draggable tiers, divided by labeled bars.
-// Dropping a row into a different tier's group updates and persists its
-// tier -- order within a tier doesn't matter to the backend, only which
-// tier a ride ends up in.
 function renderTieredRideList() {
   for (let tier = 1; tier <= 4; tier++) {
     const divider = document.createElement('div');
@@ -750,10 +699,6 @@ function renderTieredRideList() {
     group.className = 'tier-group';
     group.dataset.tier = tier;
 
-    // Dropping on empty space within a tier (below its last row, or into
-    // an empty tier) appends to the end of that tier's order. Dropping
-    // directly ON a row is handled by that row's own listeners below,
-    // which stop propagation so this handler doesn't also fire.
     group.addEventListener('dragover', e => {
       e.preventDefault();
       e.dataTransfer.dropEffect = 'move';
@@ -795,10 +740,6 @@ function renderTieredRideList() {
         row.classList.remove('dragging', 'drag-over-top', 'drag-over-bottom');
       });
 
-      // Dropping ON a row (rather than the empty space below the list)
-      // inserts before/after THIS row depending on which half of it the
-      // drop lands on -- this is what makes order WITHIN a tier
-      // draggable, not just which tier a ride belongs to.
       row.addEventListener('dragover', e => {
         e.preventDefault();
         e.stopPropagation();
@@ -821,7 +762,6 @@ function renderTieredRideList() {
         renderSidebarList();
       });
 
-      // ── touch drag (mirrors the top route bar's touch handling) ──
       row.addEventListener('touchstart', e => {
         const touch = e.touches[0];
         tierTouchStartX   = touch.clientX;
@@ -959,10 +899,6 @@ function renderPins() {
   pinElements = [];
   RIDES.forEach(r => {
     const isClosed = state.liveOpen[r.id] === false;
-    // A closed ride always still shows on the map, transparent, even though
-    // it's auto-unchecked in the sidebar -- same as a ride that's simply not
-    // selected while the park is open shouldn't be confused with one that's
-    // actually closed. Only a genuinely deselected-but-open ride is skipped.
     if (!state.visible[r.id] && !isClosed) return;
     const pin = document.createElement('button');
     pin.className = 'pin';
@@ -1053,8 +989,6 @@ const MAX_MAP_ZOOM = 4;
 
 function lerp(a, b, t) { return a + (b - a) * t; }
 
-// 0 at fully zoomed out, 1 at fully zoomed in, eased so the shift feels
-// gradual rather than linear/abrupt.
 function zoomT() {
   const raw = (mapZoom - MIN_MAP_ZOOM) / (MAX_MAP_ZOOM - MIN_MAP_ZOOM);
   const c = Math.min(1, Math.max(0, raw));
@@ -1073,7 +1007,6 @@ let mapFitWidth = 0;
 
 const PIN_SIZE = 54 * 0.9 * 1.1;
 
-// ── all-rides wait bubbles (toggled by double-tapping any wait chip) ──
 const waitBubbleLayerEl = document.getElementById('waitBubbleLayer');
 let showWaitBubbles = false;
 let waitBubbleElements = [];
@@ -1158,10 +1091,6 @@ function computeMapFitWidth() {
   mapImageEl.style.width = mapFitWidth + 'px';
 }
 
-// Keeps the map from ever being panned/zoomed off-screen. If the scaled
-// image is smaller than the viewport on an axis, it's centered on that
-// axis (no free panning needed); if it's bigger, panning is clamped so
-// neither edge of the image can pull inward past the viewport's edge.
 function clampMapPan() {
   const viewportW = mapViewportEl.clientWidth;
   const viewportH = mapViewportEl.clientHeight;
@@ -1192,7 +1121,6 @@ function clampZoom(z) {
   return Math.min(MAX_MAP_ZOOM, Math.max(MIN_MAP_ZOOM, z));
 }
 
-// ── zoom/pan gesture engine ──
 function zoomAtPoint(targetZoomRaw, clientX, clientY, baseZoom, basePanX, basePanY) {
   const targetZoom = clampZoom(targetZoomRaw);
   const rect = mapViewportRect;
@@ -1207,7 +1135,6 @@ function zoomAtPoint(targetZoomRaw, clientX, clientY, baseZoom, basePanX, basePa
   applyMapTransform();
 }
 
-// ── wheel / trackpad zoom, centered on the cursor ──
 let wheelRatioAccum = 1;
 let wheelClientX = 0, wheelClientY = 0;
 let wheelFrameQueued = false;
@@ -1248,7 +1175,6 @@ mapImageEl.addEventListener('dblclick', e => {
   }, 260);
 });
 
-// ── mouse drag-to-pan ──
 let panPointerId = null;
 let panStartX = 0, panStartY = 0, panStartPanX = 0, panStartPanY = 0;
 let isPanning = false;
@@ -1291,7 +1217,6 @@ function endMapPan(e) {
 mapViewportEl.addEventListener('pointerup', endMapPan);
 mapViewportEl.addEventListener('pointercancel', endMapPan);
 
-// ── touch: single-finger pan, two-finger pinch-to-zoom ──
 let t1Id = null, t2Id = null;
 let t1 = { x: 0, y: 0 }, t2 = { x: 0, y: 0 };
 let panBase = null;
@@ -1409,14 +1334,11 @@ function renderRouteBar() {
 
   const rows = [];
   if (total <= bigRow) {
-    // Single row — everything fits
     rows.push({ start: 0, end: total });
   } else if (total <= bigRow * 2) {
-    // Two rows — first fills to bigRow, second gets the rest, no alternating
     rows.push({ start: 0,      end: bigRow });
     rows.push({ start: bigRow, end: total  });
   } else {
-    // 3+ rows — alternating bigRow / smallRow pattern
     let cursor = 0, parity = 0;
     while (cursor < total) {
       const size = parity % 2 === 0 ? bigRow : smallRow;
@@ -1444,7 +1366,6 @@ function renderRouteBar() {
       wrap.draggable = true;
       wrap.dataset.idx = i;
 
-      // ── mouse drag ───────────────────────────────────────────
       wrap.addEventListener('dragstart', e => {
         dragSrcIdx = i;
         wrap.classList.add('dragging');
@@ -1476,7 +1397,6 @@ function renderRouteBar() {
         executeDrop(src, i);
       });
 
-      // ── touch drag ───────────────────────────────────────────
       wrap.addEventListener('touchstart', e => {
         const touch = e.touches[0];
         touchStartX     = touch.clientX;
@@ -1538,7 +1458,6 @@ function renderRouteBar() {
         if (dropIdx >= 0 && dropIdx !== src) executeDrop(src, dropIdx);
       });
 
-      // ── card ─────────────────────────────────────────────────
       const card = document.createElement('div');
       card.className = 'route-stop-card';
 
@@ -1634,7 +1553,6 @@ function renderRouteBar() {
       wrap.appendChild(card);
       rowEl.appendChild(wrap);
 
-      // Arrow between stops within this row only (not after the last in the row)
       if (i < end - 1) {
         const arrow = document.createElement('span');
         arrow.className = 'route-arrow';
@@ -1686,19 +1604,15 @@ async function generateRoute(triggerBtn) {
   const override_closed_keys = RIDES.filter(r => state.closedChecked[r.id]).map(r => r.id);
   const breaks = state.breaks.map(b => [b.startMin, b.endMin]);
 
-  const time_pinned = Object.entries(state.timePinned)
-    .filter(([, p]) => p.targetMinutes !== null)
-    .map(([uidStr, p]) => {
-      const uid = Number(uidStr);
-      const routeIdx = state.route.findIndex(s => s.uid === uid);
-      const instanceIndex = routeIdx === -1 ? 0 : getInstanceIndex(state.route, routeIdx);
-      return {
-        ride_key:       p.rideId,
-        instance_index: instanceIndex,
-        target_minutes: p.targetMinutes,
-        route_index:    routeIdx,
-      };
-    });
+  // NOTE: no instance_index / route_index sent anymore -- occurrences of
+  // the same ride are anonymous, so there's nothing meaningful to index.
+  // The backend matches pins to occurrences purely by processing order.
+  const time_pinned = Object.values(state.timePinned)
+    .filter(p => p.targetMinutes !== null)
+    .map(p => ({
+      ride_key: p.rideId,
+      target_minutes: p.targetMinutes,
+    }));
 
   triggerBtn.classList.add('flash');
   setTimeout(() => triggerBtn.classList.remove('flash'), 220);
@@ -1715,7 +1629,6 @@ async function generateRoute(triggerBtn) {
     return;
   }
   routePlaceholderEl.style.color = '';
-  // Always show a loading state regardless of whether a route already exists
   routePlaceholderEl.textContent = 'Generating…';
   routePlaceholderEl.style.display = 'block';
   routeItemsEl.classList.remove('active');
@@ -1742,45 +1655,47 @@ async function generateRoute(triggerBtn) {
     if (!res.ok) throw new Error((data && data.error) ? data.error : `route request failed: ${res.status}`);
     if (!Array.isArray(data)) throw new Error('Unexpected response from route service.');
 
-    const oldRoute = state.route;
-    const oldPins = Object.entries(state.timePinned).map(([uidStr, pin]) => {
-      const uid = Number(uidStr);
-      const idx = oldRoute.findIndex(s => s.uid === uid);
-      return { ...pin, instanceIndex: idx === -1 ? 0 : getInstanceIndex(oldRoute, idx) };
-    });
+    // Snapshot the pins BEFORE the route array is replaced, so we still
+    // have their rideId/targetMinutes to work with afterward.
+    const oldPins = Object.values(state.timePinned).filter(p => p.rideId);
 
+    // Every stop gets a fresh, stable uid -- this is what makes pin
+    // tracking collision-proof no matter how many times the same ride
+    // repeats in the route.
     state.route = data.map(entry => ({ ...extractRideIdAndWait(entry), uid: nextUid() }));
 
     const newTP = {};
+    const claimed = new Set();
 
-    function pinAt(idx, targetMinutes) {
-      if (idx < 0 || idx >= state.route.length) return;
+    function claimStop(idx) {
+      if (idx == null || idx < 0 || idx >= state.route.length) return null;
       const stop = state.route[idx];
-      newTP[stop.uid] = { rideId: stop.rideId, targetMinutes };
+      if (claimed.has(stop.uid)) return null;
+      claimed.add(stop.uid);
+      return stop;
     }
 
     oldPins.forEach(pin => {
+      let stop = null;
       if (pin.targetMinutes === 0) {
-        if (state.route[0]?.rideId === pin.rideId) pinAt(0, 0);
+        stop = claimStop(0);
       } else if (pin.targetMinutes === 1440) {
-        const lastIdx = state.route.length - 1;
-        if (state.route[lastIdx]?.rideId === pin.rideId) pinAt(lastIdx, 1440);
+        stop = claimStop(state.route.length - 1);
       } else if (pin.targetMinutes !== null) {
         let bestIdx = -1, bestDist = Infinity;
-        state.route.forEach((stop, idx) => {
-          if (stop.rideId !== pin.rideId) return;
-          const qjm = stop.queueJoinMinutes;
+        state.route.forEach((s, idx) => {
+          if (s.rideId !== pin.rideId || claimed.has(s.uid)) return;
+          const qjm = s.queueJoinMinutes;
           const dist = qjm == null ? Infinity : Math.abs(qjm - pin.targetMinutes);
           if (dist < bestDist) { bestDist = dist; bestIdx = idx; }
         });
-        if (bestIdx >= 0) pinAt(bestIdx, pin.targetMinutes);
+        stop = claimStop(bestIdx);
       } else {
-        const occurrences = [];
-        state.route.forEach((stop, idx) => { if (stop.rideId === pin.rideId) occurrences.push(idx); });
-        if (occurrences.length) {
-          const idx = occurrences[Math.min(pin.instanceIndex, occurrences.length - 1)];
-          pinAt(idx, null);
-        }
+        const idx = state.route.findIndex(s => s.rideId === pin.rideId && !claimed.has(s.uid));
+        stop = claimStop(idx);
+      }
+      if (stop) {
+        newTP[stop.uid] = { rideId: pin.rideId, targetMinutes: pin.targetMinutes };
       }
     });
 
@@ -1828,14 +1743,14 @@ async function pollStatus() {
         open[r.id] = entry.is_open === false ? false : true;
       } else {
         waits[r.id] = null;
-        open[r.id] = null; // unknown — don't treat as closed
+        open[r.id] = null;
       }
     });
     state.liveWaits = waits;
     state.liveOpen  = open;
     renderSidebarList();
     renderPins();
-    if (showWaitBubbles) renderWaitBubbles(); // keep bubble text fresh while they're showing
+    if (showWaitBubbles) renderWaitBubbles();
     if (popupState.rideId) showPopup(popupState.rideId, [...pinLayerEl.children].find(p => p.querySelector('img')?.alt === rideById[popupState.rideId]?.name));
   } catch (err) {
     // best-effort; app still works with unknown wait times
@@ -1861,19 +1776,9 @@ function getBackButtonGap() {
 
 const MIN_MAP_HEIGHT = 64;
 
-// Reserves the same safe-area gap below the back button as the space
-// above it, by giving #bottomBar a min-height of (button height + gap)
-// instead of leaving that gap as blank margin above the bar. That way
-// the button -- centered via align-items on #bottomBar -- sits centered
-// in the full space between the bottom of the map and the bottom of the
-// screen, rather than being pushed low with a dead gap above it.
 function updateBottomBarMinHeight() {
   const backBtnEl = document.getElementById('backBtn');
   const gap = getBackButtonGap();
-  // Reserve the gap on BOTH sides of the button -- above it (between the
-  // button and the map) and below it (between the button and the screen
-  // edge) -- so centering produces a real, visible symmetric strip
-  // instead of collapsing back down to just the button's own size.
   const minHeight = backBtnEl.offsetHeight + gap * 2;
   mapPaneEl.style.setProperty('--bottombar-min-h', minHeight + 'px');
   return minHeight;
@@ -1904,13 +1809,6 @@ function updateTogglePositions() {
   }
 
 if (sidebarToggle) {
-  // Prefer the vertical center of the map pane, but never let the
-  // toggle sit inside the top bar's own space -- push it down below
-  // the top bar's bottom edge instead. If the top bar (plus the
-  // bottom bar's reserved space) leaves no room to fully clear it,
-  // stop at the lowest point available; the z-index bump in CSS then
-  // keeps the toggle visible ON TOP of the top bar instead of
-  // disappearing underneath it.
   const half = sidebarToggle.offsetHeight / 2;
   const minTop = topBarEl.offsetHeight + half;
   const maxTop = mapPaneEl.clientHeight - bottomBarMinHeight - half;
