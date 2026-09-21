@@ -139,7 +139,6 @@ let advancedModeOn = localStorage.getItem(ADVANCED_MODE_KEY) === 'true';
 // as much as which section a ride is in (see routeOptimizer.py's
 // _priority_fill_weights). Stored as one ordered array per section, so
 // both "which section" and "where within it" persist together.
-const RIDE_TIER_ORDER_KEY = 'urp.rideTierOrder';
 const DEFAULT_TIER_ORDER = {
   1: ['velociCoaster', 'hulk', 'hagrid'],
   2: ['harryPotter', 'spiderMan', 'hippogriff'],
@@ -149,15 +148,15 @@ const DEFAULT_TIER_ORDER = {
 const TIER_LABELS = ['Most Important', 'Important', 'Less Important', 'Least Important'];
 
 function getInitialTierLists() {
-  let stored = null;
-  try { stored = JSON.parse(localStorage.getItem(RIDE_TIER_ORDER_KEY) || 'null'); } catch (e) { stored = null; }
-
+  // No dedicated persistence -- this always starts from DEFAULT_TIER_ORDER
+  // on a fresh page load, same as any other un-pinned/un-broken default.
+  // Saving/restoring a specific arrangement happens only through presets
+  // (see addPreset/applyPreset), exactly like breaks, timePinned, etc.
   const lists = { 1: [], 2: [], 3: [], 4: [] };
-  const source = stored || DEFAULT_TIER_ORDER;
   const seen = new Set();
 
   [1, 2, 3, 4].forEach(tier => {
-    (source[tier] || []).forEach(id => {
+    (DEFAULT_TIER_ORDER[tier] || []).forEach(id => {
       if (rideById[id] && !seen.has(id)) {
         lists[tier].push(id);
         seen.add(id);
@@ -165,9 +164,6 @@ function getInitialTierLists() {
     });
   });
 
-  // Any ride missing from a saved ranking (new since the person last
-  // saved, or the very first load) sinks to the bottom of tier 4 --
-  // "if you don't know, it goes in the bottom row."
   RIDES.forEach(r => {
     if (!seen.has(r.id)) lists[4].push(r.id);
   });
@@ -176,7 +172,9 @@ function getInitialTierLists() {
 }
 
 function saveTierLists() {
-  try { localStorage.setItem(RIDE_TIER_ORDER_KEY, JSON.stringify(state.tierLists)); } catch (e) {}
+  // Intentionally a no-op -- tier order is preset-only now, not persisted
+  // on its own. Kept as a function (rather than removed) so every call
+  // site that already calls it after a drag-drop doesn't need touching.
 }
 
 // Removes a ride from wherever it currently sits, so a drag-drop can
@@ -317,6 +315,7 @@ function addPreset() {
     maxBeforeInfinity: { ...state.maxBeforeInfinity },
     maxWasZeroBeforeLock: { ...state.maxWasZeroBeforeLock },
     pinnedLocked: { ...state.pinnedLocked },
+    tierLists: JSON.parse(JSON.stringify(state.tierLists)),
   });
   selectedPresetId = presetIdCounter;
   savePresets();
@@ -350,6 +349,24 @@ function applyPreset(id) {
     state.maxWasZeroBeforeLock[r.id] = (p.maxWasZeroBeforeLock || {})[r.id] ?? false;
   });
   state.pinnedLocked = { ...(p.pinnedLocked || {}) };
+
+  // A preset saved before this feature existed won't have tierLists --
+  // fall back to the same default a fresh page load would use, rather
+  // than leaving state.tierLists pointing at stale data.
+  if (p.tierLists) {
+    const lists = { 1: [], 2: [], 3: [], 4: [] };
+    const seen = new Set();
+    [1, 2, 3, 4].forEach(tier => {
+      (p.tierLists[tier] || []).forEach(id => {
+        if (rideById[id] && !seen.has(id)) { lists[tier].push(id); seen.add(id); }
+      });
+    });
+    RIDES.forEach(r => { if (!seen.has(r.id)) lists[4].push(r.id); });
+    state.tierLists = lists;
+  } else {
+    state.tierLists = getInitialTierLists();
+  }
+
   selectedPresetId = p.id;
   renderStartDropdown();
   renderSidebarList();
