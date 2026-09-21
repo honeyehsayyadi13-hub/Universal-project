@@ -381,11 +381,11 @@ input { font-family: inherit; }
   width: 13px;
   height: 13px;
 }
-.spin-btn.max-spin-btn svg { fill: #4A5568; }
+.spin-btn.max-spin-btn svg { fill: #2D3748; }
 
 .spin-btn.max-spin-btn:disabled { opacity: 0.35; cursor: default; }
 
-.max-count { color: #FFCDD2; width: 16px; }
+.max-count { color: var(--danger); width: 16px; }
 
 .infinity-btn {
   flex-shrink: 0;
