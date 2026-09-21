@@ -86,7 +86,17 @@ input { font-family: inherit; }
 }
 
 
+#backBtn {
+  width: auto;
+  min-width: 160px;
+  margin-top: 0;
+  background: var(--danger);
+  color: var(--white);
+  padding-bottom: max(10px, env(safe-area-inset-bottom));
+}
 
+#backBtn:hover { background: var(--danger-dark); }
+#backBtn:active { transform: scale(0.98); }
 
 /* ═══════════════ SIDEBAR ═══════════════ */
 
