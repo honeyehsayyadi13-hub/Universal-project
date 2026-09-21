@@ -381,7 +381,8 @@ input { font-family: inherit; }
   width: 13px;
   height: 13px;
 }
-.spin-btn.max-spin-btn svg { fill: #8B1A1A; }
+.spin-btn.max-spin-btn:first-child svg { fill: #9AAABB; }  /* gray  — left / down arrow */
+.spin-btn.max-spin-btn:last-child svg  { fill: #4A1010; }
 .spin-btn.max-spin-btn:disabled { opacity: 0.35; cursor: default; }
 
 .max-count { color: #FFCDD2; width: 16px; }
