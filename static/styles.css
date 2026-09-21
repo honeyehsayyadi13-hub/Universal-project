@@ -1,6 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap');
 
 :root {
+  color-scheme: light only;
   --navy:        #10202F;
   --navy-2:      #16293B;
   --paper:       #F6EFDD;
@@ -37,8 +38,31 @@ html, body {
 }
 
 @media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: light only;
+    --navy:        #10202F;
+    --navy-2:      #16293B;
+    --paper:       #F6EFDD;
+    --paper-line:  #E4D9BC;
+    --ink:         #1B2430;
+    --ink-soft:    #5B6472;
+    --gold:        #E7A93C;
+    --gold-dark:   #C98B22;
+    --teal:        #2C8C8C;
+    --success:     #2F9E68;
+    --success-dark:#237A50;
+    --danger:      #D65C4F;
+    --danger-dark: #B4463B;
+    --maroon:      #7A2020;
+    --maroon-dark: #5C1818;
+    --white:       #FFFFFF;
+  }
   html, body {
     background-color: #FFFFFF !important;
+    color: #1B2430 !important;
+  }
+  * {
+    color-scheme: light !important;
   }
 }
 
