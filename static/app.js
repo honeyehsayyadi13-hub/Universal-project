@@ -1859,8 +1859,7 @@ topBarEl.addEventListener('transitionend', (e) => {
 });
 
 function getBackButtonGap() {
-  const backBtnEl = document.getElementById('backBtn');
-  return parseFloat(getComputedStyle(backBtnEl).paddingBottom) || 10;
+  return 10;
 }
 
 const MIN_MAP_HEIGHT = 64;
@@ -1872,15 +1871,8 @@ const MIN_MAP_HEIGHT = 64;
 // in the full space between the bottom of the map and the bottom of the
 // screen, rather than being pushed low with a dead gap above it.
 function updateBottomBarMinHeight() {
-  const backBtnEl = document.getElementById('backBtn');
-  const gap = getBackButtonGap();
-  // Reserve the gap on BOTH sides of the button -- above it (between the
-  // button and the map) and below it (between the button and the screen
-  // edge) -- so centering produces a real, visible symmetric strip
-  // instead of collapsing back down to just the button's own size.
-  const minHeight = backBtnEl.offsetHeight + gap * 2;
-  mapPaneEl.style.setProperty('--bottombar-min-h', minHeight + 'px');
-  return minHeight;
+  mapPaneEl.style.setProperty('--bottombar-min-h', '0px');
+  return 0;
 }
 
 function updateTogglePositions() {
