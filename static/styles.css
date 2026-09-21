@@ -380,12 +380,13 @@ input { font-family: inherit; }
   border-color: #6B1A1A;
   width: 13px;
   height: 13px;
+  color-scheme: light;
 }
-.spin-btn.max-spin-btn svg { fill: #2D3748; }
+.spin-btn.max-spin-btn svg { fill: #FFFFFF; }
 
 .spin-btn.max-spin-btn:disabled { opacity: 0.35; cursor: default; }
 
-.max-count { color: var(--danger); width: 16px; }
+.max-count { color: var(--danger); width: 16px; color-scheme: light; }
 
 .infinity-btn {
   flex-shrink: 0;
