@@ -346,7 +346,7 @@ input { font-family: inherit; }
   display: flex;
   align-items: center;
   justify-content: center;
-  color-scheme: light; /* add this */
+  color-scheme: light;
 }
 
 .checkbox.checked { background: var(--success); border-color: var(--success); }
