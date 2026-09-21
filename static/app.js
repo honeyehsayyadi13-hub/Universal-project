@@ -77,7 +77,7 @@ const state = {
   maxWasZeroBeforeLock: Object.fromEntries(RIDES.map(r => [r.id, false])),
   pinnedLocked: {},
   closedChecked: Object.fromEntries(RIDES.map(r => [r.id, false])),
-  rideTiers: null, // filled in below, once DEFAULT_RIDE_TIERS exists
+  tierLists: null, // filled in below, once DEFAULT_TIER_ORDER exists
 };
 
 function getInstanceIndex(route, pos) {
@@ -133,41 +133,68 @@ function getInitialDarkMode() {
 let darkModeOn = getInitialDarkMode();
 let advancedModeOn = localStorage.getItem(ADVANCED_MODE_KEY) === 'true';
 
-// ── ride priority tiers (Advanced Mode drag-to-rank) ──────────────
-// Tier 1 = most important, 4 = least. Drives ONLY how leftover daylight
-// gets filled once every checked/locked ride's guaranteed visits are
-// already scheduled (see routeOptimizer.py's TIER_WEIGHTS) -- this
-// replaces the old hardcoded per-ride weight dict that used to live
-// entirely server-side.
-const RIDE_TIERS_KEY = 'urp.rideTiers';
-const DEFAULT_RIDE_TIERS = {
-  velociCoaster: 1, hulk: 1, hagrid: 1,
-  harryPotter: 2, spiderMan: 2, hippogriff: 2,
-  stormForce: 3, doctorDoom: 3, skullIsland: 3, hogwartsTrain: 3, riverAdventure: 3,
-  caroSeussel: 4, oneFishtwoFish: 4, drSeussAirRide: 4, catInTheHat: 4, ripsawFalls: 4, bilgeRat: 4,
+// ── ride priority ranking (Advanced Mode drag-to-rank) ────────────
+// A single full ranking, most important first, grouped into 4 labeled
+// sections purely for display -- position within a section matters just
+// as much as which section a ride is in (see routeOptimizer.py's
+// _priority_fill_weights). Stored as one ordered array per section, so
+// both "which section" and "where within it" persist together.
+const RIDE_TIER_ORDER_KEY = 'urp.rideTierOrder';
+const DEFAULT_TIER_ORDER = {
+  1: ['velociCoaster', 'hulk', 'hagrid'],
+  2: ['harryPotter', 'spiderMan', 'hippogriff'],
+  3: ['stormForce', 'doctorDoom', 'skullIsland', 'hogwartsTrain', 'riverAdventure'],
+  4: ['caroSeussel', 'oneFishtwoFish', 'drSeussAirRide', 'catInTheHat', 'ripsawFalls', 'bilgeRat'],
 };
 const TIER_LABELS = ['Most Important', 'Important', 'Less Important', 'Least Important'];
 
-function getInitialRideTiers() {
+function getInitialTierLists() {
   let stored = null;
-  try { stored = JSON.parse(localStorage.getItem(RIDE_TIERS_KEY) || 'null'); } catch (e) { stored = null; }
-  const tiers = {};
-  RIDES.forEach(r => {
-    const val = stored && stored[r.id];
-    // A saved pick always wins once one exists. Anything missing or
-    // invalid there (e.g. a ride added since the person last saved)
-    // falls to the bottom tier -- "if you don't know, it goes in the
-    // bottom row" -- rather than back to the DEFAULT_RIDE_TIERS pick.
-    tiers[r.id] = stored ? ([1, 2, 3, 4].includes(val) ? val : 4) : (DEFAULT_RIDE_TIERS[r.id] || 4);
+  try { stored = JSON.parse(localStorage.getItem(RIDE_TIER_ORDER_KEY) || 'null'); } catch (e) { stored = null; }
+
+  const lists = { 1: [], 2: [], 3: [], 4: [] };
+  const source = stored || DEFAULT_TIER_ORDER;
+  const seen = new Set();
+
+  [1, 2, 3, 4].forEach(tier => {
+    (source[tier] || []).forEach(id => {
+      if (rideById[id] && !seen.has(id)) {
+        lists[tier].push(id);
+        seen.add(id);
+      }
+    });
   });
-  return tiers;
+
+  // Any ride missing from a saved ranking (new since the person last
+  // saved, or the very first load) sinks to the bottom of tier 4 --
+  // "if you don't know, it goes in the bottom row."
+  RIDES.forEach(r => {
+    if (!seen.has(r.id)) lists[4].push(r.id);
+  });
+
+  return lists;
 }
 
-function saveRideTiers() {
-  try { localStorage.setItem(RIDE_TIERS_KEY, JSON.stringify(state.rideTiers)); } catch (e) {}
+function saveTierLists() {
+  try { localStorage.setItem(RIDE_TIER_ORDER_KEY, JSON.stringify(state.tierLists)); } catch (e) {}
 }
 
-state.rideTiers = getInitialRideTiers();
+// Removes a ride from wherever it currently sits, so a drag-drop can
+// re-insert it at its new position without leaving a duplicate behind.
+function removeFromTierLists(rideId) {
+  for (const tier of [1, 2, 3, 4]) {
+    const idx = state.tierLists[tier].indexOf(rideId);
+    if (idx !== -1) { state.tierLists[tier].splice(idx, 1); return; }
+  }
+}
+
+// Flattens the 4 sections, top to bottom, into the single ranked list
+// (most important first) the backend actually scores against.
+function flattenPriorityOrder() {
+  return [1, 2, 3, 4].flatMap(tier => state.tierLists[tier]);
+}
+
+state.tierLists = getInitialTierLists();
 
 function applyDarkMode() {
   const mapPaneEl = document.getElementById('mapPane');
@@ -677,9 +704,6 @@ function buildRideRow(r) {
 // tier a ride ends up in.
 function renderTieredRideList() {
   for (let tier = 1; tier <= 4; tier++) {
-    // Plain label sitting right above a divider line -- no card/background,
-    // just a flat continuation of the normal ride list, split into 4
-    // labeled sections.
     const divider = document.createElement('div');
     divider.className = 'tier-divider';
     divider.textContent = `Tier ${tier} — ${TIER_LABELS[tier - 1]}`;
@@ -689,6 +713,10 @@ function renderTieredRideList() {
     group.className = 'tier-group';
     group.dataset.tier = tier;
 
+    // Dropping on empty space within a tier (below its last row, or into
+    // an empty tier) appends to the end of that tier's order. Dropping
+    // directly ON a row is handled by that row's own listeners below,
+    // which stop propagation so this handler doesn't also fire.
     group.addEventListener('dragover', e => {
       e.preventDefault();
       e.dataTransfer.dropEffect = 'move';
@@ -699,13 +727,14 @@ function renderTieredRideList() {
       e.preventDefault();
       group.classList.remove('drag-over');
       const rideId = e.dataTransfer.getData('text/plain');
-      if (!rideId || !(rideId in state.rideTiers) || state.rideTiers[rideId] === tier) return;
-      state.rideTiers[rideId] = tier;
-      saveRideTiers();
+      if (!rideId) return;
+      removeFromTierLists(rideId);
+      state.tierLists[tier].push(rideId);
+      saveTierLists();
       renderSidebarList();
     });
 
-    const ridesInTier = RIDES.filter(r => state.rideTiers[r.id] === tier);
+    const ridesInTier = state.tierLists[tier];
     if (!ridesInTier.length) {
       const empty = document.createElement('div');
       empty.className = 'tier-empty';
@@ -713,16 +742,58 @@ function renderTieredRideList() {
       group.appendChild(empty);
     }
 
-    ridesInTier.forEach(r => {
+    ridesInTier.forEach(rideId => {
+      const r = rideById[rideId];
+      if (!r) return;
       const row = buildRideRow(r);
       row.classList.add('tier-row');
       row.draggable = true;
+
       row.addEventListener('dragstart', e => {
         e.dataTransfer.setData('text/plain', r.id);
         e.dataTransfer.effectAllowed = 'move';
         row.classList.add('dragging');
       });
-      row.addEventListener('dragend', () => row.classList.remove('dragging'));
+      row.addEventListener('dragend', () => {
+        row.classList.remove('dragging', 'drag-over-top', 'drag-over-bottom');
+      });
+
+      // Dropping ON a row (rather than the empty space below the list)
+      // inserts before/after THIS row depending on which half of it the
+      // drop lands on -- this is what makes order WITHIN a tier
+      // draggable, not just which tier a ride belongs to.
+      row.addEventListener('dragover', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = 'move';
+        const rect = row.getBoundingClientRect();
+        const before = (e.clientY - rect.top) < rect.height / 2;
+        row.classList.toggle('drag-over-top', before);
+        row.classList.toggle('drag-over-bottom', !before);
+      });
+      row.addEventListener('dragleave', () => {
+        row.classList.remove('drag-over-top', 'drag-over-bottom');
+      });
+      row.addEventListener('drop', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        row.classList.remove('drag-over-top', 'drag-over-bottom');
+        const draggedId = e.dataTransfer.getData('text/plain');
+        if (!draggedId || draggedId === r.id) return;
+
+        removeFromTierLists(draggedId);
+        const arr = state.tierLists[tier];
+        let idx = arr.indexOf(r.id);
+        if (idx === -1) idx = arr.length;
+        const rect = row.getBoundingClientRect();
+        const before = (e.clientY - rect.top) < rect.height / 2;
+        if (!before) idx += 1;
+        arr.splice(idx, 0, draggedId);
+
+        saveTierLists();
+        renderSidebarList();
+      });
+
       group.appendChild(row);
     });
 
@@ -1543,7 +1614,7 @@ async function generateRoute(triggerBtn) {
         start_key: state.selectedStart,
         live_waits: state.liveWaits,
         time_pinned,
-        ride_priority_tiers: state.rideTiers,
+        ride_priority_order: flattenPriorityOrder(),
         max_counts: Object.fromEntries(
           RIDES
             .filter(r => state.visible[r.id] && state.counts[r.id] > 0)

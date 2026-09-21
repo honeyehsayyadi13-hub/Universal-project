@@ -58,7 +58,7 @@ def route():
             close_hour=close_hour,
             close_minute=close_minute,
             override_closed_keys=payload.get("override_closed_keys"),
-            ride_priority_tiers=payload.get("ride_priority_tiers"),
+            ride_priority_order=payload.get("ride_priority_order"),
             )
     except Exception as e:
         app.logger.exception("route computation failed")

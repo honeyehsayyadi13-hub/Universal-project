@@ -116,15 +116,33 @@ MAX_DRAG_DRIFT_MIN = 30          # a dragged-and-dropped ride must land within t
                                   # minutes of the queue-join time of whatever ride it
                                   # displaced, whenever a slot like that exists at all
 
-# ── ride "importance" tiers ─────────────────────────────────────────
-# Importance used to be hardcoded per-ride. Now Advanced Mode lets the
-# person drag rides into 4 priority tiers on the sidebar (1 = most
-# important, 4 = least); the frontend sends the result as
-# `ride_priority_tiers` ({ride_key: 1|2|3|4}). This maps a tier number to
-# the round-robin fill weight it carries -- same style of spread the old
-# hardcoded dict used, just now user-assignable instead of fixed in code.
-TIER_WEIGHTS = {1: 4.0, 2: 3.0, 3: 2.0, 4: 1.0}
-DEFAULT_TIER_WEIGHT = 1.0
+# ── ride importance ranking ──────────────────────────────────────────
+# Importance used to be hardcoded per-ride, then a 4-tier drag system.
+# Now Advanced Mode lets the person drag rides into ONE full ranking
+# (grouped into 4 labeled sections purely for display) -- the frontend
+# sends the whole order as `ride_priority_order`, a list of ride_keys from
+# most to least important. Position in that list, not just which of the 4
+# sections a ride sits in, decides round-robin fill weight: a ride dragged
+# higher within its own section outranks the others below it there, while
+# still always losing to every ride in an earlier section.
+def _priority_fill_weights(ride_priority_order, checked_keys):
+    """
+    Turns a full ride_key ranking (most -> least important) into a
+    {ride_key: weight} map for _fill_until_close's round-robin fill.
+    Weight decreases by exactly 1 per rank step, so ordering within a
+    section always breaks ties the same way ordering BETWEEN sections
+    does -- there's no separate "tier" concept on this side at all, just
+    rank. A ride missing from the ranking (shouldn't normally happen,
+    since the UI always ranks every ride) sinks below every ranked ride.
+    """
+    order = list(ride_priority_order or [])
+    rank = {key: i for i, key in enumerate(order)}
+    fallback_rank = len(order)
+    weights = {}
+    for key in checked_keys:
+        r = rank.get(key, fallback_rank)
+        weights[key] = float(fallback_rank - r) + 1.0
+    return weights
 
 
 # ── data loading ─────────────────────────────────────────────────────
@@ -778,7 +796,7 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
                              breaks=None, start_time=None, start_key="entrance",
                              live_waits=None, time_pinned=None, max_counts=None,
                              close_hour=None, close_minute=None, override_closed_keys=None,
-                             ride_priority_tiers=None):
+                             ride_priority_order=None):
     """
     Main entry point for route computation.
 
@@ -796,10 +814,12 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
             been manually checked (Advanced Mode "yellow check") -- these
             are exempted from RULE 1's closed-ride drop and scheduled
             normally, using whatever live/historical wait data exists
-        ride_priority_tiers: {ride_key: 1|2|3|4} from Advanced Mode's
-            drag-to-rank sidebar -- 1 is most important, 4 is least. Only
-            affects RULE 6's round-robin fill of remaining daylight (see
-            TIER_WEIGHTS above); never affects forced/locked scheduling.
+        ride_priority_order: list of ride_keys, most important first, from
+            Advanced Mode's drag-to-rank sidebar (position within the list
+            is what matters -- the 4 labeled sections are a display
+            grouping only). Only affects RULE 6's round-robin fill of
+            remaining daylight (see _priority_fill_weights above); never
+            affects forced/locked scheduling.
         ride_priority_tiers: {ride_key: 1|2|3} from Advanced Mode's drag-to-
             rank sidebar -- 1 is most important, 3 is least. Only affects
             RULE 6's round-robin fill of remaining daylight (see
@@ -930,9 +950,9 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
     # unchanged, meaning the ride kept its same claim on EXTRA daylight
     # slots instead of yielding to less-visited rides -- which is what
     # produced an unwanted 3rd/4th visit right after pinning 2.
-    ride_priority_tiers = ride_priority_tiers or {}
+    priority_weights_by_key = _priority_fill_weights(ride_priority_order, checked.keys())
     fill_weights = {
-        key_to_id[k]: TIER_WEIGHTS.get(ride_priority_tiers.get(k), DEFAULT_TIER_WEIGHT)
+        key_to_id[k]: priority_weights_by_key[k]
         for k in checked
     }
     final_order = _fill_until_close(
