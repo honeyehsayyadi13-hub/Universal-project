@@ -89,13 +89,16 @@ function getInstanceIndex(route, pos) {
 
 function getUniqueKey(rideId, instanceIndex) { return `${rideId}:${instanceIndex}`; }
 
+let routeUidCounter = 0;
+function nextUid() { return ++routeUidCounter; }
+
 // If a ride ends up pinned/selected at more distinct spots in the top bar
 // than its sidebar count currently allows, bump that count up to match --
 // otherwise the sidebar would be asking for fewer visits than the person
 // just told the route to guarantee by pinning them.
 function ensureMinCountMatchesPinnedInstances(rideId) {
-  const pinnedInstanceCount = Object.keys(state.timePinned)
-    .filter(k => k.startsWith(`${rideId}:`)).length;
+  const pinnedInstanceCount = Object.values(state.timePinned)
+    .filter(p => p.rideId === rideId).length;
   if (pinnedInstanceCount > state.counts[rideId]) {
     state.counts[rideId] = pinnedInstanceCount;
     state.lastCount[rideId] = pinnedInstanceCount;
@@ -263,39 +266,30 @@ function clearConflictingSentinelPins(sentinelValue, exceptKey) {
 function executeDrop(srcIdx, destIdx) {
   if (srcIdx === null || destIdx === null || srcIdx === destIdx) return;
 
-  // First and last positions get sentinel targetMinutes so _reorder_for_time_pins
-  // always places them at the extreme end of the day, keeping them there.
   const isFirst = destIdx === 0;
   const isLast  = destIdx === state.route.length - 1;
+  const targetStop = state.route[destIdx];
   const targetMinutes = isFirst ? 0
                       : isLast  ? 1440
-                      : (state.route[destIdx]?.queueJoinMinutes ?? null);
+                      : (targetStop?.queueJoinMinutes ?? null);
 
-  // Remove stale time-pin for the dragged stop
-  const srcInstIdx = getInstanceIndex(state.route, srcIdx);
-  const oldKey = getUniqueKey(state.route[srcIdx].rideId, srcInstIdx);
-  delete state.timePinned[oldKey];
-
-  // Reorder — moved always lands at index destIdx in the final array
   const moved = state.route.splice(srcIdx, 1)[0];
-  state.route.splice(destIdx, 0, moved);
 
-  // Attach time-pin at new position
-  const newInstIdx = getInstanceIndex(state.route, destIdx);
-  const newKey = getUniqueKey(moved.rideId, newInstIdx);
-  state.timePinned[newKey] = {
-    rideId:        moved.rideId,
-    instanceIndex: newInstIdx,
-    targetMinutes,
-  };
+  if (isFirst) {
+    state.route.unshift(moved);
+  } else if (isLast) {
+    state.route.push(moved);
+  } else {
+    let insertAt = state.route.indexOf(targetStop);
+    if (insertAt === -1) insertAt = destIdx;
+    state.route.splice(insertAt, 0, moved);
+  }
 
-  // If this drop claims the first or last slot, no other stop is allowed
-  // to keep claiming that same slot — otherwise both stops would tell the
-  // backend "put me first" (or "put me last") and only one request can win.
-  if (isFirst) clearConflictingSentinelPins(0, newKey);
-  if (isLast)  clearConflictingSentinelPins(1440, newKey);
+  state.timePinned[moved.uid] = { rideId: moved.rideId, targetMinutes };
 
-  // Auto-lock the dragged ride if not already sidebar-locked
+  if (isFirst) clearConflictingSentinelPins(0, moved.uid);
+  if (isLast)  clearConflictingSentinelPins(1440, moved.uid);
+
   if (!state.locked[moved.rideId]) {
     state.locked[moved.rideId] = true;
     state.pinnedLocked[moved.rideId] = true;
@@ -1441,9 +1435,7 @@ function renderRouteBar() {
       const r = rideById[stop.rideId];
       if (!r) continue;
 
-      const instIdx    = getInstanceIndex(state.route, i);
-      const uniqueKey  = getUniqueKey(stop.rideId, instIdx);
-      const pinEntry   = state.timePinned[uniqueKey];
+      const pinEntry   = state.timePinned[stop.uid];
       const isLocked   = pinEntry && pinEntry.targetMinutes !== null;
       const isHighlighted = !!pinEntry;
 
@@ -1560,8 +1552,8 @@ function renderRouteBar() {
         const dist = Math.hypot(e.clientX - pointerDownX, e.clientY - pointerDownY);
         if (dist > 8) return;
         if (pinEntry) {
-          delete state.timePinned[uniqueKey];
-          const anyStillPinned = Object.keys(state.timePinned).some(k => k.startsWith(`${stop.rideId}:`));
+          delete state.timePinned[stop.uid];
+          const anyStillPinned = Object.values(state.timePinned).some(p => p.rideId === stop.rideId);
           if (!anyStillPinned && state.pinnedLocked[stop.rideId]) {
             state.locked[stop.rideId] = false;
             delete state.pinnedLocked[stop.rideId];
@@ -1569,13 +1561,12 @@ function renderRouteBar() {
         } else {
           const isFirst = i === 0;
           const isLast  = i === state.route.length - 1;
-          state.timePinned[uniqueKey] = {
+          state.timePinned[stop.uid] = {
             rideId: stop.rideId,
-            instanceIndex: instIdx,
             targetMinutes: isFirst ? 0 : isLast ? 1440 : (stop.queueJoinMinutes ?? null),
           };
-          if (isFirst) clearConflictingSentinelPins(0, uniqueKey);
-          if (isLast)  clearConflictingSentinelPins(1440, uniqueKey);
+          if (isFirst) clearConflictingSentinelPins(0, stop.uid);
+          if (isLast)  clearConflictingSentinelPins(1440, stop.uid);
           if (!state.locked[stop.rideId]) {
             state.locked[stop.rideId] = true;
             state.pinnedLocked[stop.rideId] = true;
@@ -1615,12 +1606,12 @@ function renderRouteBar() {
       remove.className = 'stop-remove';
       remove.textContent = '✕';
       remove.addEventListener('click', () => {
-        delete state.timePinned[uniqueKey];
+        delete state.timePinned[stop.uid];
         state.route.splice(i, 1);
         const remaining = state.route.filter(s => s.rideId === stop.rideId).length;
         state.maxBeforeInfinity[stop.rideId] = remaining;
         state.maxCounts[stop.rideId] = remaining;
-        const anyStillPinned = Object.keys(state.timePinned).some(k => k.startsWith(`${stop.rideId}:`));
+        const anyStillPinned = Object.values(state.timePinned).some(p => p.rideId === stop.rideId);
         if (!anyStillPinned && state.pinnedLocked[stop.rideId]) {
           state.locked[stop.rideId] = false;
           delete state.pinnedLocked[stop.rideId];
@@ -1695,15 +1686,15 @@ async function generateRoute(triggerBtn) {
   const override_closed_keys = RIDES.filter(r => state.closedChecked[r.id]).map(r => r.id);
   const breaks = state.breaks.map(b => [b.startMin, b.endMin]);
 
-  const time_pinned = Object.values(state.timePinned)
-    .filter(p => p.targetMinutes !== null)
-    .map(p => {
-      const routeIdx = state.route.findIndex((stop, idx) =>
-        stop.rideId === p.rideId && getInstanceIndex(state.route, idx) === p.instanceIndex
-      );
+  const time_pinned = Object.entries(state.timePinned)
+    .filter(([, p]) => p.targetMinutes !== null)
+    .map(([uidStr, p]) => {
+      const uid = Number(uidStr);
+      const routeIdx = state.route.findIndex(s => s.uid === uid);
+      const instanceIndex = routeIdx === -1 ? 0 : getInstanceIndex(state.route, routeIdx);
       return {
         ride_key:       p.rideId,
-        instance_index: p.instanceIndex,
+        instance_index: instanceIndex,
         target_minutes: p.targetMinutes,
         route_index:    routeIdx,
       };
@@ -1751,16 +1742,21 @@ async function generateRoute(triggerBtn) {
     if (!res.ok) throw new Error((data && data.error) ? data.error : `route request failed: ${res.status}`);
     if (!Array.isArray(data)) throw new Error('Unexpected response from route service.');
 
-    state.route = data.map(extractRideIdAndWait);
+    const oldRoute = state.route;
+    const oldPins = Object.entries(state.timePinned).map(([uidStr, pin]) => {
+      const uid = Number(uidStr);
+      const idx = oldRoute.findIndex(s => s.uid === uid);
+      return { ...pin, instanceIndex: idx === -1 ? 0 : getInstanceIndex(oldRoute, idx) };
+    });
 
-    const oldPins = Object.values(state.timePinned);
+    state.route = data.map(entry => ({ ...extractRideIdAndWait(entry), uid: nextUid() }));
+
     const newTP = {};
 
     function pinAt(idx, targetMinutes) {
       if (idx < 0 || idx >= state.route.length) return;
-      const rid  = state.route[idx].rideId;
-      const inst = getInstanceIndex(state.route, idx);
-      newTP[getUniqueKey(rid, inst)] = { rideId: rid, instanceIndex: inst, targetMinutes };
+      const stop = state.route[idx];
+      newTP[stop.uid] = { rideId: stop.rideId, targetMinutes };
     }
 
     oldPins.forEach(pin => {
