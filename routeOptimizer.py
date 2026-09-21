@@ -711,9 +711,9 @@ def _reorder_for_time_pins(order, pin_targets, histories, walk_map, durations,
 
     for (db_id, inst_idx), target_minutes in ordered_pins:
         occurrences = [i for i, x in enumerate(order) if x == db_id]
-        if inst_idx >= len(occurrences):
+        if not occurrences:
             continue
-        src_pos = occurrences[inst_idx]
+        src_pos = occurrences[min(inst_idx, len(occurrences) - 1)]
         order_without = order[:src_pos] + order[src_pos + 1:]
 
         # Translate the anchor's index into order_without's index space
