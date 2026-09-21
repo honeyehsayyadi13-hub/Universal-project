@@ -186,6 +186,25 @@ function removeFromTierLists(rideId) {
   }
 }
 
+// Shared by both mouse (HTML5 DnD) and touch drop handling: moves
+// draggedId into `tier`, positioned just before/after targetId.
+function moveRideInTierLists(draggedId, tier, targetId, before) {
+  removeFromTierLists(draggedId);
+  const arr = state.tierLists[tier];
+  let idx = arr.indexOf(targetId);
+  if (idx === -1) idx = arr.length;
+  if (!before) idx += 1;
+  arr.splice(idx, 0, draggedId);
+  saveTierLists();
+}
+
+// Touch-drag state for the Advanced Mode tier list (mirrors the top route
+// bar's touchDragSrcIdx/touchDragClone pattern).
+let tierTouchSrcId = null;
+let tierTouchClone = null;
+let tierTouchStartX = 0, tierTouchStartY = 0;
+let tierTouchDragging = false;
+
 // Flattens the 4 sections, top to bottom, into the single ranked list
 // (most important first) the backend actually scores against.
 function flattenPriorityOrder() {
@@ -804,20 +823,101 @@ function renderTieredRideList() {
         row.classList.remove('drag-over-top', 'drag-over-bottom');
         const draggedId = e.dataTransfer.getData('text/plain');
         if (!draggedId || draggedId === r.id) return;
-
-        removeFromTierLists(draggedId);
-        const arr = state.tierLists[tier];
-        let idx = arr.indexOf(r.id);
-        if (idx === -1) idx = arr.length;
-        const rect = row.getBoundingClientRect();
-        const before = (e.clientY - rect.top) < rect.height / 2;
-        if (!before) idx += 1;
-        arr.splice(idx, 0, draggedId);
-
-        saveTierLists();
+        moveRideInTierLists(draggedId, tier, r.id, false);
         renderSidebarList();
       });
 
+      // ── touch drag (mirrors the top route bar's touch handling) ──
+      row.addEventListener('touchstart', e => {
+        const touch = e.touches[0];
+        tierTouchStartX   = touch.clientX;
+        tierTouchStartY   = touch.clientY;
+        tierTouchSrcId    = r.id;
+        tierTouchDragging = false;
+      }, { passive: true });
+
+      row.addEventListener('touchmove', e => {
+        if (tierTouchSrcId === null) return;
+        const touch = e.touches[0];
+        const dx = touch.clientX - tierTouchStartX;
+        const dy = touch.clientY - tierTouchStartY;
+
+        if (!tierTouchDragging) {
+          if (Math.hypot(dx, dy) < 8) return;
+          tierTouchDragging = true;
+          row.classList.add('dragging');
+          tierTouchClone = row.cloneNode(true);
+          Object.assign(tierTouchClone.style, {
+            position: 'fixed', pointerEvents: 'none', opacity: '0.85',
+            zIndex: '9999', width: row.offsetWidth + 'px',
+            transform: 'scale(1.02)', transition: 'none',
+            left: (touch.clientX - row.offsetWidth / 2) + 'px',
+            top:  (touch.clientY - 18) + 'px',
+          });
+          document.body.appendChild(tierTouchClone);
+        }
+
+        e.preventDefault();
+        tierTouchClone.style.left = (touch.clientX - tierTouchClone.offsetWidth / 2) + 'px';
+        tierTouchClone.style.top  = (touch.clientY - 18) + 'px';
+
+        tierTouchClone.style.visibility = 'hidden';
+        const el = document.elementFromPoint(touch.clientX, touch.clientY);
+        tierTouchClone.style.visibility = '';
+
+        document.querySelectorAll('.tier-row').forEach(r2 =>
+          r2.classList.remove('drag-over-top', 'drag-over-bottom'));
+        document.querySelectorAll('.tier-group').forEach(g => g.classList.remove('drag-over'));
+
+        const overRow = el?.closest('.tier-row');
+        const overGroup = el?.closest('.tier-group');
+        if (overRow && overRow !== row) {
+          const rect = overRow.getBoundingClientRect();
+          const before = (touch.clientY - rect.top) < rect.height / 2;
+          overRow.classList.toggle('drag-over-top', before);
+          overRow.classList.toggle('drag-over-bottom', !before);
+        } else if (overGroup) {
+          overGroup.classList.add('drag-over');
+        }
+      }, { passive: false });
+
+      row.addEventListener('touchend', e => {
+        if (!tierTouchDragging) { tierTouchSrcId = null; return; }
+        const touch = e.changedTouches[0];
+        tierTouchClone.style.visibility = 'hidden';
+        const el = document.elementFromPoint(touch.clientX, touch.clientY);
+        tierTouchClone?.remove();
+        tierTouchClone = null;
+        row.classList.remove('dragging');
+        document.querySelectorAll('.tier-row').forEach(r2 =>
+          r2.classList.remove('drag-over-top', 'drag-over-bottom'));
+        document.querySelectorAll('.tier-group').forEach(g => g.classList.remove('drag-over'));
+
+        const draggedId = tierTouchSrcId;
+        tierTouchSrcId = null;
+        tierTouchDragging = false;
+        if (!draggedId) return;
+
+        const overRow = el?.closest('.tier-row');
+        const overGroup = el?.closest('.tier-group');
+        if (overRow) {
+          const targetId = overRow.dataset.rideId;
+          if (!targetId || targetId === draggedId) return;
+          const targetTier = Number(overRow.closest('.tier-group').dataset.tier);
+          const rect = overRow.getBoundingClientRect();
+          const before = (touch.clientY - rect.top) < rect.height / 2;
+          moveRideInTierLists(draggedId, targetTier, targetId, before);
+          renderSidebarList();
+        } else if (overGroup) {
+          const targetTier = Number(overGroup.dataset.tier);
+          removeFromTierLists(draggedId);
+          state.tierLists[targetTier].push(draggedId);
+          saveTierLists();
+          renderSidebarList();
+        }
+      });
+
+      row.dataset.rideId = r.id;
       group.appendChild(row);
     });
 
