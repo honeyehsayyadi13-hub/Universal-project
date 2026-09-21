@@ -399,18 +399,16 @@ input { font-family: inherit; }
 
 .spin-btn:disabled { opacity: 0.35; cursor: default; }
 .spin-btn.max-spin-btn {
-  background: #9B2C2C;
-  border-color: #6B1A1A;
+  background: #9B2C2C !important;
+  border-color: #6B1A1A !important;
   width: 13px;
   height: 13px;
-  color-scheme: light;
 }
-.spin-btn.max-spin-btn svg { fill: #FFFFFF; }
+.spin-btn.max-spin-btn svg { fill: #FFFFFF !important; }
 
 .spin-btn.max-spin-btn:disabled { opacity: 0.35; cursor: default; }
 
-.max-count { color: var(--danger); width: 16px; color-scheme: light; }
-
+.max-count { color: #D65C4F !important; width: 16px; }
 .infinity-btn {
   flex-shrink: 0;
   width: 15px;
