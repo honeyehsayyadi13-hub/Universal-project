@@ -277,16 +277,6 @@ input { font-family: inherit; }
 .row.break-row { justify-content: space-between; }
 
 /* ── Advanced Mode tier-drag view ── */
-.tier-block {
-  background: rgba(255,255,255,0.05);
-  border: 1px solid rgba(255,255,255,0.09);
-  border-radius: 10px;
-  margin: 0 0 10px;
-  overflow: hidden;
-}
-
-.tier-block:first-child { margin-top: 2px; }
-
 .tier-divider {
   font-family: 'Baloo 2', sans-serif;
   font-size: 11px;
@@ -294,20 +284,20 @@ input { font-family: inherit; }
   letter-spacing: 0.4px;
   text-transform: uppercase;
   color: var(--gold);
-  background: rgba(0,0,0,0.22);
-  padding: 7px 10px;
-  border-bottom: 1px solid rgba(255,255,255,0.09);
+  padding: 14px 2px 5px;
+  border-bottom: 2px solid var(--gold-dark);
 }
+
+.tier-divider:first-child { padding-top: 2px; }
 
 .tier-group {
   display: flex;
   flex-direction: column;
-  min-height: 36px;
-  padding: 2px 4px;
+  min-height: 24px;
   transition: background 0.12s ease;
 }
 
-.tier-group.drag-over { background: rgba(231, 169, 60, 0.14); }
+.tier-group.drag-over { background: rgba(231, 169, 60, 0.12); }
 
 .tier-empty {
   font-size: 11.5px;
@@ -317,22 +307,9 @@ input { font-family: inherit; }
   padding: 8px 4px;
 }
 
-.row.tier-row { border-bottom: 1px solid rgba(255,255,255,0.06); }
-.row.tier-row:last-child { border-bottom: none; }
 .row.tier-row[draggable="true"] { cursor: grab; }
 .row.tier-row[draggable="true"]:active { cursor: grabbing; }
 .row.tier-row.dragging { opacity: 0.35; }
-
-.drag-handle {
-  flex-shrink: 0;
-  width: 12px;
-  text-align: center;
-  color: #6B7686;
-  font-size: 13px;
-  line-height: 1;
-  cursor: grab;
-  user-select: none;
-}
 
 .break-row-label {
   font-size: 12.5px;

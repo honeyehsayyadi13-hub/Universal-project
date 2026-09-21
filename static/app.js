@@ -677,18 +677,13 @@ function buildRideRow(r) {
 // tier a ride ends up in.
 function renderTieredRideList() {
   for (let tier = 1; tier <= 4; tier++) {
-    // Each tier is its own visually self-contained card (border + background
-    // + a solid-banner label) rather than a bare text divider sitting
-    // directly among the rows -- at small sizes a plain colored label next
-    // to colored (closed-ride) row text was hard to visually separate from
-    // the rows themselves.
-    const block = document.createElement('div');
-    block.className = 'tier-block';
-
+    // Plain label sitting right above a divider line -- no card/background,
+    // just a flat continuation of the normal ride list, split into 4
+    // labeled sections.
     const divider = document.createElement('div');
     divider.className = 'tier-divider';
     divider.textContent = `Tier ${tier} — ${TIER_LABELS[tier - 1]}`;
-    block.appendChild(divider);
+    sidebarListEl.appendChild(divider);
 
     const group = document.createElement('div');
     group.className = 'tier-group';
@@ -722,15 +717,6 @@ function renderTieredRideList() {
       const row = buildRideRow(r);
       row.classList.add('tier-row');
       row.draggable = true;
-
-      // A visible grip icon makes it obvious the row can be dragged --
-      // without one, nothing in a dense row full of small buttons signals
-      // that the whole row itself (not just a control) is interactive.
-      const handle = document.createElement('span');
-      handle.className = 'drag-handle';
-      handle.textContent = '⠿';
-      row.insertBefore(handle, row.firstChild);
-
       row.addEventListener('dragstart', e => {
         e.dataTransfer.setData('text/plain', r.id);
         e.dataTransfer.effectAllowed = 'move';
@@ -740,8 +726,7 @@ function renderTieredRideList() {
       group.appendChild(row);
     });
 
-    block.appendChild(group);
-    sidebarListEl.appendChild(block);
+    sidebarListEl.appendChild(group);
   }
 }
 
