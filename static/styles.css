@@ -293,9 +293,11 @@ input { font-family: inherit; }
 .tier-group {
   display: flex;
   flex-direction: column;
-  min-height: 24px;
+  flex-shrink: 0;
   transition: background 0.12s ease;
 }
+
+.tier-divider { flex-shrink: 0; }
 
 .tier-group.drag-over { background: rgba(231, 169, 60, 0.12); }
 
