@@ -886,6 +886,17 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
     current_waits = {}
     if live_waits:
         for key, wait in live_waits.items():
+            # An override-closed ride's "live" reading is meaningless -- it's
+            # whatever number the source reported for a ride that isn't
+            # actually running right now (often a flat 0 once the park's
+            # closed for the night), not a real current wait. Anchoring the
+            # prediction to that produced ~0-minute predictions for every
+            # yellow-checked ride. Skipping it here falls back to
+            # _predict_wait's pure historical time-of-day curve instead,
+            # which is the best available estimate for a ride with no
+            # trustworthy live signal.
+            if key in override_closed_keys:
+                continue
             if key in checked and key in key_to_id and wait is not None:
                 current_waits[key_to_id[key]] = wait
 

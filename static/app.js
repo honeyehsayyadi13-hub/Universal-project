@@ -316,6 +316,7 @@ function addPreset() {
     maxWasZeroBeforeLock: { ...state.maxWasZeroBeforeLock },
     pinnedLocked: { ...state.pinnedLocked },
     tierLists: JSON.parse(JSON.stringify(state.tierLists)),
+    closedChecked: { ...state.closedChecked },
   });
   selectedPresetId = presetIdCounter;
   savePresets();
@@ -366,6 +367,12 @@ function applyPreset(id) {
   } else {
     state.tierLists = getInitialTierLists();
   }
+
+  // A preset saved before this feature existed won't have closedChecked --
+  // default every ride to false (no override) rather than leaving stale data.
+  RIDES.forEach(r => {
+    state.closedChecked[r.id] = (p.closedChecked || {})[r.id] || false;
+  });
 
   selectedPresetId = p.id;
   renderStartDropdown();
