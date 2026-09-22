@@ -1,35 +1,6 @@
 /* app.js 
 ════════════════════════════════════════════════════════════════
    Universal Route Planner — front end
-   ────────────────────────────────────────────────────────────────
-   BACKEND CONTRACT (point API_BASE at your Flask app, or leave it as
-   '' if this file is served by the same Flask app):
-
-   GET  {API_BASE}/api/rides
-     -> { "<rideId>": { "waittime": <minutes>, "is_open": true|false|null }, ... }
-     A ride only appears in this dict when Data.py's background poller has
-     ever seen it. A ride missing from the dict means "unknown" (not
-     necessarily closed) — we don't force it into the closed list on that
-     basis alone.
-
-   POST {API_BASE}/api/route
-     body: {
-       "ride_counts":       { "<rideId>": <int quantity>, ... },  // only visible, qty>0 rides
-       "ride_locked":       { "<rideId>": true, ... },             // OBJECT, not array —
-                                                                    // routeOptimizer.py calls
-                                                                    // ride_locked.get(key) on this
-       "closed_ride_keys":  ["<rideId>", ...],
-       "breaks":            [[startMin, endMin], ...],             // minutes since midnight
-       "start_key":         "<rideId>|entrance",
-       "live_waits":        { "<rideId>": <minutes>, ... }          // straight from /api/rides
-     }
-     -> a list from compute_and_print_route(); each entry may be a plain
-        ride-id string, a [ride_id, predicted_wait] pair, or a dict with
-        ride_id/predicted_wait-style keys — the normalizer below handles
-        all three shapes. On failure the backend returns a JSON body of
-        { "error": "..." } with a non-200 status.
-
-   Adjust API_BASE / field names below to match your actual Flask routes.
    ════════════════════════════════════════════════════════════════ */
 
 const API_BASE = '';
@@ -77,6 +48,7 @@ const state = {
   maxWasZeroBeforeLock: Object.fromEntries(RIDES.map(r => [r.id, false])),
   pinnedLocked: {},
   closedChecked: Object.fromEntries(RIDES.map(r => [r.id, false])),
+  tierLists: null, // filled in below, once DEFAULT_TIER_ORDER exists
 };
 
 function getInstanceIndex(route, pos) {
@@ -88,13 +60,20 @@ function getInstanceIndex(route, pos) {
 
 function getUniqueKey(rideId, instanceIndex) { return `${rideId}:${instanceIndex}`; }
 
+// Stable per-stop id, generated once when a stop is created (in generateRoute)
+// and never recomputed from array position. Pins are keyed by this instead
+// of a recomputed "instance index", which used to collide whenever two
+// stops shared a rideId or the array got reordered.
+let routeUidCounter = 0;
+function nextUid() { return 'r' + (++routeUidCounter); }
+
 // If a ride ends up pinned/selected at more distinct spots in the top bar
 // than its sidebar count currently allows, bump that count up to match --
 // otherwise the sidebar would be asking for fewer visits than the person
 // just told the route to guarantee by pinning them.
 function ensureMinCountMatchesPinnedInstances(rideId) {
-  const pinnedInstanceCount = Object.keys(state.timePinned)
-    .filter(k => k.startsWith(`${rideId}:`)).length;
+  const pinnedInstanceCount = Object.values(state.timePinned)
+    .filter(p => p.rideId === rideId).length;
   if (pinnedInstanceCount > state.counts[rideId]) {
     state.counts[rideId] = pinnedInstanceCount;
     state.lastCount[rideId] = pinnedInstanceCount;
@@ -125,12 +104,71 @@ function getInitialDarkMode() {
   const stored = localStorage.getItem(DARK_MODE_KEY);
   if (stored === 'true')  return true;
   if (stored === 'false') return false;
-  // No explicit choice saved yet -- match the browser/OS setting.
   return !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
 }
 
 let darkModeOn = getInitialDarkMode();
 let advancedModeOn = localStorage.getItem(ADVANCED_MODE_KEY) === 'true';
+
+const DEFAULT_TIER_ORDER = {
+  1: ['velociCoaster', 'hulk', 'hagrid'],
+  2: ['harryPotter', 'spiderMan', 'hippogriff'],
+  3: ['stormForce', 'doctorDoom', 'skullIsland', 'hogwartsTrain', 'riverAdventure'],
+  4: ['caroSeussel', 'oneFishtwoFish', 'drSeussAirRide', 'catInTheHat', 'ripsawFalls', 'bilgeRat'],
+};
+const TIER_LABELS = ['Most Important', 'Important', 'Less Important', 'Least Important'];
+
+function getInitialTierLists() {
+  const lists = { 1: [], 2: [], 3: [], 4: [] };
+  const seen = new Set();
+
+  [1, 2, 3, 4].forEach(tier => {
+    (DEFAULT_TIER_ORDER[tier] || []).forEach(id => {
+      if (rideById[id] && !seen.has(id)) {
+        lists[tier].push(id);
+        seen.add(id);
+      }
+    });
+  });
+
+  RIDES.forEach(r => {
+    if (!seen.has(r.id)) lists[4].push(r.id);
+  });
+
+  return lists;
+}
+
+function saveTierLists() {
+  // Intentionally a no-op -- tier order is preset-only now.
+}
+
+function removeFromTierLists(rideId) {
+  for (const tier of [1, 2, 3, 4]) {
+    const idx = state.tierLists[tier].indexOf(rideId);
+    if (idx !== -1) { state.tierLists[tier].splice(idx, 1); return; }
+  }
+}
+
+function moveRideInTierLists(draggedId, tier, targetId, before) {
+  removeFromTierLists(draggedId);
+  const arr = state.tierLists[tier];
+  let idx = arr.indexOf(targetId);
+  if (idx === -1) idx = arr.length;
+  if (!before) idx += 1;
+  arr.splice(idx, 0, draggedId);
+  saveTierLists();
+}
+
+let tierTouchSrcId = null;
+let tierTouchClone = null;
+let tierTouchStartX = 0, tierTouchStartY = 0;
+let tierTouchDragging = false;
+
+function flattenPriorityOrder() {
+  return [1, 2, 3, 4].flatMap(tier => state.tierLists[tier]);
+}
+
+state.tierLists = getInitialTierLists();
 
 function applyDarkMode() {
   const mapPaneEl = document.getElementById('mapPane');
@@ -147,13 +185,13 @@ function applyDarkMode() {
 
 function applyAdvancedMode() {
   document.getElementById('advancedModeCheckbox')?.classList.toggle('checked', advancedModeOn);
-  // Hook point for future advanced-mode behavior -- just persisted and reflected in the checkbox for now.
 }
 
 document.getElementById('advancedModeToggle')?.addEventListener('click', () => {
   advancedModeOn = !advancedModeOn;
   localStorage.setItem(ADVANCED_MODE_KEY, advancedModeOn);
   applyAdvancedMode();
+  renderSidebarList();
 });
 
 document.getElementById('darkModeToggle')?.addEventListener('click', () => {
@@ -169,51 +207,51 @@ let touchDragClone   = null;
 let touchStartX = 0, touchStartY = 0;
 let touchDragging = false;
 
+// Clears any OTHER pin that's claiming the same sentinel slot (first or
+// last), so only one stop can ever be "force first" or "force last" at a
+// time. Comparison is done as strings on both sides so this can never
+// silently no-op due to a string/number id type mismatch (that mismatch
+// used to wipe out the pin you'd just created, immediately).
 function clearConflictingSentinelPins(sentinelValue, exceptKey) {
   for (const [key, pin] of Object.entries(state.timePinned)) {
-    if (key === exceptKey) continue;
+    if (String(key) === String(exceptKey)) continue;
     if (pin.targetMinutes === sentinelValue) {
       pin.targetMinutes = null;
     }
   }
 }
 
+// Moves the stop at srcIdx to destIdx, and pins it there. Uses stop.uid
+// (a stable id assigned once when the stop was created) as the pin key,
+// never a recomputed array-position-based index, so this can't collide
+// with another stop of the same ride and can't be lost on reorder.
 function executeDrop(srcIdx, destIdx) {
   if (srcIdx === null || destIdx === null || srcIdx === destIdx) return;
 
-  // First and last positions get sentinel targetMinutes so _reorder_for_time_pins
-  // always places them at the extreme end of the day, keeping them there.
   const isFirst = destIdx === 0;
   const isLast  = destIdx === state.route.length - 1;
+  const targetStop = state.route[destIdx];
   const targetMinutes = isFirst ? 0
                       : isLast  ? 1440
-                      : (state.route[destIdx]?.queueJoinMinutes ?? null);
+                      : (targetStop?.queueJoinMinutes ?? null);
 
-  // Remove stale time-pin for the dragged stop
-  const srcInstIdx = getInstanceIndex(state.route, srcIdx);
-  const oldKey = getUniqueKey(state.route[srcIdx].rideId, srcInstIdx);
-  delete state.timePinned[oldKey];
-
-  // Reorder — moved always lands at index destIdx in the final array
   const moved = state.route.splice(srcIdx, 1)[0];
-  state.route.splice(destIdx, 0, moved);
 
-  // Attach time-pin at new position
-  const newInstIdx = getInstanceIndex(state.route, destIdx);
-  const newKey = getUniqueKey(moved.rideId, newInstIdx);
-  state.timePinned[newKey] = {
-    rideId:        moved.rideId,
-    instanceIndex: newInstIdx,
-    targetMinutes,
-  };
+  if (isFirst) {
+    state.route.unshift(moved);
+  } else if (isLast) {
+    state.route.push(moved);
+  } else {
+    let insertAt = state.route.indexOf(targetStop);
+    if (insertAt === -1) insertAt = destIdx;
+    state.route.splice(insertAt, 0, moved);
+  }
 
-  // If this drop claims the first or last slot, no other stop is allowed
-  // to keep claiming that same slot — otherwise both stops would tell the
-  // backend "put me first" (or "put me last") and only one request can win.
-  if (isFirst) clearConflictingSentinelPins(0, newKey);
-  if (isLast)  clearConflictingSentinelPins(1440, newKey);
+  state.timePinned[moved.uid] = { rideId: moved.rideId, targetMinutes };
 
-  // Auto-lock the dragged ride if not already sidebar-locked
+  if (isFirst) clearConflictingSentinelPins(0, moved.uid);
+  if (isLast)  clearConflictingSentinelPins(1440, moved.uid);
+
   if (!state.locked[moved.rideId]) {
     state.locked[moved.rideId] = true;
     state.pinnedLocked[moved.rideId] = true;
@@ -252,6 +290,8 @@ function addPreset() {
     maxBeforeInfinity: { ...state.maxBeforeInfinity },
     maxWasZeroBeforeLock: { ...state.maxWasZeroBeforeLock },
     pinnedLocked: { ...state.pinnedLocked },
+    tierLists: JSON.parse(JSON.stringify(state.tierLists)),
+    closedChecked: { ...state.closedChecked },
   });
   selectedPresetId = presetIdCounter;
   savePresets();
@@ -277,7 +317,10 @@ function applyPreset(id) {
   });
   state.breaks = JSON.parse(JSON.stringify(p.breaks));
   state.selectedStart = p.selectedStart;
-  state.timePinned = JSON.parse(JSON.stringify(p.timePinned || {}));
+  // Note: a preset's saved timePinned refers to route stops (by uid) that
+  // no longer exist once the app reloads/generates a new route, so it
+  // isn't meaningfully restorable here -- cleared rather than applied.
+  state.timePinned = {};
   RIDES.forEach(r => {
     const savedMax = (p.maxCounts || {})[r.id];
     state.maxCounts[r.id] = (savedMax === null || savedMax === undefined) ? Infinity : savedMax;
@@ -285,10 +328,32 @@ function applyPreset(id) {
     state.maxWasZeroBeforeLock[r.id] = (p.maxWasZeroBeforeLock || {})[r.id] ?? false;
   });
   state.pinnedLocked = { ...(p.pinnedLocked || {}) };
+
+  if (p.tierLists) {
+    const lists = { 1: [], 2: [], 3: [], 4: [] };
+    const seen = new Set();
+    [1, 2, 3, 4].forEach(tier => {
+      (p.tierLists[tier] || []).forEach(id => {
+        if (rideById[id] && !seen.has(id)) { lists[tier].push(id); seen.add(id); }
+      });
+    });
+    RIDES.forEach(r => { if (!seen.has(r.id)) lists[4].push(r.id); });
+    state.tierLists = lists;
+  } else {
+    state.tierLists = getInitialTierLists();
+  }
+
+  RIDES.forEach(r => {
+    state.closedChecked[r.id] = (p.closedChecked || {})[r.id] || false;
+  });
+
   selectedPresetId = p.id;
+  state.route = [];
   renderStartDropdown();
   renderSidebarList();
   renderPresetDropdown();
+  renderRouteBar();
+  renderPins();
 }
 
 // ── DOM refs ────────────────────────────────────────────────────
@@ -428,6 +493,372 @@ $('#addPresetBtn').addEventListener('click', addPreset);
 
 // ═══════════════ SIDEBAR RIDE LIST ═══════════════
 
+function buildRideRow(r) {
+  const row = document.createElement('div');
+  row.className = 'row';
+
+  const isClosed = state.liveOpen[r.id] === false;
+
+  if (isClosed && !state.closedChecked[r.id]) {
+    if (state.visible[r.id]) state.lastCount[r.id] = state.counts[r.id] || state.lastCount[r.id];
+    state.visible[r.id] = false;
+    state.counts[r.id] = 0;
+    state.locked[r.id] = false;
+  } else if (!isClosed && state.closedChecked[r.id]) {
+    state.closedChecked[r.id] = false;
+  }
+
+  const closedOverride = isClosed && state.closedChecked[r.id];
+  const closedLocked = isClosed && !advancedModeOn;
+
+  const cb = document.createElement('div');
+  cb.className = 'checkbox'
+    + (state.visible[r.id] ? ' checked' : '')
+    + (closedOverride ? ' checked-closed' : '')
+    + (closedLocked ? ' closed-disabled' : '');
+  cb.addEventListener('click', () => {
+    if (isClosed) {
+      if (!advancedModeOn) return;
+      if (state.closedChecked[r.id]) {
+        state.closedChecked[r.id] = false;
+        state.lastCount[r.id] = state.counts[r.id] || state.lastCount[r.id];
+        state.visible[r.id] = false;
+        state.counts[r.id] = 0;
+        state.locked[r.id] = false;
+        if (popupState.rideId === r.id) hidePopup();
+      } else {
+        state.closedChecked[r.id] = true;
+        state.visible[r.id] = true;
+        state.counts[r.id] = state.lastCount[r.id] > 0 ? state.lastCount[r.id] : 1;
+      }
+      renderSidebarList();
+      renderPins();
+      return;
+    }
+    state.visible[r.id] = !state.visible[r.id];
+    if (state.visible[r.id]) {
+      state.counts[r.id] = state.lastCount[r.id];
+    } else {
+      state.lastCount[r.id] = state.counts[r.id];
+      state.counts[r.id] = 0;
+      state.locked[r.id] = false;
+      if (popupState.rideId === r.id) hidePopup();
+    }
+    renderSidebarList();
+    renderPins();
+  });
+
+  const name = document.createElement('span');
+  name.className = 'ride-name' + (isClosed ? ' ride-name-closed' : '');
+  name.textContent = (r.displayName ?? r.name).replace(/\n/g, ' ');
+
+  const spinner = document.createElement('div');
+  spinner.className = 'spinner';
+
+  const down = document.createElement('button');
+  down.className = 'spin-btn';
+  down.disabled = state.counts[r.id] <= 0;
+  down.innerHTML = '<svg viewBox="0 0 10 10"><polygon points="1,2 9,2 5,8"/></svg>';
+  down.addEventListener('click', () => {
+    const old = state.counts[r.id];
+    const next = Math.max(0, old - 1);
+    state.counts[r.id] = next;
+    if (old === 2 && next === 1) {
+      state.locked[r.id] = state.lockBeforeBump[r.id];
+      if (!state.lockBeforeBump[r.id] && state.maxWasZeroBeforeLock[r.id]) {
+        state.maxCounts[r.id] = 0;
+        state.maxWasZeroBeforeLock[r.id] = false;
+      }
+    }
+    if (next === 0 && old > 0) {
+      state.lastCount[r.id] = old;
+      state.visible[r.id] = false;
+      state.locked[r.id] = false;
+      if (popupState.rideId === r.id) hidePopup();
+    }
+    renderSidebarList();
+    renderPins();
+  });
+
+  const count = document.createElement('span');
+  count.className = 'spin-count';
+  count.textContent = state.counts[r.id];
+
+  const up = document.createElement('button');
+  up.className = 'spin-btn';
+  up.innerHTML = '<svg viewBox="0 0 10 10"><polygon points="1,8 9,8 5,2"/></svg>';
+  up.addEventListener('click', () => {
+    const old = state.counts[r.id];
+    state.counts[r.id] = old + 1;
+    if (!state.visible[r.id]) state.visible[r.id] = true;
+    if (old === 1) {
+      state.lockBeforeBump[r.id] = state.locked[r.id];
+      state.locked[r.id] = true;
+      if (state.maxCounts[r.id] === 0) {
+        state.maxWasZeroBeforeLock[r.id] = true;
+        state.maxCounts[r.id] = 1;
+      } else {
+        state.maxWasZeroBeforeLock[r.id] = false;
+      }
+    }
+    renderSidebarList();
+    renderPins();
+  });
+
+  spinner.append(down, count, up);
+
+  const maxSpinner = document.createElement('div');
+  maxSpinner.className = 'spinner';
+
+  const maxDown = document.createElement('button');
+  maxDown.className = 'spin-btn max-spin-btn';
+  maxDown.disabled = state.maxCounts[r.id] !== Infinity && (
+    state.maxCounts[r.id] === 0 ||
+    (state.locked[r.id] && state.maxCounts[r.id] <= 1)
+  );
+  maxDown.innerHTML = '<svg viewBox="0 0 10 10"><polygon points="1,2 9,2 5,8"/></svg>';
+  maxDown.addEventListener('click', () => {
+    const floor = state.locked[r.id] ? 1 : 0;
+    if (state.maxCounts[r.id] === Infinity) {
+      state.maxCounts[r.id] = Math.max(floor, state.maxBeforeInfinity[r.id] || 0);
+    } else {
+      state.maxCounts[r.id] = Math.max(floor, state.maxCounts[r.id] - 1);
+    }
+    renderSidebarList();
+  });
+
+  const maxCountEl = document.createElement('span');
+  maxCountEl.className = 'spin-count max-count';
+  maxCountEl.textContent = state.maxCounts[r.id] === Infinity ? '∞' : state.maxCounts[r.id];
+
+  const maxUp = document.createElement('button');
+  maxUp.className = 'spin-btn max-spin-btn';
+  maxUp.innerHTML = '<svg viewBox="0 0 10 10"><polygon points="1,8 9,8 5,2"/></svg>';
+  maxUp.addEventListener('click', () => {
+    if (state.maxCounts[r.id] === Infinity) {
+      state.maxCounts[r.id] = (state.maxBeforeInfinity[r.id] > 0 ? state.maxBeforeInfinity[r.id] : 0) + 1;
+    } else {
+      state.maxCounts[r.id]++;
+    }
+    renderSidebarList();
+  });
+
+  maxSpinner.append(maxDown, maxCountEl, maxUp);
+
+  const infBtn = document.createElement('button');
+  infBtn.className = 'infinity-btn' + (state.maxCounts[r.id] === Infinity ? ' active' : '');
+  infBtn.textContent = '∞';
+  infBtn.title = 'No maximum';
+  infBtn.addEventListener('click', () => {
+    if (state.maxCounts[r.id] !== Infinity) {
+      state.maxBeforeInfinity[r.id] = state.maxCounts[r.id];
+      state.maxCounts[r.id] = Infinity;
+      renderSidebarList();
+    }
+  });
+
+  const lockable = state.visible[r.id] && state.counts[r.id] > 0;
+  if (!lockable) state.locked[r.id] = false;
+  const lock = document.createElement('button');
+  lock.className = 'lock-btn' + (state.locked[r.id] ? ' locked' : '') + (lockable ? '' : ' disabled');
+  lock.innerHTML = state.locked[r.id]
+    ? '<svg viewBox="0 0 14 14"><rect x="3" y="6" width="8" height="6" rx="1"/><path d="M4.5 6V4a2.5 2.5 0 0 1 5 0v2"/></svg>'
+    : '<svg viewBox="0 0 14 14"><rect x="3" y="6" width="8" height="6" rx="1"/><path d="M4.5 6V4a2.5 2.5 0 0 1 5 0"/></svg>';
+  lock.addEventListener('click', () => {
+    if (!lockable) return;
+    const newLocked = !state.locked[r.id];
+    state.locked[r.id] = newLocked;
+    if (newLocked) {
+      if (state.maxCounts[r.id] === 0) {
+        state.maxWasZeroBeforeLock[r.id] = true;
+        state.maxCounts[r.id] = 1;
+      } else {
+        state.maxWasZeroBeforeLock[r.id] = false;
+      }
+    } else {
+      if (state.maxWasZeroBeforeLock[r.id]) {
+        state.maxCounts[r.id] = 0;
+        state.maxWasZeroBeforeLock[r.id] = false;
+      }
+    }
+    renderSidebarList();
+  });
+
+  row.append(cb, name, spinner, maxSpinner, infBtn, lock);
+  return row;
+}
+
+function renderTieredRideList() {
+  for (let tier = 1; tier <= 4; tier++) {
+    const divider = document.createElement('div');
+    divider.className = 'tier-divider';
+    divider.textContent = `Tier ${tier} — ${TIER_LABELS[tier - 1]}`;
+    sidebarListEl.appendChild(divider);
+
+    const group = document.createElement('div');
+    group.className = 'tier-group';
+    group.dataset.tier = tier;
+
+    group.addEventListener('dragover', e => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      group.classList.add('drag-over');
+    });
+    group.addEventListener('dragleave', () => group.classList.remove('drag-over'));
+    group.addEventListener('drop', e => {
+      e.preventDefault();
+      group.classList.remove('drag-over');
+      const rideId = e.dataTransfer.getData('text/plain');
+      if (!rideId) return;
+      removeFromTierLists(rideId);
+      state.tierLists[tier].push(rideId);
+      saveTierLists();
+      renderSidebarList();
+    });
+
+    const ridesInTier = state.tierLists[tier];
+    if (!ridesInTier.length) {
+      const empty = document.createElement('div');
+      empty.className = 'tier-empty';
+      empty.textContent = 'Drop a ride here';
+      group.appendChild(empty);
+    }
+
+    ridesInTier.forEach(rideId => {
+      const r = rideById[rideId];
+      if (!r) return;
+      const row = buildRideRow(r);
+      row.classList.add('tier-row');
+      row.draggable = true;
+
+      row.addEventListener('dragstart', e => {
+        e.dataTransfer.setData('text/plain', r.id);
+        e.dataTransfer.effectAllowed = 'move';
+        row.classList.add('dragging');
+      });
+      row.addEventListener('dragend', () => {
+        row.classList.remove('dragging', 'drag-over-top', 'drag-over-bottom');
+      });
+
+      row.addEventListener('dragover', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = 'move';
+        const rect = row.getBoundingClientRect();
+        const before = (e.clientY - rect.top) < rect.height / 2;
+        row.classList.toggle('drag-over-top', before);
+        row.classList.toggle('drag-over-bottom', !before);
+      });
+      row.addEventListener('dragleave', () => {
+        row.classList.remove('drag-over-top', 'drag-over-bottom');
+      });
+      row.addEventListener('drop', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        row.classList.remove('drag-over-top', 'drag-over-bottom');
+        const draggedId = e.dataTransfer.getData('text/plain');
+        if (!draggedId || draggedId === r.id) return;
+        moveRideInTierLists(draggedId, tier, r.id, false);
+        renderSidebarList();
+      });
+
+      row.addEventListener('touchstart', e => {
+        const touch = e.touches[0];
+        tierTouchStartX   = touch.clientX;
+        tierTouchStartY   = touch.clientY;
+        tierTouchSrcId    = r.id;
+        tierTouchDragging = false;
+      }, { passive: true });
+
+      row.addEventListener('touchmove', e => {
+        if (tierTouchSrcId === null) return;
+        const touch = e.touches[0];
+        const dx = touch.clientX - tierTouchStartX;
+        const dy = touch.clientY - tierTouchStartY;
+
+        if (!tierTouchDragging) {
+          if (Math.hypot(dx, dy) < 8) return;
+          tierTouchDragging = true;
+          row.classList.add('dragging');
+          tierTouchClone = row.cloneNode(true);
+          Object.assign(tierTouchClone.style, {
+            position: 'fixed', pointerEvents: 'none', opacity: '0.85',
+            zIndex: '9999', width: row.offsetWidth + 'px',
+            transform: 'scale(1.02)', transition: 'none',
+            left: (touch.clientX - row.offsetWidth / 2) + 'px',
+            top:  (touch.clientY - 18) + 'px',
+          });
+          document.body.appendChild(tierTouchClone);
+        }
+
+        e.preventDefault();
+        tierTouchClone.style.left = (touch.clientX - tierTouchClone.offsetWidth / 2) + 'px';
+        tierTouchClone.style.top  = (touch.clientY - 18) + 'px';
+
+        tierTouchClone.style.visibility = 'hidden';
+        const el = document.elementFromPoint(touch.clientX, touch.clientY);
+        tierTouchClone.style.visibility = '';
+
+        document.querySelectorAll('.tier-row').forEach(r2 =>
+          r2.classList.remove('drag-over-top', 'drag-over-bottom'));
+        document.querySelectorAll('.tier-group').forEach(g => g.classList.remove('drag-over'));
+
+        const overRow = el?.closest('.tier-row');
+        const overGroup = el?.closest('.tier-group');
+        if (overRow && overRow !== row) {
+          const rect = overRow.getBoundingClientRect();
+          const before = (touch.clientY - rect.top) < rect.height / 2;
+          overRow.classList.toggle('drag-over-top', before);
+          overRow.classList.toggle('drag-over-bottom', !before);
+        } else if (overGroup) {
+          overGroup.classList.add('drag-over');
+        }
+      }, { passive: false });
+
+      row.addEventListener('touchend', e => {
+        if (!tierTouchDragging) { tierTouchSrcId = null; return; }
+        const touch = e.changedTouches[0];
+        tierTouchClone.style.visibility = 'hidden';
+        const el = document.elementFromPoint(touch.clientX, touch.clientY);
+        tierTouchClone?.remove();
+        tierTouchClone = null;
+        row.classList.remove('dragging');
+        document.querySelectorAll('.tier-row').forEach(r2 =>
+          r2.classList.remove('drag-over-top', 'drag-over-bottom'));
+        document.querySelectorAll('.tier-group').forEach(g => g.classList.remove('drag-over'));
+
+        const draggedId = tierTouchSrcId;
+        tierTouchSrcId = null;
+        tierTouchDragging = false;
+        if (!draggedId) return;
+
+        const overRow = el?.closest('.tier-row');
+        const overGroup = el?.closest('.tier-group');
+        if (overRow) {
+          const targetId = overRow.dataset.rideId;
+          if (!targetId || targetId === draggedId) return;
+          const targetTier = Number(overRow.closest('.tier-group').dataset.tier);
+          const rect = overRow.getBoundingClientRect();
+          const before = (touch.clientY - rect.top) < rect.height / 2;
+          moveRideInTierLists(draggedId, targetTier, targetId, before);
+          renderSidebarList();
+        } else if (overGroup) {
+          const targetTier = Number(overGroup.dataset.tier);
+          removeFromTierLists(draggedId);
+          state.tierLists[targetTier].push(draggedId);
+          saveTierLists();
+          renderSidebarList();
+        }
+      });
+
+      row.dataset.rideId = r.id;
+      group.appendChild(row);
+    });
+
+    sidebarListEl.appendChild(group);
+  }
+}
+
 function renderSidebarList() {
   sidebarListEl.innerHTML = '';
 
@@ -449,212 +880,11 @@ function renderSidebarList() {
     sidebarListEl.appendChild(row);
   });
 
-  RIDES.forEach(r => {
-    const row = document.createElement('div');
-    row.className = 'row';
-
-    const isClosed = state.liveOpen[r.id] === false;
-
-    // A closed ride reverts to plain, non-interactive, unchecked every
-    // render -- unless someone deliberately checked it via Advanced Mode
-    // (closedChecked). That override survives leaving Advanced Mode, but
-    // the box still can't be touched again until Advanced Mode is back on.
-    if (isClosed && !state.closedChecked[r.id]) {
-      if (state.visible[r.id]) state.lastCount[r.id] = state.counts[r.id] || state.lastCount[r.id];
-      state.visible[r.id] = false;
-      state.counts[r.id] = 0;
-      state.locked[r.id] = false;
-    } else if (!isClosed && state.closedChecked[r.id]) {
-      // Ride re-opened -- the override no longer applies; treat it as a
-      // normal ride again from here on.
-      state.closedChecked[r.id] = false;
-    }
-
-    const closedOverride = isClosed && state.closedChecked[r.id];
-    const closedLocked = isClosed && !advancedModeOn;
-
-    const cb = document.createElement('div');
-    cb.className = 'checkbox'
-      + (state.visible[r.id] ? ' checked' : '')
-      + (closedOverride ? ' checked-closed' : '')
-      + (closedLocked ? ' closed-disabled' : '');
-    cb.addEventListener('click', () => {
-      if (isClosed) {
-        if (!advancedModeOn) return; // closed rides can't be touched outside Advanced Mode
-        if (state.closedChecked[r.id]) {
-          state.closedChecked[r.id] = false;
-          state.lastCount[r.id] = state.counts[r.id] || state.lastCount[r.id];
-          state.visible[r.id] = false;
-          state.counts[r.id] = 0;
-          state.locked[r.id] = false;
-          if (popupState.rideId === r.id) hidePopup();
-        } else {
-          state.closedChecked[r.id] = true;
-          state.visible[r.id] = true;
-          state.counts[r.id] = state.lastCount[r.id] > 0 ? state.lastCount[r.id] : 1;
-        }
-        renderSidebarList();
-        renderPins();
-        return;
-      }
-      state.visible[r.id] = !state.visible[r.id];
-      if (state.visible[r.id]) {
-        state.counts[r.id] = state.lastCount[r.id];
-      } else {
-        state.lastCount[r.id] = state.counts[r.id];
-        state.counts[r.id] = 0;
-        state.locked[r.id] = false;
-        if (popupState.rideId === r.id) hidePopup();
-      }
-      renderSidebarList();
-      renderPins();
-    });
-
-    const name = document.createElement('span');
-    name.className = 'ride-name' + (isClosed ? ' ride-name-closed' : '');
-    // displayName (if set on a RIDES entry) overrides just the sidebar
-    // label -- everything else (popup title... see showPopup below,
-    // pin/img alt text, route-pill fallback text) still reads r.name.
-    name.textContent = (r.displayName ?? r.name).replace(/\n/g, ' ');
-
-    // ── min (white) spinner ──────────────────────────────────────
-    const spinner = document.createElement('div');
-    spinner.className = 'spinner';
-
-    const down = document.createElement('button');
-    down.className = 'spin-btn';
-    down.disabled = state.counts[r.id] <= 0;
-    down.innerHTML = '<svg viewBox="0 0 10 10"><polygon points="1,2 9,2 5,8"/></svg>';
-    down.addEventListener('click', () => {
-      const old = state.counts[r.id];
-      const next = Math.max(0, old - 1);
-      state.counts[r.id] = next;
-      if (old === 2 && next === 1) {
-        state.locked[r.id] = state.lockBeforeBump[r.id];
-        if (!state.lockBeforeBump[r.id] && state.maxWasZeroBeforeLock[r.id]) {
-          state.maxCounts[r.id] = 0;
-          state.maxWasZeroBeforeLock[r.id] = false;
-        }
-      }
-      if (next === 0 && old > 0) {
-        state.lastCount[r.id] = old;
-        state.visible[r.id] = false;
-        state.locked[r.id] = false;
-        if (popupState.rideId === r.id) hidePopup();
-      }
-      renderSidebarList();
-      renderPins();
-    });
-
-    const count = document.createElement('span');
-    count.className = 'spin-count';
-    count.textContent = state.counts[r.id];
-
-    const up = document.createElement('button');
-    up.className = 'spin-btn';
-    up.innerHTML = '<svg viewBox="0 0 10 10"><polygon points="1,8 9,8 5,2"/></svg>';
-    up.addEventListener('click', () => {
-      const old = state.counts[r.id];
-      state.counts[r.id] = old + 1;
-      if (!state.visible[r.id]) state.visible[r.id] = true;
-      if (old === 1) {
-        state.lockBeforeBump[r.id] = state.locked[r.id];
-        state.locked[r.id] = true;
-        if (state.maxCounts[r.id] === 0) {
-          state.maxWasZeroBeforeLock[r.id] = true;
-          state.maxCounts[r.id] = 1;
-        } else {
-          state.maxWasZeroBeforeLock[r.id] = false;
-        }
-      }
-      renderSidebarList();
-      renderPins();
-    });
-
-    spinner.append(down, count, up);
-
-    // ── max (maroon) spinner ─────────────────────────────────────
-    const maxSpinner = document.createElement('div');
-    maxSpinner.className = 'spinner';
-
-    const maxDown = document.createElement('button');
-    maxDown.className = 'spin-btn max-spin-btn';
-    maxDown.disabled = state.maxCounts[r.id] !== Infinity && (
-      state.maxCounts[r.id] === 0 ||
-      (state.locked[r.id] && state.maxCounts[r.id] <= 1)
-    );
-    maxDown.innerHTML = '<svg viewBox="0 0 10 10"><polygon points="1,2 9,2 5,8"/></svg>';
-    maxDown.addEventListener('click', () => {
-      const floor = state.locked[r.id] ? 1 : 0;
-      if (state.maxCounts[r.id] === Infinity) {
-        state.maxCounts[r.id] = Math.max(floor, state.maxBeforeInfinity[r.id] || 0);
-      } else {
-        state.maxCounts[r.id] = Math.max(floor, state.maxCounts[r.id] - 1);
-      }
-      renderSidebarList();
-    });
-
-    const maxCountEl = document.createElement('span');
-    maxCountEl.className = 'spin-count max-count';
-    maxCountEl.textContent = state.maxCounts[r.id] === Infinity ? '∞' : state.maxCounts[r.id];
-
-    const maxUp = document.createElement('button');
-    maxUp.className = 'spin-btn max-spin-btn';
-    maxUp.innerHTML = '<svg viewBox="0 0 10 10"><polygon points="1,8 9,8 5,2"/></svg>';
-    maxUp.addEventListener('click', () => {
-      if (state.maxCounts[r.id] === Infinity) {
-        state.maxCounts[r.id] = (state.maxBeforeInfinity[r.id] > 0 ? state.maxBeforeInfinity[r.id] : 0) + 1;
-      } else {
-        state.maxCounts[r.id]++;
-      }
-      renderSidebarList();
-    });
-
-    maxSpinner.append(maxDown, maxCountEl, maxUp);
-
-    const infBtn = document.createElement('button');
-    infBtn.className = 'infinity-btn' + (state.maxCounts[r.id] === Infinity ? ' active' : '');
-    infBtn.textContent = '∞';
-    infBtn.title = 'No maximum';
-    infBtn.addEventListener('click', () => {
-      if (state.maxCounts[r.id] !== Infinity) {
-        state.maxBeforeInfinity[r.id] = state.maxCounts[r.id];
-        state.maxCounts[r.id] = Infinity;
-        renderSidebarList();
-      }
-    });
-
-    // ── lock button ──────────────────────────────────────────────
-    const lockable = state.visible[r.id] && state.counts[r.id] > 0;
-    if (!lockable) state.locked[r.id] = false;
-    const lock = document.createElement('button');
-    lock.className = 'lock-btn' + (state.locked[r.id] ? ' locked' : '') + (lockable ? '' : ' disabled');
-    lock.innerHTML = state.locked[r.id]
-      ? '<svg viewBox="0 0 14 14"><rect x="3" y="6" width="8" height="6" rx="1"/><path d="M4.5 6V4a2.5 2.5 0 0 1 5 0v2"/></svg>'
-      : '<svg viewBox="0 0 14 14"><rect x="3" y="6" width="8" height="6" rx="1"/><path d="M4.5 6V4a2.5 2.5 0 0 1 5 0"/></svg>';
-    lock.addEventListener('click', () => {
-      if (!lockable) return;
-      const newLocked = !state.locked[r.id];
-      state.locked[r.id] = newLocked;
-      if (newLocked) {
-        if (state.maxCounts[r.id] === 0) {
-          state.maxWasZeroBeforeLock[r.id] = true;
-          state.maxCounts[r.id] = 1;
-        } else {
-          state.maxWasZeroBeforeLock[r.id] = false;
-        }
-      } else {
-        if (state.maxWasZeroBeforeLock[r.id]) {
-          state.maxCounts[r.id] = 0;
-          state.maxWasZeroBeforeLock[r.id] = false;
-        }
-      }
-      renderSidebarList();
-    });
-
-    row.append(cb, name, spinner, maxSpinner, infBtn, lock);
-    sidebarListEl.appendChild(row);
-  });
+  if (advancedModeOn) {
+    renderTieredRideList();
+  } else {
+    RIDES.forEach(r => sidebarListEl.appendChild(buildRideRow(r)));
+  }
 }
 
 // ═══════════════ MAP PINS + POPUP ═══════════════
@@ -668,7 +898,8 @@ function renderPins() {
   pinLayerEl.innerHTML = '';
   pinElements = [];
   RIDES.forEach(r => {
-    if (!state.visible[r.id]) return;
+    const isClosed = state.liveOpen[r.id] === false;
+    if (!state.visible[r.id] && !isClosed) return;
     const pin = document.createElement('button');
     pin.className = 'pin';
     if (state.liveOpen[r.id] === false) pin.classList.add('closed');
@@ -758,8 +989,6 @@ const MAX_MAP_ZOOM = 4;
 
 function lerp(a, b, t) { return a + (b - a) * t; }
 
-// 0 at fully zoomed out, 1 at fully zoomed in, eased so the shift feels
-// gradual rather than linear/abrupt.
 function zoomT() {
   const raw = (mapZoom - MIN_MAP_ZOOM) / (MAX_MAP_ZOOM - MIN_MAP_ZOOM);
   const c = Math.min(1, Math.max(0, raw));
@@ -778,7 +1007,6 @@ let mapFitWidth = 0;
 
 const PIN_SIZE = 54 * 0.9 * 1.1;
 
-// ── all-rides wait bubbles (toggled by double-tapping any wait chip) ──
 const waitBubbleLayerEl = document.getElementById('waitBubbleLayer');
 let showWaitBubbles = false;
 let waitBubbleElements = [];
@@ -863,10 +1091,6 @@ function computeMapFitWidth() {
   mapImageEl.style.width = mapFitWidth + 'px';
 }
 
-// Keeps the map from ever being panned/zoomed off-screen. If the scaled
-// image is smaller than the viewport on an axis, it's centered on that
-// axis (no free panning needed); if it's bigger, panning is clamped so
-// neither edge of the image can pull inward past the viewport's edge.
 function clampMapPan() {
   const viewportW = mapViewportEl.clientWidth;
   const viewportH = mapViewportEl.clientHeight;
@@ -897,7 +1121,6 @@ function clampZoom(z) {
   return Math.min(MAX_MAP_ZOOM, Math.max(MIN_MAP_ZOOM, z));
 }
 
-// ── zoom/pan gesture engine ──
 function zoomAtPoint(targetZoomRaw, clientX, clientY, baseZoom, basePanX, basePanY) {
   const targetZoom = clampZoom(targetZoomRaw);
   const rect = mapViewportRect;
@@ -912,7 +1135,6 @@ function zoomAtPoint(targetZoomRaw, clientX, clientY, baseZoom, basePanX, basePa
   applyMapTransform();
 }
 
-// ── wheel / trackpad zoom, centered on the cursor ──
 let wheelRatioAccum = 1;
 let wheelClientX = 0, wheelClientY = 0;
 let wheelFrameQueued = false;
@@ -953,7 +1175,6 @@ mapImageEl.addEventListener('dblclick', e => {
   }, 260);
 });
 
-// ── mouse drag-to-pan ──
 let panPointerId = null;
 let panStartX = 0, panStartY = 0, panStartPanX = 0, panStartPanY = 0;
 let isPanning = false;
@@ -996,7 +1217,6 @@ function endMapPan(e) {
 mapViewportEl.addEventListener('pointerup', endMapPan);
 mapViewportEl.addEventListener('pointercancel', endMapPan);
 
-// ── touch: single-finger pan, two-finger pinch-to-zoom ──
 let t1Id = null, t2Id = null;
 let t1 = { x: 0, y: 0 }, t2 = { x: 0, y: 0 };
 let panBase = null;
@@ -1114,14 +1334,11 @@ function renderRouteBar() {
 
   const rows = [];
   if (total <= bigRow) {
-    // Single row — everything fits
     rows.push({ start: 0, end: total });
   } else if (total <= bigRow * 2) {
-    // Two rows — first fills to bigRow, second gets the rest, no alternating
     rows.push({ start: 0,      end: bigRow });
     rows.push({ start: bigRow, end: total  });
   } else {
-    // 3+ rows — alternating bigRow / smallRow pattern
     let cursor = 0, parity = 0;
     while (cursor < total) {
       const size = parity % 2 === 0 ? bigRow : smallRow;
@@ -1140,9 +1357,7 @@ function renderRouteBar() {
       const r = rideById[stop.rideId];
       if (!r) continue;
 
-      const instIdx    = getInstanceIndex(state.route, i);
-      const uniqueKey  = getUniqueKey(stop.rideId, instIdx);
-      const pinEntry   = state.timePinned[uniqueKey];
+      const pinEntry   = state.timePinned[stop.uid];
       const isLocked   = pinEntry && pinEntry.targetMinutes !== null;
       const isHighlighted = !!pinEntry;
 
@@ -1151,7 +1366,6 @@ function renderRouteBar() {
       wrap.draggable = true;
       wrap.dataset.idx = i;
 
-      // ── mouse drag ───────────────────────────────────────────
       wrap.addEventListener('dragstart', e => {
         dragSrcIdx = i;
         wrap.classList.add('dragging');
@@ -1183,7 +1397,6 @@ function renderRouteBar() {
         executeDrop(src, i);
       });
 
-      // ── touch drag ───────────────────────────────────────────
       wrap.addEventListener('touchstart', e => {
         const touch = e.touches[0];
         touchStartX     = touch.clientX;
@@ -1245,7 +1458,6 @@ function renderRouteBar() {
         if (dropIdx >= 0 && dropIdx !== src) executeDrop(src, dropIdx);
       });
 
-      // ── card ─────────────────────────────────────────────────
       const card = document.createElement('div');
       card.className = 'route-stop-card';
 
@@ -1259,8 +1471,8 @@ function renderRouteBar() {
         const dist = Math.hypot(e.clientX - pointerDownX, e.clientY - pointerDownY);
         if (dist > 8) return;
         if (pinEntry) {
-          delete state.timePinned[uniqueKey];
-          const anyStillPinned = Object.keys(state.timePinned).some(k => k.startsWith(`${stop.rideId}:`));
+          delete state.timePinned[stop.uid];
+          const anyStillPinned = Object.values(state.timePinned).some(p => p.rideId === stop.rideId);
           if (!anyStillPinned && state.pinnedLocked[stop.rideId]) {
             state.locked[stop.rideId] = false;
             delete state.pinnedLocked[stop.rideId];
@@ -1268,13 +1480,12 @@ function renderRouteBar() {
         } else {
           const isFirst = i === 0;
           const isLast  = i === state.route.length - 1;
-          state.timePinned[uniqueKey] = {
+          state.timePinned[stop.uid] = {
             rideId: stop.rideId,
-            instanceIndex: instIdx,
             targetMinutes: isFirst ? 0 : isLast ? 1440 : (stop.queueJoinMinutes ?? null),
           };
-          if (isFirst) clearConflictingSentinelPins(0, uniqueKey);
-          if (isLast)  clearConflictingSentinelPins(1440, uniqueKey);
+          if (isFirst) clearConflictingSentinelPins(0, stop.uid);
+          if (isLast)  clearConflictingSentinelPins(1440, stop.uid);
           if (!state.locked[stop.rideId]) {
             state.locked[stop.rideId] = true;
             state.pinnedLocked[stop.rideId] = true;
@@ -1314,12 +1525,12 @@ function renderRouteBar() {
       remove.className = 'stop-remove';
       remove.textContent = '✕';
       remove.addEventListener('click', () => {
-        delete state.timePinned[uniqueKey];
+        delete state.timePinned[stop.uid];
         state.route.splice(i, 1);
         const remaining = state.route.filter(s => s.rideId === stop.rideId).length;
         state.maxBeforeInfinity[stop.rideId] = remaining;
         state.maxCounts[stop.rideId] = remaining;
-        const anyStillPinned = Object.keys(state.timePinned).some(k => k.startsWith(`${stop.rideId}:`));
+        const anyStillPinned = Object.values(state.timePinned).some(p => p.rideId === stop.rideId);
         if (!anyStillPinned && state.pinnedLocked[stop.rideId]) {
           state.locked[stop.rideId] = false;
           delete state.pinnedLocked[stop.rideId];
@@ -1342,7 +1553,6 @@ function renderRouteBar() {
       wrap.appendChild(card);
       rowEl.appendChild(wrap);
 
-      // Arrow between stops within this row only (not after the last in the row)
       if (i < end - 1) {
         const arrow = document.createElement('span');
         arrow.className = 'route-arrow';
@@ -1394,19 +1604,15 @@ async function generateRoute(triggerBtn) {
   const override_closed_keys = RIDES.filter(r => state.closedChecked[r.id]).map(r => r.id);
   const breaks = state.breaks.map(b => [b.startMin, b.endMin]);
 
+  // NOTE: no instance_index / route_index sent anymore -- occurrences of
+  // the same ride are anonymous, so there's nothing meaningful to index.
+  // The backend matches pins to occurrences purely by processing order.
   const time_pinned = Object.values(state.timePinned)
     .filter(p => p.targetMinutes !== null)
-    .map(p => {
-      const routeIdx = state.route.findIndex((stop, idx) =>
-        stop.rideId === p.rideId && getInstanceIndex(state.route, idx) === p.instanceIndex
-      );
-      return {
-        ride_key:       p.rideId,
-        instance_index: p.instanceIndex,
-        target_minutes: p.targetMinutes,
-        route_index:    routeIdx,
-      };
-    });
+    .map(p => ({
+      ride_key: p.rideId,
+      target_minutes: p.targetMinutes,
+    }));
 
   triggerBtn.classList.add('flash');
   setTimeout(() => triggerBtn.classList.remove('flash'), 220);
@@ -1423,7 +1629,6 @@ async function generateRoute(triggerBtn) {
     return;
   }
   routePlaceholderEl.style.color = '';
-  // Always show a loading state regardless of whether a route already exists
   routePlaceholderEl.textContent = 'Generating…';
   routePlaceholderEl.style.display = 'block';
   routeItemsEl.classList.remove('active');
@@ -1437,6 +1642,7 @@ async function generateRoute(triggerBtn) {
         start_key: state.selectedStart,
         live_waits: state.liveWaits,
         time_pinned,
+        ride_priority_order: flattenPriorityOrder(),
         max_counts: Object.fromEntries(
           RIDES
             .filter(r => state.visible[r.id] && state.counts[r.id] > 0)
@@ -1449,40 +1655,47 @@ async function generateRoute(triggerBtn) {
     if (!res.ok) throw new Error((data && data.error) ? data.error : `route request failed: ${res.status}`);
     if (!Array.isArray(data)) throw new Error('Unexpected response from route service.');
 
-    state.route = data.map(extractRideIdAndWait);
+    // Snapshot the pins BEFORE the route array is replaced, so we still
+    // have their rideId/targetMinutes to work with afterward.
+    const oldPins = Object.values(state.timePinned).filter(p => p.rideId);
 
-    const oldPins = Object.values(state.timePinned);
+    // Every stop gets a fresh, stable uid -- this is what makes pin
+    // tracking collision-proof no matter how many times the same ride
+    // repeats in the route.
+    state.route = data.map(entry => ({ ...extractRideIdAndWait(entry), uid: nextUid() }));
+
     const newTP = {};
+    const claimed = new Set();
 
-    function pinAt(idx, targetMinutes) {
-      if (idx < 0 || idx >= state.route.length) return;
-      const rid  = state.route[idx].rideId;
-      const inst = getInstanceIndex(state.route, idx);
-      newTP[getUniqueKey(rid, inst)] = { rideId: rid, instanceIndex: inst, targetMinutes };
+    function claimStop(idx) {
+      if (idx == null || idx < 0 || idx >= state.route.length) return null;
+      const stop = state.route[idx];
+      if (claimed.has(stop.uid)) return null;
+      claimed.add(stop.uid);
+      return stop;
     }
 
     oldPins.forEach(pin => {
+      let stop = null;
       if (pin.targetMinutes === 0) {
-        if (state.route[0]?.rideId === pin.rideId) pinAt(0, 0);
+        stop = claimStop(0);
       } else if (pin.targetMinutes === 1440) {
-        const lastIdx = state.route.length - 1;
-        if (state.route[lastIdx]?.rideId === pin.rideId) pinAt(lastIdx, 1440);
+        stop = claimStop(state.route.length - 1);
       } else if (pin.targetMinutes !== null) {
         let bestIdx = -1, bestDist = Infinity;
-        state.route.forEach((stop, idx) => {
-          if (stop.rideId !== pin.rideId) return;
-          const qjm = stop.queueJoinMinutes;
+        state.route.forEach((s, idx) => {
+          if (s.rideId !== pin.rideId || claimed.has(s.uid)) return;
+          const qjm = s.queueJoinMinutes;
           const dist = qjm == null ? Infinity : Math.abs(qjm - pin.targetMinutes);
           if (dist < bestDist) { bestDist = dist; bestIdx = idx; }
         });
-        if (bestIdx >= 0) pinAt(bestIdx, pin.targetMinutes);
+        stop = claimStop(bestIdx);
       } else {
-        const occurrences = [];
-        state.route.forEach((stop, idx) => { if (stop.rideId === pin.rideId) occurrences.push(idx); });
-        if (occurrences.length) {
-          const idx = occurrences[Math.min(pin.instanceIndex, occurrences.length - 1)];
-          pinAt(idx, null);
-        }
+        const idx = state.route.findIndex(s => s.rideId === pin.rideId && !claimed.has(s.uid));
+        stop = claimStop(idx);
+      }
+      if (stop) {
+        newTP[stop.uid] = { rideId: pin.rideId, targetMinutes: pin.targetMinutes };
       }
     });
 
@@ -1530,14 +1743,14 @@ async function pollStatus() {
         open[r.id] = entry.is_open === false ? false : true;
       } else {
         waits[r.id] = null;
-        open[r.id] = null; // unknown — don't treat as closed
+        open[r.id] = null;
       }
     });
     state.liveWaits = waits;
     state.liveOpen  = open;
     renderSidebarList();
     renderPins();
-    if (showWaitBubbles) renderWaitBubbles(); // keep bubble text fresh while they're showing
+    if (showWaitBubbles) renderWaitBubbles();
     if (popupState.rideId) showPopup(popupState.rideId, [...pinLayerEl.children].find(p => p.querySelector('img')?.alt === rideById[popupState.rideId]?.name));
   } catch (err) {
     // best-effort; app still works with unknown wait times
@@ -1563,19 +1776,9 @@ function getBackButtonGap() {
 
 const MIN_MAP_HEIGHT = 64;
 
-// Reserves the same safe-area gap below the back button as the space
-// above it, by giving #bottomBar a min-height of (button height + gap)
-// instead of leaving that gap as blank margin above the bar. That way
-// the button -- centered via align-items on #bottomBar -- sits centered
-// in the full space between the bottom of the map and the bottom of the
-// screen, rather than being pushed low with a dead gap above it.
 function updateBottomBarMinHeight() {
   const backBtnEl = document.getElementById('backBtn');
   const gap = getBackButtonGap();
-  // Reserve the gap on BOTH sides of the button -- above it (between the
-  // button and the map) and below it (between the button and the screen
-  // edge) -- so centering produces a real, visible symmetric strip
-  // instead of collapsing back down to just the button's own size.
   const minHeight = backBtnEl.offsetHeight + gap * 2;
   mapPaneEl.style.setProperty('--bottombar-min-h', minHeight + 'px');
   return minHeight;
@@ -1606,13 +1809,6 @@ function updateTogglePositions() {
   }
 
 if (sidebarToggle) {
-  // Prefer the vertical center of the map pane, but never let the
-  // toggle sit inside the top bar's own space -- push it down below
-  // the top bar's bottom edge instead. If the top bar (plus the
-  // bottom bar's reserved space) leaves no room to fully clear it,
-  // stop at the lowest point available; the z-index bump in CSS then
-  // keeps the toggle visible ON TOP of the top bar instead of
-  // disappearing underneath it.
   const half = sidebarToggle.offsetHeight / 2;
   const minTop = topBarEl.offsetHeight + half;
   const maxTop = mapPaneEl.clientHeight - bottomBarMinHeight - half;
