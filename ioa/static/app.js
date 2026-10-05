@@ -694,9 +694,9 @@ $('#generateBreakBtn').addEventListener('click', () => {
 });
 
 $('#addPresetBtn').addEventListener('click', addPreset);
-$('#useSnapshotBtn').addEventListener('click', toggleSnapshotUse);
-$('#snapshotSelect').addEventListener('change', e => selectSnapshot(parseInt(e.target.value, 10)));
-$('#saveSnapshotBtn').addEventListener('click', () => {
+$('#useSnapshotBtn')?.addEventListener('click', toggleSnapshotUse);
+$('#snapshotSelect')?.addEventListener('change', e => selectSnapshot(parseInt(e.target.value, 10)));
+$('#saveSnapshotBtn')?.addEventListener('click', () => {
   saveRouteSnapshot();
 });
 
@@ -1734,13 +1734,16 @@ function renderRouteBar() {
 
       const timeChip = document.createElement('span');
       timeChip.className = 'time-chip';
+      timeChip.textContent = minsToTime(stop.queueJoinMinutes);
+
+      let untilChip = null;
       if (trackingSnapshot() && !done && i === firstFutureIdx() && stop.queueJoinMinutes != null) {
         const until = Math.max(0, stop.queueJoinMinutes - parkNow().minutes);
-        timeChip.textContent = until >= 60
+        untilChip = document.createElement('span');
+        untilChip.className = 'until-chip';
+        untilChip.textContent = until >= 60
           ? `in ${Math.floor(until / 60)}h ${until % 60}m`
           : `in ${until}m`;
-      } else {
-        timeChip.textContent = minsToTime(stop.queueJoinMinutes);
       }
 
       const remove = document.createElement('button');
@@ -1771,6 +1774,7 @@ function renderRouteBar() {
       const chipGroup = document.createElement('div');
       chipGroup.className = 'chip-group';
       chipGroup.append(chip, timeChip);
+      if (untilChip) chipGroup.append(untilChip);
       card.append(pill, chipGroup, remove);
       wrap.appendChild(card);
       rowEl.appendChild(wrap);
