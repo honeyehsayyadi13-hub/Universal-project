@@ -270,9 +270,13 @@ const startOptions = [{ id: 'entrance', label: 'Entrance' },
 
 // ── presets (persisted in localStorage) ────────────────────────
 // ── park clock + snapshot (completely separate from the sidebar presets) ──
-const SNAPSHOT_KEY = 'urp.snapshot';
+// ── park clock + snapshots (completely separate from the sidebar presets) ──
+const SNAPSHOT_KEY = 'urp.snapshots';
+const OLD_SNAPSHOT_KEY = 'urp.snapshot';
+const SNAPSHOT_DROPDOWN_MIN = 3;   // dropdown appears at this many snapshots
+const SNAPSHOT_MAX = 10;           // oldest are dropped past this
 const PARK_TZ = 'America/New_York';
-let parkCloseMinutes = 20 * 60;   // fallback until /api/park-hours answers
+let parkCloseMinutes = 20 * 60;    // fallback until /api/park-hours answers
 
 function parkNow() {
   const parts = new Intl.DateTimeFormat('en-US', {
@@ -295,21 +299,23 @@ async function fetchParkClose() {
   } catch (e) { /* keep fallback */ }
 }
 
-function loadSnapshot() {
-  try { return JSON.parse(localStorage.getItem(SNAPSHOT_KEY) || 'null'); }
-  catch (e) { return null; }
+function loadSnapshotStore() {
+  try {
+    const s = JSON.parse(localStorage.getItem(SNAPSHOT_KEY) || 'null');
+    if (s && Array.isArray(s.list)) return s;
+    const old = JSON.parse(localStorage.getItem(OLD_SNAPSHOT_KEY) || 'null');
+    if (old) return { list: [{ n: 1, ...old }], sel: 0, active: !!old.active };
+  } catch (e) { /* ignore */ }
+  return { list: [], sel: 0, active: false };
 }
+
+let snapStore = loadSnapshotStore();
 
 function persistSnapshot() {
-  try {
-    if (snapshot) localStorage.setItem(SNAPSHOT_KEY, JSON.stringify(snapshot));
-    else localStorage.removeItem(SNAPSHOT_KEY);
-  } catch (e) { /* ignore */ }
+  try { localStorage.setItem(SNAPSHOT_KEY, JSON.stringify(snapStore)); } catch (e) { /* ignore */ }
 }
 
-let snapshot = loadSnapshot();
-let snapshotUndo = [];
-let snapshotRedo = [];
+function currentSnapshot() { return snapStore.list[snapStore.sel] || null; }
 
 function isSnapshotExpired(snap) {
   if (!snap) return true;
@@ -317,9 +323,10 @@ function isSnapshotExpired(snap) {
   return snap.day !== now.day || now.minutes >= snap.closeMinutes;
 }
 
-// The snapshot, but only if it's alive AND switched on.
+// The selected snapshot, but only if it's alive AND switched on.
 function trackingSnapshot() {
-  return snapshot && snapshot.active && !isSnapshotExpired(snapshot) ? snapshot : null;
+  const s = currentSnapshot();
+  return s && snapStore.active && !isSnapshotExpired(s) ? s : null;
 }
 
 function isStopDone(stop) {
@@ -334,12 +341,14 @@ function firstFutureIdx() {
 }
 
 function loadSnapshotRoute() {
+  const s = currentSnapshot();
+  if (!s) return;
   state.route = [];
   state.timePinned = {};
-  snapshot.route.forEach(s => {
+  s.route.forEach(r => {
     const uid = nextUid();
-    state.route.push({ rideId: s.rideId, predictedWait: s.predictedWait, queueJoinMinutes: s.queueJoinMinutes, uid });
-    if (s.pinned) state.timePinned[uid] = { rideId: s.rideId, targetMinutes: s.pin };
+    state.route.push({ rideId: r.rideId, predictedWait: r.predictedWait, queueJoinMinutes: r.queueJoinMinutes, uid });
+    if (r.pinned) state.timePinned[uid] = { rideId: r.rideId, targetMinutes: r.pin };
   });
 }
 
@@ -350,7 +359,7 @@ function restoreSnapshotRoute() {
   }
 }
 
-// Save: overwrites the one snapshot with the current route.
+// Save: adds a NEW snapshot (older ones stay selectable in the dropdown).
 function saveRouteSnapshot() {
   if (!state.route.length) {
     const info = document.getElementById('snapshotInfo');
@@ -358,15 +367,12 @@ function saveRouteSnapshot() {
     return;
   }
   const now = parkNow();
-  if (snapshot && !isSnapshotExpired(snapshot)) {
-    snapshotUndo.push(JSON.parse(JSON.stringify(snapshot)));
-    snapshotRedo = [];
-  }
-  snapshot = {
+  const nextN = snapStore.list.reduce((m, s) => Math.max(m, s.n || 0), 0) + 1;
+  snapStore.list.push({
+    n: nextN,
     day: now.day,
     closeMinutes: parkCloseMinutes,
     savedAtMinutes: now.minutes,
-    active: !!(snapshot && snapshot.active),
     route: state.route.map(s => {
       const pin = state.timePinned[s.uid];
       return {
@@ -377,54 +383,46 @@ function saveRouteSnapshot() {
         pin: pin ? pin.targetMinutes : null,
       };
     }),
-  };
+  });
+  while (snapStore.list.length > SNAPSHOT_MAX) snapStore.list.shift();
+  snapStore.sel = snapStore.list.length - 1;
   persistSnapshot();
   renderRouteBar();
 }
 
-function undoSnapshot() {
-  if (!snapshotUndo.length || !snapshot || isSnapshotExpired(snapshot)) return;
-  const wasActive = snapshot.active;
-  snapshotRedo.push(JSON.parse(JSON.stringify(snapshot)));
-  snapshot = snapshotUndo.pop();
-  snapshot.active = wasActive;
-  if (wasActive) loadSnapshotRoute();
-  persistSnapshot();
-  renderRouteBar();
-}
-
-function redoSnapshot() {
-  if (!snapshotRedo.length || !snapshot || isSnapshotExpired(snapshot)) return;
-  const wasActive = snapshot.active;
-  snapshotUndo.push(JSON.parse(JSON.stringify(snapshot)));
-  snapshot = snapshotRedo.pop();
-  snapshot.active = wasActive;
-  if (wasActive) loadSnapshotRoute();
+function selectSnapshot(i) {
+  if (isNaN(i) || i < 0 || i >= snapStore.list.length) return;
+  snapStore.sel = i;
+  if (snapStore.active) loadSnapshotRoute();
   persistSnapshot();
   renderRouteBar();
 }
 
 // Use / Stop Using
 function toggleSnapshotUse() {
-  if (!snapshot || isSnapshotExpired(snapshot)) return;
-  snapshot.active = !snapshot.active;
-  if (snapshot.active) loadSnapshotRoute();
+  const s = currentSnapshot();
+  if (!s || isSnapshotExpired(s)) return;
+  snapStore.active = !snapStore.active;
+  if (snapStore.active) loadSnapshotRoute();
   persistSnapshot();
   renderRouteBar();
 }
 
-// After close (or a new day) the snapshot disappears.
+// After close (or a new day) expired snapshots disappear.
 function expireSnapshots() {
-  if (!snapshot || !isSnapshotExpired(snapshot)) return;
-  const wasActive = snapshot.active;
-  snapshot = null;
-  snapshotUndo = [];
-  snapshotRedo = [];
-  persistSnapshot();
+  if (!snapStore.list.length) return;
+  const selExpired = isSnapshotExpired(currentSnapshot());
+  const kept = snapStore.list.filter(s => !isSnapshotExpired(s));
+  if (kept.length === snapStore.list.length) return;
+  const wasActive = snapStore.active && selExpired;
+  snapStore.list = kept;
+  snapStore.sel = Math.max(0, kept.length - 1);
+  if (!kept.length || wasActive) snapStore.active = false;
   if (wasActive) {
     state.route = [];
     state.timePinned = {};
   }
+  persistSnapshot();
   renderRouteBar();
 }
 
@@ -440,16 +438,33 @@ setInterval(refreshDoneState, 30000);
 function renderSnapshotInfo() {
   const info = document.getElementById('snapshotInfo');
   const useBtn = document.getElementById('useSnapshotBtn');
-  const undoBtn = document.getElementById('undoSnapshotBtn');
-  const redoBtn = document.getElementById('redoSnapshotBtn');
-  const valid = !!snapshot && !isSnapshotExpired(snapshot);
+  const label = document.getElementById('snapshotLabel');
+  const select = document.getElementById('snapshotSelect');
+  const s = currentSnapshot();
+  const valid = !!s && !isSnapshotExpired(s);
+
   if (useBtn) {
     useBtn.disabled = !valid;
-    useBtn.textContent = valid && snapshot.active ? 'Stop Using' : 'Use';
-    useBtn.classList.toggle('in-use', valid && snapshot.active);
+    useBtn.textContent = valid && snapStore.active ? 'Stop Using' : 'Use';
+    useBtn.classList.toggle('in-use', valid && snapStore.active);
   }
-  if (undoBtn) undoBtn.disabled = !(valid && snapshotUndo.length);
-  if (redoBtn) redoBtn.disabled = !(valid && snapshotRedo.length);
+
+  const showDropdown = snapStore.list.length >= SNAPSHOT_DROPDOWN_MIN;
+  if (label) label.style.display = showDropdown ? 'none' : '';
+  if (select) {
+    select.style.display = showDropdown ? 'block' : 'none';
+    if (showDropdown) {
+      select.innerHTML = '';
+      snapStore.list.forEach((sn, i) => {
+        const opt = document.createElement('option');
+        opt.value = String(i);
+        opt.textContent = `Snapshot ${sn.n} · ${minsToTime(sn.savedAtMinutes)}`;
+        select.appendChild(opt);
+      });
+      select.value = String(snapStore.sel);
+    }
+  }
+
   if (info) info.textContent = '';
 }
 const PRESET_KEY = 'urp.presets';
@@ -680,8 +695,7 @@ $('#generateBreakBtn').addEventListener('click', () => {
 
 $('#addPresetBtn').addEventListener('click', addPreset);
 $('#useSnapshotBtn').addEventListener('click', toggleSnapshotUse);
-$('#undoSnapshotBtn').addEventListener('click', undoSnapshot);
-$('#redoSnapshotBtn').addEventListener('click', redoSnapshot);
+$('#snapshotSelect').addEventListener('change', e => selectSnapshot(parseInt(e.target.value, 10)));
 $('#saveSnapshotBtn').addEventListener('click', () => {
   saveRouteSnapshot();
 });

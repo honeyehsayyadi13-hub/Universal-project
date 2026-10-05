@@ -994,3 +994,17 @@ input { font-family: inherit; }
   opacity: 0.25; cursor: default;
 }
 .snap-icon-btn:not(:disabled) { opacity: 1; cursor: pointer; }
+
+#snapshotSelect {
+  display: none;
+  min-width: 190px;
+  max-width: 100%;
+  background: var(--white);
+  border: 1.5px solid var(--paper-line);
+  border-radius: var(--radius-sm);
+  padding: 5px 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  text-align: center;
+}
