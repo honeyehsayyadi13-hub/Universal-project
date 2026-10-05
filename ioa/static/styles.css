@@ -977,3 +977,8 @@ input { font-family: inherit; }
 }
 .route-stop.done { cursor: default; }
 .route-stop.done .stop-remove { visibility: hidden; }
+
+#snapshotLabel { font-family: 'Baloo 2', sans-serif; font-weight: 700; font-size: 14px; flex: 1; }
+#useSnapshotBtn { background: var(--teal); flex-shrink: 0; }
+#useSnapshotBtn.in-use { background: var(--danger); }
+#useSnapshotBtn:disabled { opacity: 0.4; cursor: default; filter: none; }

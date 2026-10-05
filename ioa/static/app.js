@@ -269,9 +269,10 @@ const startOptions = [{ id: 'entrance', label: 'Entrance' },
   ...RIDES.map(r => ({ id: r.id, label: r.name }))];
 
 // ── presets (persisted in localStorage) ────────────────────────
-// ── park clock + snapshot helpers ──
+// ── park clock + snapshot (completely separate from the sidebar presets) ──
+const SNAPSHOT_KEY = 'urp.snapshot';
 const PARK_TZ = 'America/New_York';
-let parkCloseMinutes = 20 * 60;
+let parkCloseMinutes = 20 * 60;   // fallback until /api/park-hours answers
 
 function parkNow() {
   const parts = new Intl.DateTimeFormat('en-US', {
@@ -294,19 +295,33 @@ async function fetchParkClose() {
   } catch (e) { /* keep fallback */ }
 }
 
+function loadSnapshot() {
+  try { return JSON.parse(localStorage.getItem(SNAPSHOT_KEY) || 'null'); }
+  catch (e) { return null; }
+}
+
+function persistSnapshot() {
+  try {
+    if (snapshot) localStorage.setItem(SNAPSHOT_KEY, JSON.stringify(snapshot));
+    else localStorage.removeItem(SNAPSHOT_KEY);
+  } catch (e) { /* ignore */ }
+}
+
+let snapshot = loadSnapshot();
+
 function isSnapshotExpired(snap) {
   if (!snap) return true;
   const now = parkNow();
   return snap.day !== now.day || now.minutes >= snap.closeMinutes;
 }
 
-function trackingPreset() {
-  const p = presets.find(pr => pr.id === selectedPresetId);
-  return p && p.snapshot && !isSnapshotExpired(p.snapshot) ? p : null;
+// The snapshot, but only if it's alive AND switched on.
+function trackingSnapshot() {
+  return snapshot && snapshot.active && !isSnapshotExpired(snapshot) ? snapshot : null;
 }
 
 function isStopDone(stop) {
-  return !!trackingPreset()
+  return !!trackingSnapshot()
     && stop.queueJoinMinutes != null
     && stop.queueJoinMinutes <= parkNow().minutes;
 }
@@ -316,12 +331,36 @@ function firstFutureIdx() {
   return i === -1 ? state.route.length : i;
 }
 
-function buildSnapshot() {
+function loadSnapshotRoute() {
+  state.route = [];
+  state.timePinned = {};
+  snapshot.route.forEach(s => {
+    const uid = nextUid();
+    state.route.push({ rideId: s.rideId, predictedWait: s.predictedWait, queueJoinMinutes: s.queueJoinMinutes, uid });
+    if (s.pinned) state.timePinned[uid] = { rideId: s.rideId, targetMinutes: s.pin };
+  });
+}
+
+function restoreSnapshotRoute() {
+  if (trackingSnapshot()) {
+    loadSnapshotRoute();
+    renderRouteBar();
+  }
+}
+
+// Save: overwrites the one snapshot with the current route.
+function saveRouteSnapshot() {
+  if (!state.route.length) {
+    const info = document.getElementById('snapshotInfo');
+    if (info) info.textContent = 'Generate a route before saving.';
+    return;
+  }
   const now = parkNow();
-  return {
+  snapshot = {
     day: now.day,
     closeMinutes: parkCloseMinutes,
     savedAtMinutes: now.minutes,
+    active: !!(snapshot && snapshot.active),
     route: state.route.map(s => {
       const pin = state.timePinned[s.uid];
       return {
@@ -333,25 +372,33 @@ function buildSnapshot() {
       };
     }),
   };
+  persistSnapshot();
+  renderRouteBar();
 }
 
+// Use / Stop Using
+function toggleSnapshotUse() {
+  if (!snapshot || isSnapshotExpired(snapshot)) return;
+  snapshot.active = !snapshot.active;
+  if (snapshot.active) loadSnapshotRoute();
+  persistSnapshot();
+  renderRouteBar();
+}
+
+// After close (or a new day) the snapshot disappears.
 function expireSnapshots() {
-  let any = false, selectedExpired = false;
-  presets.forEach(p => {
-    if (p.snapshot && isSnapshotExpired(p.snapshot)) {
-      if (p.id === selectedPresetId) selectedExpired = true;
-      p.snapshot = null;
-      any = true;
-    }
-  });
-  if (any) savePresets();
-  if (selectedExpired) {
+  if (!snapshot || !isSnapshotExpired(snapshot)) return;
+  const wasActive = snapshot.active;
+  snapshot = null;
+  persistSnapshot();
+  if (wasActive) {
     state.route = [];
     state.timePinned = {};
-    renderRouteBar();
   }
+  renderRouteBar();
 }
 
+// Turn stops green as time passes, without clobbering an in-progress drag.
 let lastDoneCount = 0;
 function refreshDoneState() {
   expireSnapshots();
@@ -361,14 +408,20 @@ function refreshDoneState() {
 setInterval(refreshDoneState, 30000);
 
 function renderSnapshotInfo() {
-  const el = document.getElementById('snapshotInfo');
-  if (!el) return;
-  const p = trackingPreset();
-  if (!p) { el.textContent = ''; return; }
+  const info = document.getElementById('snapshotInfo');
+  const useBtn = document.getElementById('useSnapshotBtn');
+  const valid = !!snapshot && !isSnapshotExpired(snapshot);
+  if (useBtn) {
+    useBtn.disabled = !valid;
+    useBtn.textContent = valid && snapshot.active ? 'Stop Using' : 'Use';
+    useBtn.classList.toggle('in-use', valid && snapshot.active);
+  }
+  if (!info) return;
+  if (!valid) { info.textContent = 'No snapshot saved'; return; }
   const n = state.route.filter(isStopDone).length;
-  el.textContent = `Saved ${minsToTime(p.snapshot.savedAtMinutes)} · ${n} ride${n === 1 ? '' : 's'} done`;
+  info.textContent = `Saved ${minsToTime(snapshot.savedAtMinutes)}`
+    + (snapshot.active ? ` · in use · ${n} ride${n === 1 ? '' : 's'} done` : ' · not in use');
 }
-
 const PRESET_KEY = 'urp.presets';
 let presets = JSON.parse(localStorage.getItem(PRESET_KEY) || '[]');
 let presetIdCounter = presets.reduce((m, p) => Math.max(m, p.id), 0);
@@ -390,8 +443,7 @@ function presetPayload() {
     maxWasZeroBeforeLock: { ...state.maxWasZeroBeforeLock },
     pinnedLocked: { ...state.pinnedLocked },
     tierLists: JSON.parse(JSON.stringify(state.tierLists)),
-    closedChecked: { ...state.closedChecked },
-    snapshot: buildSnapshot(),
+    closedChecked: { ...state.closedChecked }
   };
 }
 
@@ -404,45 +456,6 @@ function addPreset() {
   renderRouteBar();
 }
 
-function saveSnapshot(name) {
-  const payload = presetPayload();
-  const existing = presets.find(p => p.id === selectedPresetId);
-  if (existing) {
-    Object.assign(existing, payload);
-    if (name) existing.name = name;
-  } else {
-    presetIdCounter += 1;
-    presets.push({ id: presetIdCounter, name: name || `Preset ${presets.length + 1}`, ...payload });
-    selectedPresetId = presetIdCounter;
-  }
-  savePresets();
-  renderPresetDropdown();
-  renderRouteBar();
-}
-
-function _oldAddPreset_unused() {
-  presetIdCounter += 1;
-  presets.push({
-    id: presetIdCounter,
-    name: `Preset ${presets.length + 1}`,
-    visible: { ...state.visible },
-    counts: { ...state.counts },
-    locked: { ...state.locked },
-    lastCount: { ...state.lastCount },
-    breaks: JSON.parse(JSON.stringify(state.breaks)),
-    selectedStart: state.selectedStart,
-    timePinned: JSON.parse(JSON.stringify(state.timePinned)),
-    maxCounts: Object.fromEntries(Object.entries(state.maxCounts).map(([k,v]) => [k, v === Infinity ? null : v])),
-    maxBeforeInfinity: { ...state.maxBeforeInfinity },
-    maxWasZeroBeforeLock: { ...state.maxWasZeroBeforeLock },
-    pinnedLocked: { ...state.pinnedLocked },
-    tierLists: JSON.parse(JSON.stringify(state.tierLists)),
-    closedChecked: { ...state.closedChecked },
-  });
-  selectedPresetId = presetIdCounter;
-  savePresets();
-  renderPresetDropdown();
-}
 
 function deletePreset(id) {
   presets = presets.filter(p => p.id !== id);
@@ -494,16 +507,7 @@ function applyPreset(id) {
   });
 
   selectedPresetId = p.id;
-  expireSnapshots();
   state.route = [];
-  state.timePinned = {};
-  if (p.snapshot) {
-    p.snapshot.route.forEach(s => {
-      const uid = nextUid();
-      state.route.push({ rideId: s.rideId, predictedWait: s.predictedWait, queueJoinMinutes: s.queueJoinMinutes, uid });
-      if (s.pinned) state.timePinned[uid] = { rideId: s.rideId, targetMinutes: s.pin };
-    });
-  }
   renderStartDropdown();
   renderSidebarList();
   renderPresetDropdown();
@@ -594,10 +598,6 @@ function renderPresetDropdown() {
   const label = presets.find(p => p.id === selectedPresetId)?.name
     || (presets.length ? 'Select preset…' : '');
   $('#presetDropdownLabel').textContent = label;
-  const nameInput = document.getElementById('snapshotNameInput');
-  if (nameInput && document.activeElement !== nameInput) {
-    nameInput.value = presets.find(p => p.id === selectedPresetId)?.name || '';
-  }
 }
 
 setupDropdown({ dropdown: $('#startDropdown') });
@@ -649,8 +649,9 @@ $('#generateBreakBtn').addEventListener('click', () => {
 });
 
 $('#addPresetBtn').addEventListener('click', addPreset);
+$('#useSnapshotBtn').addEventListener('click', toggleSnapshotUse);
 $('#saveSnapshotBtn').addEventListener('click', () => {
-  saveSnapshot($('#snapshotNameInput').value.trim());
+  saveRouteSnapshot();
 });
 
 // ═══════════════ SIDEBAR RIDE LIST ═══════════════
@@ -2039,6 +2040,7 @@ function init() {
   renderRouteBar();
   pollStatus();
   fetchParkClose();
+  restoreSnapshotRoute();
   expireSnapshots();
   updateTogglePositions(); 
 
