@@ -308,6 +308,8 @@ function persistSnapshot() {
 }
 
 let snapshot = loadSnapshot();
+let snapshotUndo = [];
+let snapshotRedo = [];
 
 function isSnapshotExpired(snap) {
   if (!snap) return true;
@@ -356,6 +358,10 @@ function saveRouteSnapshot() {
     return;
   }
   const now = parkNow();
+  if (snapshot && !isSnapshotExpired(snapshot)) {
+    snapshotUndo.push(JSON.parse(JSON.stringify(snapshot)));
+    snapshotRedo = [];
+  }
   snapshot = {
     day: now.day,
     closeMinutes: parkCloseMinutes,
@@ -376,6 +382,28 @@ function saveRouteSnapshot() {
   renderRouteBar();
 }
 
+function undoSnapshot() {
+  if (!snapshotUndo.length || !snapshot || isSnapshotExpired(snapshot)) return;
+  const wasActive = snapshot.active;
+  snapshotRedo.push(JSON.parse(JSON.stringify(snapshot)));
+  snapshot = snapshotUndo.pop();
+  snapshot.active = wasActive;
+  if (wasActive) loadSnapshotRoute();
+  persistSnapshot();
+  renderRouteBar();
+}
+
+function redoSnapshot() {
+  if (!snapshotRedo.length || !snapshot || isSnapshotExpired(snapshot)) return;
+  const wasActive = snapshot.active;
+  snapshotUndo.push(JSON.parse(JSON.stringify(snapshot)));
+  snapshot = snapshotRedo.pop();
+  snapshot.active = wasActive;
+  if (wasActive) loadSnapshotRoute();
+  persistSnapshot();
+  renderRouteBar();
+}
+
 // Use / Stop Using
 function toggleSnapshotUse() {
   if (!snapshot || isSnapshotExpired(snapshot)) return;
@@ -390,6 +418,8 @@ function expireSnapshots() {
   if (!snapshot || !isSnapshotExpired(snapshot)) return;
   const wasActive = snapshot.active;
   snapshot = null;
+  snapshotUndo = [];
+  snapshotRedo = [];
   persistSnapshot();
   if (wasActive) {
     state.route = [];
@@ -403,24 +433,24 @@ let lastDoneCount = 0;
 function refreshDoneState() {
   expireSnapshots();
   const n = state.route.filter(isStopDone).length;
-  if (n !== lastDoneCount && dragSrcIdx === null && !touchDragging) renderRouteBar();
+  if ((n !== lastDoneCount || trackingSnapshot()) && dragSrcIdx === null && !touchDragging) renderRouteBar();
 }
 setInterval(refreshDoneState, 30000);
 
 function renderSnapshotInfo() {
   const info = document.getElementById('snapshotInfo');
   const useBtn = document.getElementById('useSnapshotBtn');
+  const undoBtn = document.getElementById('undoSnapshotBtn');
+  const redoBtn = document.getElementById('redoSnapshotBtn');
   const valid = !!snapshot && !isSnapshotExpired(snapshot);
   if (useBtn) {
     useBtn.disabled = !valid;
     useBtn.textContent = valid && snapshot.active ? 'Stop Using' : 'Use';
     useBtn.classList.toggle('in-use', valid && snapshot.active);
   }
-  if (!info) return;
-  if (!valid) { info.textContent = 'No snapshot saved'; return; }
-  const n = state.route.filter(isStopDone).length;
-  info.textContent = `Saved ${minsToTime(snapshot.savedAtMinutes)}`
-    + (snapshot.active ? ` · in use · ${n} ride${n === 1 ? '' : 's'} done` : ' · not in use');
+  if (undoBtn) undoBtn.disabled = !(valid && snapshotUndo.length);
+  if (redoBtn) redoBtn.disabled = !(valid && snapshotRedo.length);
+  if (info) info.textContent = '';
 }
 const PRESET_KEY = 'urp.presets';
 let presets = JSON.parse(localStorage.getItem(PRESET_KEY) || '[]');
@@ -650,6 +680,8 @@ $('#generateBreakBtn').addEventListener('click', () => {
 
 $('#addPresetBtn').addEventListener('click', addPreset);
 $('#useSnapshotBtn').addEventListener('click', toggleSnapshotUse);
+$('#undoSnapshotBtn').addEventListener('click', undoSnapshot);
+$('#redoSnapshotBtn').addEventListener('click', redoSnapshot);
 $('#saveSnapshotBtn').addEventListener('click', () => {
   saveRouteSnapshot();
 });
@@ -1688,7 +1720,14 @@ function renderRouteBar() {
 
       const timeChip = document.createElement('span');
       timeChip.className = 'time-chip';
-      timeChip.textContent = minsToTime(stop.queueJoinMinutes);
+      if (trackingSnapshot() && !done && i === firstFutureIdx() && stop.queueJoinMinutes != null) {
+        const until = Math.max(0, stop.queueJoinMinutes - parkNow().minutes);
+        timeChip.textContent = until >= 60
+          ? `in ${Math.floor(until / 60)}h ${until % 60}m`
+          : `in ${until}m`;
+      } else {
+        timeChip.textContent = minsToTime(stop.queueJoinMinutes);
+      }
 
       const remove = document.createElement('button');
       remove.className = 'stop-remove';

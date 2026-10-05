@@ -71,12 +71,18 @@
 
     <div id="topBar">
       <div id="topBarContent">
-        <div id="snapshotRow">
-          <span id="snapshotLabel">Snapshot</span>
-          <button id="saveSnapshotBtn" class="pill-btn pill-btn--success">Save</button>
-  <button id="useSnapshotBtn" class="pill-btn">Use</button>
-        </div>
-      <div id="snapshotInfo"></div>
+<div id="snapshotBox">
+  <div id="snapshotTitleRow">
+    <button id="undoSnapshotBtn" class="snap-icon-btn" aria-label="Undo" disabled>&#8630;</button>
+    <span id="snapshotLabel">Snapshot</span>
+    <button id="redoSnapshotBtn" class="snap-icon-btn" aria-label="Redo" disabled>&#8631;</button>
+  </div>
+  <div id="snapshotRow">
+    <button id="saveSnapshotBtn" class="pill-btn pill-btn--success">Save</button>
+    <button id="useSnapshotBtn" class="pill-btn">Use</button>
+  </div>
+  <div id="snapshotInfo"></div>
+</div>
     <div id="routeTrack">
           <p id="routePlaceholder">No route yet &mdash; check some rides and hit &ldquo;Get Optimal Route&rdquo;.</p>
           <div id="routeItems"></div>
