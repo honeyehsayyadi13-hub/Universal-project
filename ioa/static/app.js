@@ -179,6 +179,7 @@ function applyDarkMode() {
   if (!mapImageEl.src.endsWith(wantedSrc)) mapImageEl.src = wantedSrc;
 
   document.getElementById('darkModeCheckbox')?.classList.toggle('checked', darkModeOn);
+  document.getElementById('darkModeToggle')?.classList.toggle('is-dark', darkModeOn);
   const label = document.getElementById('darkModeLabel');
   if (label) label.textContent = darkModeOn ? 'Light Mode' : 'Dark Mode';
 }
@@ -398,6 +399,15 @@ function selectSnapshot(i) {
   renderRouteBar();
 }
 
+function deleteSnapshot() {
+  if (!currentSnapshot()) return;
+  snapStore.list.splice(snapStore.sel, 1);
+  snapStore.sel = Math.max(0, snapStore.list.length - 1);
+  snapStore.active = false;
+  persistSnapshot();
+  renderRouteBar();
+}
+
 // Use / Stop Using
 function toggleSnapshotUse() {
   const s = currentSnapshot();
@@ -447,6 +457,8 @@ function renderSnapshotInfo() {
     useBtn.disabled = !valid;
     useBtn.textContent = valid && snapStore.active ? 'Stop Using' : 'Use';
     useBtn.classList.toggle('in-use', valid && snapStore.active);
+    const delBtn = document.getElementById('deleteSnapshotBtn');
+    if (delBtn) delBtn.disabled = !s;
   }
 
   const showDropdown = snapStore.list.length >= SNAPSHOT_DROPDOWN_MIN;
@@ -695,6 +707,7 @@ $('#generateBreakBtn').addEventListener('click', () => {
 
 $('#addPresetBtn').addEventListener('click', addPreset);
 $('#useSnapshotBtn')?.addEventListener('click', toggleSnapshotUse);
+$('#deleteSnapshotBtn')?.addEventListener('click', deleteSnapshot);
 $('#snapshotSelect')?.addEventListener('change', e => selectSnapshot(parseInt(e.target.value, 10)));
 $('#saveSnapshotBtn')?.addEventListener('click', () => {
   saveRouteSnapshot();
