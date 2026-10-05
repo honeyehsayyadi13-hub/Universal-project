@@ -228,7 +228,9 @@ function clearConflictingSentinelPins(sentinelValue, exceptKey) {
 function executeDrop(srcIdx, destIdx) {
   if (srcIdx === null || destIdx === null || srcIdx === destIdx) return;
 
-  const isFirst = destIdx === 0;
+  if (isStopDone(state.route[srcIdx]) || isStopDone(state.route[destIdx])) return;
+  const first   = firstFutureIdx();
+  const isFirst = destIdx === first;
   const isLast  = destIdx === state.route.length - 1;
   const targetStop = state.route[destIdx];
   const targetMinutes = isFirst ? 0
@@ -238,7 +240,7 @@ function executeDrop(srcIdx, destIdx) {
   const moved = state.route.splice(srcIdx, 1)[0];
 
   if (isFirst) {
-    state.route.unshift(moved);
+    state.route.splice(first, 0, moved);
   } else if (isLast) {
     state.route.push(moved);
   } else {
@@ -267,6 +269,106 @@ const startOptions = [{ id: 'entrance', label: 'Entrance' },
   ...RIDES.map(r => ({ id: r.id, label: r.name }))];
 
 // ── presets (persisted in localStorage) ────────────────────────
+// ── park clock + snapshot helpers ──
+const PARK_TZ = 'America/New_York';
+let parkCloseMinutes = 20 * 60;
+
+function parkNow() {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: PARK_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(new Date());
+  const get = t => parts.find(p => p.type === t).value;
+  return {
+    day: `${get('year')}-${get('month')}-${get('day')}`,
+    minutes: parseInt(get('hour'), 10) * 60 + parseInt(get('minute'), 10),
+  };
+}
+
+async function fetchParkClose() {
+  try {
+    const res = await fetch(`${API_BASE}/api/park-hours`);
+    if (!res.ok) return;
+    const d = await res.json();
+    if (typeof d.close_minutes === 'number') parkCloseMinutes = d.close_minutes;
+  } catch (e) { /* keep fallback */ }
+}
+
+function isSnapshotExpired(snap) {
+  if (!snap) return true;
+  const now = parkNow();
+  return snap.day !== now.day || now.minutes >= snap.closeMinutes;
+}
+
+function trackingPreset() {
+  const p = presets.find(pr => pr.id === selectedPresetId);
+  return p && p.snapshot && !isSnapshotExpired(p.snapshot) ? p : null;
+}
+
+function isStopDone(stop) {
+  return !!trackingPreset()
+    && stop.queueJoinMinutes != null
+    && stop.queueJoinMinutes <= parkNow().minutes;
+}
+
+function firstFutureIdx() {
+  const i = state.route.findIndex(s => !isStopDone(s));
+  return i === -1 ? state.route.length : i;
+}
+
+function buildSnapshot() {
+  const now = parkNow();
+  return {
+    day: now.day,
+    closeMinutes: parkCloseMinutes,
+    savedAtMinutes: now.minutes,
+    route: state.route.map(s => {
+      const pin = state.timePinned[s.uid];
+      return {
+        rideId: s.rideId,
+        predictedWait: s.predictedWait,
+        queueJoinMinutes: s.queueJoinMinutes,
+        pinned: !!pin,
+        pin: pin ? pin.targetMinutes : null,
+      };
+    }),
+  };
+}
+
+function expireSnapshots() {
+  let any = false, selectedExpired = false;
+  presets.forEach(p => {
+    if (p.snapshot && isSnapshotExpired(p.snapshot)) {
+      if (p.id === selectedPresetId) selectedExpired = true;
+      p.snapshot = null;
+      any = true;
+    }
+  });
+  if (any) savePresets();
+  if (selectedExpired) {
+    state.route = [];
+    state.timePinned = {};
+    renderRouteBar();
+  }
+}
+
+let lastDoneCount = 0;
+function refreshDoneState() {
+  expireSnapshots();
+  const n = state.route.filter(isStopDone).length;
+  if (n !== lastDoneCount && dragSrcIdx === null && !touchDragging) renderRouteBar();
+}
+setInterval(refreshDoneState, 30000);
+
+function renderSnapshotInfo() {
+  const el = document.getElementById('snapshotInfo');
+  if (!el) return;
+  const p = trackingPreset();
+  if (!p) { el.textContent = ''; return; }
+  const n = state.route.filter(isStopDone).length;
+  el.textContent = `Saved ${minsToTime(p.snapshot.savedAtMinutes)} · ${n} ride${n === 1 ? '' : 's'} done`;
+}
+
 const PRESET_KEY = 'urp.presets';
 let presets = JSON.parse(localStorage.getItem(PRESET_KEY) || '[]');
 let presetIdCounter = presets.reduce((m, p) => Math.max(m, p.id), 0);
@@ -274,7 +376,51 @@ let selectedPresetId = null;
 
 function savePresets() { localStorage.setItem(PRESET_KEY, JSON.stringify(presets)); }
 
+function presetPayload() {
+  return {
+    visible: { ...state.visible },
+    counts: { ...state.counts },
+    locked: { ...state.locked },
+    lastCount: { ...state.lastCount },
+    breaks: JSON.parse(JSON.stringify(state.breaks)),
+    selectedStart: state.selectedStart,
+    timePinned: JSON.parse(JSON.stringify(state.timePinned)),
+    maxCounts: Object.fromEntries(Object.entries(state.maxCounts).map(([k,v]) => [k, v === Infinity ? null : v])),
+    maxBeforeInfinity: { ...state.maxBeforeInfinity },
+    maxWasZeroBeforeLock: { ...state.maxWasZeroBeforeLock },
+    pinnedLocked: { ...state.pinnedLocked },
+    tierLists: JSON.parse(JSON.stringify(state.tierLists)),
+    closedChecked: { ...state.closedChecked },
+    snapshot: buildSnapshot(),
+  };
+}
+
 function addPreset() {
+  presetIdCounter += 1;
+  presets.push({ id: presetIdCounter, name: `Preset ${presets.length + 1}`, ...presetPayload() });
+  selectedPresetId = presetIdCounter;
+  savePresets();
+  renderPresetDropdown();
+  renderRouteBar();
+}
+
+function saveSnapshot(name) {
+  const payload = presetPayload();
+  const existing = presets.find(p => p.id === selectedPresetId);
+  if (existing) {
+    Object.assign(existing, payload);
+    if (name) existing.name = name;
+  } else {
+    presetIdCounter += 1;
+    presets.push({ id: presetIdCounter, name: name || `Preset ${presets.length + 1}`, ...payload });
+    selectedPresetId = presetIdCounter;
+  }
+  savePresets();
+  renderPresetDropdown();
+  renderRouteBar();
+}
+
+function _oldAddPreset_unused() {
   presetIdCounter += 1;
   presets.push({
     id: presetIdCounter,
@@ -300,7 +446,7 @@ function addPreset() {
 
 function deletePreset(id) {
   presets = presets.filter(p => p.id !== id);
-  presets.forEach((p, i) => { p.name = `Preset ${i + 1}`; });
+  presets.forEach((p, i) => { if (/^Preset \d+$/.test(p.name)) p.name = `Preset ${i + 1}`; });
   if (selectedPresetId === id) selectedPresetId = null;
   savePresets();
   renderPresetDropdown();
@@ -348,7 +494,16 @@ function applyPreset(id) {
   });
 
   selectedPresetId = p.id;
+  expireSnapshots();
   state.route = [];
+  state.timePinned = {};
+  if (p.snapshot) {
+    p.snapshot.route.forEach(s => {
+      const uid = nextUid();
+      state.route.push({ rideId: s.rideId, predictedWait: s.predictedWait, queueJoinMinutes: s.queueJoinMinutes, uid });
+      if (s.pinned) state.timePinned[uid] = { rideId: s.rideId, targetMinutes: s.pin };
+    });
+  }
   renderStartDropdown();
   renderSidebarList();
   renderPresetDropdown();
@@ -439,6 +594,10 @@ function renderPresetDropdown() {
   const label = presets.find(p => p.id === selectedPresetId)?.name
     || (presets.length ? 'Select preset…' : '');
   $('#presetDropdownLabel').textContent = label;
+  const nameInput = document.getElementById('snapshotNameInput');
+  if (nameInput && document.activeElement !== nameInput) {
+    nameInput.value = presets.find(p => p.id === selectedPresetId)?.name || '';
+  }
 }
 
 setupDropdown({ dropdown: $('#startDropdown') });
@@ -490,6 +649,9 @@ $('#generateBreakBtn').addEventListener('click', () => {
 });
 
 $('#addPresetBtn').addEventListener('click', addPreset);
+$('#saveSnapshotBtn').addEventListener('click', () => {
+  saveSnapshot($('#snapshotNameInput').value.trim());
+});
 
 // ═══════════════ SIDEBAR RIDE LIST ═══════════════
 
@@ -1317,6 +1479,8 @@ mapViewportEl.addEventListener('touchcancel', () => {
 
 // ═══════════════ TOP ROUTE BAR ═══════════════
 function renderRouteBar() {
+  lastDoneCount = state.route.filter(isStopDone).length;
+  renderSnapshotInfo();
   if (!state.route.length) {
     routePlaceholderEl.style.display = 'block';
     routeItemsEl.classList.remove('active');
@@ -1360,10 +1524,12 @@ function renderRouteBar() {
       const pinEntry   = state.timePinned[stop.uid];
       const isLocked   = pinEntry && pinEntry.targetMinutes !== null;
       const isHighlighted = !!pinEntry;
+      const done = isStopDone(stop);
 
       const wrap = document.createElement('div');
       wrap.className = 'route-stop';
-      wrap.draggable = true;
+      wrap.draggable = !done;
+      if (done) wrap.classList.add('done');
       wrap.dataset.idx = i;
 
       wrap.addEventListener('dragstart', e => {
@@ -1398,6 +1564,7 @@ function renderRouteBar() {
       });
 
       wrap.addEventListener('touchstart', e => {
+        if (done) return;
         const touch = e.touches[0];
         touchStartX     = touch.clientX;
         touchStartY     = touch.clientY;
@@ -1463,13 +1630,14 @@ function renderRouteBar() {
 
       const pill = document.createElement('div');
       pill.className = 'route-pill'
-        + (isLocked ? ' time-locked' : isHighlighted ? ' highlighted' : '');
+        + (done ? ' done' : isLocked ? ' time-locked' : isHighlighted ? ' highlighted' : '');
 
       let pointerDownX = 0, pointerDownY = 0;
       pill.addEventListener('pointerdown', e => { pointerDownX = e.clientX; pointerDownY = e.clientY; });
       pill.addEventListener('pointerup', e => {
         const dist = Math.hypot(e.clientX - pointerDownX, e.clientY - pointerDownY);
         if (dist > 8) return;
+        if (done) return;
         if (pinEntry) {
           delete state.timePinned[stop.uid];
           const anyStillPinned = Object.values(state.timePinned).some(p => p.rideId === stop.rideId);
@@ -1478,7 +1646,7 @@ function renderRouteBar() {
             delete state.pinnedLocked[stop.rideId];
           }
         } else {
-          const isFirst = i === 0;
+          const isFirst = i === firstFutureIdx();
           const isLast  = i === state.route.length - 1;
           state.timePinned[stop.uid] = {
             rideId: stop.rideId,
@@ -1600,6 +1768,11 @@ async function generateRoute(triggerBtn) {
   const ride_locked = {};
   RIDES.forEach(r => { if (state.locked[r.id]) ride_locked[r.id] = true; });
 
+  const doneStops = state.route.filter(isStopDone);
+  const doneUids  = new Set(doneStops.map(s => s.uid));
+  const completed_counts = {};
+  doneStops.forEach(s => { completed_counts[s.rideId] = (completed_counts[s.rideId] || 0) + 1; });
+
   const closed_ride_keys = RIDES.filter(r => state.liveOpen[r.id] === false).map(r => r.id);
   const override_closed_keys = RIDES.filter(r => state.closedChecked[r.id]).map(r => r.id);
   const breaks = state.breaks.map(b => [b.startMin, b.endMin]);
@@ -1607,7 +1780,9 @@ async function generateRoute(triggerBtn) {
   // NOTE: no instance_index / route_index sent anymore -- occurrences of
   // the same ride are anonymous, so there's nothing meaningful to index.
   // The backend matches pins to occurrences purely by processing order.
-  const time_pinned = Object.values(state.timePinned)
+  const time_pinned = Object.entries(state.timePinned)
+    .filter(([uid]) => !doneUids.has(uid))
+    .map(([, p]) => p)
     .filter(p => p.targetMinutes !== null)
     .map(p => ({
       ride_key: p.rideId,
@@ -1639,7 +1814,10 @@ async function generateRoute(triggerBtn) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         ride_counts, ride_locked, closed_ride_keys, override_closed_keys, breaks,
-        start_key: state.selectedStart,
+        completed_counts,
+        start_key: (doneStops.length && state.selectedStart === 'entrance')
+          ? doneStops[doneStops.length - 1].rideId
+          : state.selectedStart,
         live_waits: state.liveWaits,
         time_pinned,
         ride_priority_order: flattenPriorityOrder(),
@@ -1657,7 +1835,9 @@ async function generateRoute(triggerBtn) {
 
     // Snapshot the pins BEFORE the route array is replaced, so we still
     // have their rideId/targetMinutes to work with afterward.
-    const oldPins = Object.values(state.timePinned).filter(p => p.rideId);
+    const oldPins = Object.entries(state.timePinned)
+      .filter(([uid, p]) => p.rideId && !doneUids.has(uid))
+      .map(([, p]) => p);
 
     // Every stop gets a fresh, stable uid -- this is what makes pin
     // tracking collision-proof no matter how many times the same ride
@@ -1700,6 +1880,7 @@ async function generateRoute(triggerBtn) {
     });
 
     state.timePinned = newTP;
+    state.route = [...doneStops, ...state.route];
 
     const stillPinnedRideIds = new Set(Object.values(newTP).map(p => p.rideId));
     Object.keys(state.pinnedLocked).forEach(rideId => {
@@ -1857,6 +2038,8 @@ function init() {
   renderPins();
   renderRouteBar();
   pollStatus();
+  fetchParkClose();
+  expireSnapshots();
   updateTogglePositions(); 
 
 

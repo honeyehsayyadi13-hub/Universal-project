@@ -727,7 +727,7 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
                              breaks=None, start_time=None, start_key="entrance",
                              live_waits=None, time_pinned=None, max_counts=None,
                              close_hour=None, close_minute=None, override_closed_keys=None,
-                             ride_priority_order=None):
+                             ride_priority_order=None, completed_counts=None):
     """
     Main entry point for route computation.
 
@@ -755,6 +755,7 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
         Returns None if computation failed entirely.
     """
     ride_locked = dict(ride_locked or {})
+    completed_counts = dict(completed_counts or {})
 
     if time_pinned:
         for pin in time_pinned:
@@ -833,15 +834,23 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
     locked_instances, extra_instances, optional_instances = [], [], []
     for key, count in checked.items():
         db_id = key_to_id[key]
+        done = int(completed_counts.get(key, 0))
+        remaining = count - done
+
         max_for_ride = max_counts_by_id.get(db_id, float('inf'))
-        if max_for_ride == 0:
+        if max_for_ride != float('inf'):
+            max_for_ride = max(0, max_for_ride - done)
+            max_counts_by_id[db_id] = max_for_ride
+
+        if remaining <= 0 or max_for_ride == 0:
             continue
+
         is_locked = bool(ride_locked.get(key))
         if is_locked:
             locked_instances.append({"db_id": db_id, "ride_key": key, "kind": "locked"})
         else:
             optional_instances.append({"db_id": db_id, "ride_key": key, "kind": "optional"})
-        num_extras = count - 1
+        num_extras = remaining - 1
         if max_for_ride != float('inf'):
             num_extras = min(num_extras, max(0, int(max_for_ride) - 1))
         for _ in range(num_extras):

@@ -59,6 +59,7 @@ def route():
             close_minute=close_minute,
             override_closed_keys=payload.get("override_closed_keys"),
             ride_priority_order=payload.get("ride_priority_order"),
+            completed_counts=payload.get("completed_counts"),
             )
     except Exception as e:
         app.logger.exception("route computation failed")
@@ -68,6 +69,12 @@ def route():
         return jsonify({"error": "Route could not be computed (backend data unreachable)."}), 502
 
     return jsonify(result)
+
+
+@app.route("/api/park-hours")
+def park_hours():
+    close = Data.get_park_close_time()
+    return jsonify({"close_minutes": close[0] * 60 + close[1] if close else None})
 
 
 if __name__ == "__main__":
