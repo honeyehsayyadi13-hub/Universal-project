@@ -259,11 +259,8 @@ const startOptions = [{ id: 'entrance', label: 'Entrance' },
   ...RIDES.map(r => ({ id: r.id, label: r.name }))];
 
 // ── presets (persisted in localStorage) ────────────────────────
-// ── park clock + snapshots (completely separate from the sidebar presets) ──
-const SNAPSHOT_KEY = 'urp.snapshots';
-const OLD_SNAPSHOT_KEY = 'urp.snapshot';
-const SNAPSHOT_DROPDOWN_MIN = 1;   // dropdown appears at this many snapshots
-const SNAPSHOT_MAX = 10;           // oldest are dropped past this
+// ── park clock + daily snapshot (separate from the sidebar presets) ──
+const SNAPSHOT_KEY = 'urp.snapshotDay';
 const PARK_TZ = 'America/New_York';
 let parkCloseMinutes = 20 * 60;    // fallback until /api/park-hours answers
 
@@ -288,210 +285,173 @@ async function fetchParkClose() {
   } catch (e) { /* keep fallback */ }
 }
 
-function loadSnapshotStore() {
+// snap = { day, closeMinutes, active, done: [{rideId, predictedWait, queueJoinMinutes, manual}] } or null
+function loadSnapshot() {
   try {
     const s = JSON.parse(localStorage.getItem(SNAPSHOT_KEY) || 'null');
-    if (s && Array.isArray(s.list)) return s;
-    const old = JSON.parse(localStorage.getItem(OLD_SNAPSHOT_KEY) || 'null');
-    if (old) return { list: [{ ...old }], sel: 0, active: !!old.active };
+    if (s && Array.isArray(s.done)) return s;
   } catch (e) { /* ignore */ }
-  return { list: [], sel: 0, active: false };
+  return null;
 }
 
-let snapStore = loadSnapshotStore();
+let snap = loadSnapshot();
+let preUseState = null;
 
 function persistSnapshot() {
-  try { localStorage.setItem(SNAPSHOT_KEY, JSON.stringify(snapStore)); } catch (e) { /* ignore */ }
+  try {
+    if (snap) localStorage.setItem(SNAPSHOT_KEY, JSON.stringify(snap));
+    else localStorage.removeItem(SNAPSHOT_KEY);
+  } catch (e) { /* ignore */ }
 }
 
-function currentSnapshot() { return snapStore.list[snapStore.sel] || null; }
-
-function isSnapshotExpired(snap) {
-  if (!snap) return true;
+function isSnapshotExpired(s) {
+  if (!s) return true;
   const now = parkNow();
-  return snap.day !== now.day || now.minutes >= snap.closeMinutes;
+  return s.day !== now.day || now.minutes >= s.closeMinutes;
 }
 
-// The selected snapshot, but only if it's alive AND switched on.
 function trackingSnapshot() {
-  const s = currentSnapshot();
-  return s && snapStore.active && !isSnapshotExpired(s) ? s : null;
+  return snap && snap.active && !isSnapshotExpired(snap) ? snap : null;
 }
 
-function isStopDone(stop) {
-  return !!trackingSnapshot()
-    && stop.queueJoinMinutes != null
-    && stop.queueJoinMinutes <= parkNow().minutes;
-}
+function isStopDone(stop) { return !!stop.done; }
 
 function firstFutureIdx() {
-  const i = state.route.findIndex(s => !isStopDone(s));
+  const i = state.route.findIndex(s => !s.done);
   return i === -1 ? state.route.length : i;
 }
 
-function loadSnapshotRoute() {
-  const s = currentSnapshot();
-  if (!s) return;
-  state.route = [];
-  state.timePinned = {};
-  s.route.forEach(r => {
-    const uid = nextUid();
-    state.route.push({ rideId: r.rideId, predictedWait: r.predictedWait, queueJoinMinutes: r.queueJoinMinutes, uid });
-    if (r.pinned) state.timePinned[uid] = { rideId: r.rideId, targetMinutes: r.pin };
-  });
+// Copies the green + yellow stops into the saved snapshot.
+function syncSnapshotDone() {
+  if (!snap) return;
+  snap.done = state.route.filter(s => s.done).map(s => ({
+    rideId: s.rideId,
+    predictedWait: s.predictedWait,
+    queueJoinMinutes: s.queueJoinMinutes,
+    manual: !!s.manual,
+  }));
+  persistSnapshot();
 }
 
-function restoreSnapshotRoute() {
-  preUseState = { route: [], timePinned: {} };
-  if (trackingSnapshot()) {
-    loadSnapshotRoute();
-    renderRouteBar();
+// Planned stops whose queue-join time has passed turn green (and get saved).
+function advanceDone() {
+  if (!trackingSnapshot()) return false;
+  const nowMin = parkNow().minutes;
+  let changed = false;
+  for (let i = firstFutureIdx(); i < state.route.length; i++) {
+    const s = state.route[i];
+    if (s.queueJoinMinutes == null || s.queueJoinMinutes > nowMin) break;
+    s.done = true;
+    delete state.timePinned[s.uid];
+    changed = true;
   }
+  if (changed) syncSnapshotDone();
+  return changed;
 }
 
-// Save: adds a NEW snapshot (older ones stay selectable in the dropdown).
-function saveRouteSnapshot() {
-  if (!state.route.length) {
-    const info = document.getElementById('snapshotInfo');
-    if (info) info.textContent = 'Generate a route before saving.';
+// Drag a ride from the sidebar into the snapshot -> yellow.
+function addManualDone(rideId) {
+  state.route.splice(firstFutureIdx(), 0, {
+    rideId, predictedWait: null, queueJoinMinutes: null,
+    uid: nextUid(), done: true, manual: true,
+  });
+  syncSnapshotDone();
+  renderRouteBar();
+}
+
+// Drag a planned stop into the snapshot -> yellow, removed from the plan.
+function markRouteStopDone(srcIdx) {
+  const stop = state.route[srcIdx];
+  if (!stop || stop.done) return;
+  state.route.splice(srcIdx, 1);
+  delete state.timePinned[stop.uid];
+  stop.done = true;
+  stop.manual = true;
+  stop.predictedWait = null;
+  stop.queueJoinMinutes = null;
+  state.route.splice(firstFutureIdx(), 0, stop);
+  syncSnapshotDone();
+  renderRouteBar();
+}
+
+function toggleSnapshotUse() {
+  if (trackingSnapshot()) {
+    snap.active = false;
+    persistSnapshot();
+    const prev = preUseState || { route: [], timePinned: {} };
+    state.route = prev.route;
+    state.timePinned = prev.timePinned;
+    preUseState = null;
+    renderRouteBar();
     return;
   }
+
   const now = parkNow();
+  if (!snap || isSnapshotExpired(snap)) {
+    snap = { day: now.day, closeMinutes: parkCloseMinutes, done: [] };
+  }
+  snap.active = true;
+  preUseState = { route: state.route, timePinned: state.timePinned };
 
-  snapStore.list.push({
-    day: now.day,
-    closeMinutes: parkCloseMinutes,
-    savedAtMinutes: now.minutes,
-    route: state.route.map(s => {
-      const pin = state.timePinned[s.uid];
-      return {
-        rideId: s.rideId,
-        predictedWait: s.predictedWait,
-        queueJoinMinutes: s.queueJoinMinutes,
-        pinned: !!pin,
-        pin: pin ? pin.targetMinutes : null,
-      };
-    }),
+  const done = snap.done.map(d => ({ ...d, uid: nextUid(), done: true }));
+  const seen = new Set(done.filter(d => !d.manual).map(d => `${d.rideId}:${d.queueJoinMinutes}`));
+  const future = [];
+  state.route.forEach(s => {
+    if (s.queueJoinMinutes != null && s.queueJoinMinutes <= now.minutes) {
+      if (!seen.has(`${s.rideId}:${s.queueJoinMinutes}`)) done.push({ ...s, done: true });
+    } else {
+      future.push(s);
+    }
   });
-  while (snapStore.list.length > SNAPSHOT_MAX) snapStore.list.shift();
-  snapStore.sel = snapStore.list.length - 1;
-  persistSnapshot();
+  const keptPins = {};
+  future.forEach(s => { if (state.timePinned[s.uid]) keptPins[s.uid] = state.timePinned[s.uid]; });
+
+  state.route = [...done, ...future];
+  state.timePinned = keptPins;
+  syncSnapshotDone();
   renderRouteBar();
 }
 
-function selectSnapshot(i) {
-  if (isNaN(i) || i < 0 || i >= snapStore.list.length) return;
-  snapStore.sel = i;
-  if (snapStore.active) loadSnapshotRoute();
-  persistSnapshot();
+// After a reload, a snapshot that was in use comes back with its green/yellow stops.
+function restoreSnapshotRoute() {
+  const s = trackingSnapshot();
+  if (!s) return;
+  preUseState = { route: [], timePinned: {} };
+  state.route = s.done.map(d => ({ ...d, uid: nextUid(), done: true }));
+  state.timePinned = {};
   renderRouteBar();
 }
 
-function deleteSnapshot(i) {
-  if (i < 0 || i >= snapStore.list.length) return;
-  const wasSelected = i === snapStore.sel;
-  snapStore.list.splice(i, 1);
-  if (wasSelected) {
-    if (snapStore.active) restorePreUseState();
-    snapStore.active = false;
-    snapStore.sel = Math.max(0, snapStore.list.length - 1);
-  } else if (i < snapStore.sel) {
-    snapStore.sel--;
-  }
-  persistSnapshot();
-  renderRouteBar();
-}
-
-let preUseState = null;
-function restorePreUseState() {
-  if (!preUseState) return;
-  state.route = preUseState.route;
-  state.timePinned = preUseState.timePinned;
-  preUseState = null;
-}
-
-// Use / Stop Using
-function toggleSnapshotUse() {
-  const s = currentSnapshot();
-  if (!s || isSnapshotExpired(s)) return;
-  snapStore.active = !snapStore.active;
-  if (snapStore.active) {
-    preUseState = { route: state.route, timePinned: state.timePinned };
-    loadSnapshotRoute();
-  } else {
-    restorePreUseState();
-  }
-  persistSnapshot();
-  renderRouteBar();
-}
-
-// After close (or a new day) expired snapshots disappear.
+// After park close (or a new day) the snapshot disappears.
 function expireSnapshots() {
-  if (!snapStore.list.length) return;
-  const selExpired = isSnapshotExpired(currentSnapshot());
-  const kept = snapStore.list.filter(s => !isSnapshotExpired(s));
-  if (kept.length === snapStore.list.length) return;
-  const wasActive = snapStore.active && selExpired;
-  snapStore.list = kept;
-  snapStore.sel = Math.max(0, kept.length - 1);
-  if (!kept.length || wasActive) snapStore.active = false;
+  if (!snap || !isSnapshotExpired(snap)) return;
+  const wasActive = snap.active;
+  snap = null;
+  persistSnapshot();
   if (wasActive) {
     state.route = [];
     state.timePinned = {};
+    preUseState = null;
   }
-  persistSnapshot();
   renderRouteBar();
 }
 
-// Turn stops green as time passes, without clobbering an in-progress drag.
-let lastDoneCount = 0;
 function refreshDoneState() {
   expireSnapshots();
-  const n = state.route.filter(isStopDone).length;
-  if ((n !== lastDoneCount || trackingSnapshot()) && dragSrcIdx === null && !touchDragging) renderRouteBar();
+  const changed = advanceDone();
+  if ((changed || trackingSnapshot()) && dragSrcIdx === null && !touchDragging) renderRouteBar();
 }
 setInterval(refreshDoneState, 30000);
 
 function renderSnapshotInfo() {
-  const info = document.getElementById('snapshotInfo');
   const useBtn = document.getElementById('useSnapshotBtn');
-  const label = document.getElementById('snapshotLabel');
-  const dropdown = document.getElementById('snapshotDropdown');
-  const list = document.getElementById('snapshotDropdownList');
-  const dropLabel = document.getElementById('snapshotDropdownLabel');
-  const s = currentSnapshot();
-  const valid = !!s && !isSnapshotExpired(s);
-
+  const drop = document.getElementById('snapshotDrop');
+  const on = !!trackingSnapshot();
   if (useBtn) {
-    useBtn.disabled = !valid;
-    useBtn.textContent = valid && snapStore.active ? 'Stop Using' : 'Use';
-    useBtn.classList.toggle('in-use', valid && snapStore.active);
+    useBtn.textContent = on ? 'Stop Using' : 'Use';
+    useBtn.classList.toggle('in-use', on);
   }
-
-  const showDropdown = snapStore.list.length >= SNAPSHOT_DROPDOWN_MIN;
-  if (label) label.style.display = showDropdown ? 'none' : '';
-  if (dropdown && list && dropLabel) {
-    dropdown.style.display = showDropdown ? 'block' : 'none';
-    list.innerHTML = '';
-    snapStore.list.forEach((sn, i) => {
-      const li = document.createElement('li');
-      li.className = i === snapStore.sel ? 'selected' : '';
-      const span = document.createElement('span');
-      span.className = 'item-label';
-      span.textContent = `Snapshot ${i + 1} · ${minsToTime(sn.savedAtMinutes)}`;
-      span.addEventListener('click', () => { selectSnapshot(i); closeAllDropdowns(); });
-      const x = document.createElement('button');
-      x.className = 'mini-x';
-      x.textContent = '✕';
-      x.addEventListener('click', ev => { ev.stopPropagation(); deleteSnapshot(i); });
-      li.appendChild(span);
-      li.appendChild(x);
-      list.appendChild(li);
-    });
-    dropLabel.textContent = s ? `Snapshot ${snapStore.sel + 1} · ${minsToTime(s.savedAtMinutes)}` : '';
-  }
-
-  if (info) info.textContent = '';
+  if (drop) drop.style.display = on ? 'block' : 'none';
 }
 const PRESET_KEY = 'urp.presets';
 let presets = JSON.parse(localStorage.getItem(PRESET_KEY) || '[]');
@@ -672,7 +632,7 @@ function renderPresetDropdown() {
 
 setupDropdown({ dropdown: $('#startDropdown') });
 setupDropdown({ dropdown: $('#presetDropdown') });
-setupDropdown({ dropdown: $('#snapshotDropdown') });
+
 
 // ═══════════════ BREAKS ═══════════════
 
@@ -721,8 +681,25 @@ $('#generateBreakBtn').addEventListener('click', () => {
 
 $('#addPresetBtn').addEventListener('click', addPreset);
 $('#useSnapshotBtn')?.addEventListener('click', toggleSnapshotUse);
-$('#saveSnapshotBtn')?.addEventListener('click', () => {
-  saveRouteSnapshot();
+const snapshotDropEl = document.getElementById('snapshotDrop');
+snapshotDropEl?.addEventListener('dragover', e => {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  snapshotDropEl.classList.add('drag-over');
+});
+snapshotDropEl?.addEventListener('dragleave', () => snapshotDropEl.classList.remove('drag-over'));
+snapshotDropEl?.addEventListener('drop', e => {
+  e.preventDefault();
+  snapshotDropEl.classList.remove('drag-over');
+  if (!trackingSnapshot()) return;
+  if (dragSrcIdx !== null) {
+    const src = dragSrcIdx;
+    dragSrcIdx = null;
+    markRouteStopDone(src);
+    return;
+  }
+  const rideId = e.dataTransfer.getData('text/plain');
+  if (rideById[rideId]) addManualDone(rideId);
 });
 
 // ═══════════════ SIDEBAR RIDE LIST ═══════════════
@@ -1117,7 +1094,15 @@ function renderSidebarList() {
   if (advancedModeOn) {
     renderTieredRideList();
   } else {
-    RIDES.forEach(r => sidebarListEl.appendChild(buildRideRow(r)));
+    RIDES.forEach(r => {
+      const row = buildRideRow(r);
+      row.draggable = true;
+      row.addEventListener('dragstart', e => {
+        e.dataTransfer.setData('text/plain', r.id);
+        e.dataTransfer.effectAllowed = 'move';
+      });
+      sidebarListEl.appendChild(row);
+    });
   }
 }
 
@@ -1548,7 +1533,7 @@ mapViewportEl.addEventListener('touchcancel', () => {
 
 // ═══════════════ TOP ROUTE BAR ═══════════════
 function renderRouteBar() {
-  lastDoneCount = state.route.filter(isStopDone).length;
+  advanceDone();
   renderSnapshotInfo();
   if (!state.route.length) {
     routePlaceholderEl.style.display = 'block';
@@ -1687,6 +1672,13 @@ function renderRouteBar() {
         wrap.classList.remove('dragging');
         document.querySelectorAll('.route-stop').forEach(s => s.classList.remove('drag-over'));
         const overStop = el?.closest('.route-stop');
+        if (el?.closest('#snapshotDrop') && trackingSnapshot()) {
+          const srcIdx = touchDragSrcIdx;
+          touchDragSrcIdx = null;
+          touchDragging = false;
+          markRouteStopDone(srcIdx);
+          return;
+        }
         const dropIdx  = overStop ? parseInt(overStop.dataset.idx) : -1;
         const src = touchDragSrcIdx;
         touchDragSrcIdx = null;
@@ -1699,7 +1691,7 @@ function renderRouteBar() {
 
       const pill = document.createElement('div');
       pill.className = 'route-pill'
-        + (done ? ' done' : isLocked ? ' time-locked' : isHighlighted ? ' highlighted' : '');
+        + (done ? (stop.manual ? ' done manual' : ' done') : isLocked ? ' time-locked' : isHighlighted ? ' highlighted' : '');
 
       let pointerDownX = 0, pointerDownY = 0;
       pill.addEventListener('pointerdown', e => { pointerDownX = e.clientX; pointerDownY = e.clientY; });
@@ -1742,7 +1734,7 @@ function renderRouteBar() {
 
       const chip = document.createElement('span');
       chip.className = 'wait-chip';
-      chip.textContent = stop.predictedWait == null ? '--' : `${Math.round(stop.predictedWait)}m`;
+      chip.textContent = stop.manual ? 'xxx' : stop.predictedWait == null ? '--' : `${Math.round(stop.predictedWait)}m`;
       chip.addEventListener('click', e => {
         e.stopPropagation();
         const now = Date.now();
@@ -1756,7 +1748,7 @@ function renderRouteBar() {
 
       const timeChip = document.createElement('span');
       timeChip.className = 'time-chip';
-      timeChip.textContent = minsToTime(stop.queueJoinMinutes);
+      timeChip.textContent = stop.manual ? 'xxx' : minsToTime(stop.queueJoinMinutes);
 
       let untilChip = null;
       if (trackingSnapshot() && !done && i === firstFutureIdx() && stop.queueJoinMinutes != null) {
@@ -1772,6 +1764,12 @@ function renderRouteBar() {
       remove.className = 'stop-remove';
       remove.textContent = '✕';
       remove.addEventListener('click', () => {
+        if (done) {
+          state.route.splice(i, 1);
+          syncSnapshotDone();
+          renderRouteBar();
+          return;
+        }
         delete state.timePinned[stop.uid];
         state.route.splice(i, 1);
         const remaining = state.route.filter(s => s.rideId === stop.rideId).length;
@@ -1961,6 +1959,7 @@ async function generateRoute(triggerBtn) {
 
     state.timePinned = newTP;
     state.route = [...doneStops, ...state.route];
+    syncSnapshotDone();
 
     const stillPinnedRideIds = new Set(Object.values(newTP).map(p => p.rideId));
     Object.keys(state.pinnedLocked).forEach(rideId => {
@@ -1975,9 +1974,9 @@ async function generateRoute(triggerBtn) {
     }
   } catch (err) {
     console.error(err);
-    state.route = [];
+        state.route = doneStops;
     routePlaceholderEl.textContent = `Couldn't generate a route: ${err.message}`;
-  } finally {
+   } finally {
     routeGenerating = false;
     btns.forEach(b => { if (b) b.disabled = false; });
     renderRouteBar();

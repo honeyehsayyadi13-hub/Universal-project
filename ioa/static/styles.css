@@ -960,8 +960,7 @@ input { font-family: inherit; }
 }
 #snapshotNameInput:focus { outline: none; border-color: var(--gold); }
 #saveSnapshotBtn { flex-shrink: 0; }
-#snapshotInfo { font-size: 11px; color: var(--ink-soft); text-align: center; flex-shrink: 0; }
-#snapshotInfo:empty { display: none; }
+
 
 .route-pill.done {
   background: #D5F1E1;
@@ -976,7 +975,7 @@ input { font-family: inherit; }
   color: var(--success-dark);
 }
 .route-stop.done { cursor: default; }
-.route-stop.done .stop-remove { visibility: hidden; }
+
 
 #snapshotLabel { font-family: 'Baloo 2', sans-serif; font-weight: 700; font-size: 14px; flex: 1; }
 #useSnapshotBtn { background: var(--teal); flex-shrink: 0; }
@@ -1022,5 +1021,21 @@ input { font-family: inherit; }
   box-shadow: 0 0 0 2px var(--gold);
 }
 
-#topBar:not(.collapsed) #topBarContent { overflow: visible; }
-#snapshotDropdown { display: none; flex: none; width: 220px; max-width: 100%; }
+
+#snapshotDrop {
+  display: none;
+  border: 2px dashed var(--gold-dark);
+  border-radius: var(--radius-sm);
+  padding: 6px 14px;
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  text-align: center;
+}
+#snapshotDrop.drag-over { background: #FFF4C2; border-color: var(--gold); }
+
+.route-pill.done.manual {
+  background: #FFF3B0;
+  border-color: var(--gold);
+  box-shadow: 0 0 0 2px var(--gold);
+}
+.route-pill.done.manual::after { color: var(--gold-dark); }
