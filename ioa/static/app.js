@@ -293,7 +293,7 @@ function loadSnapshotStore() {
     const s = JSON.parse(localStorage.getItem(SNAPSHOT_KEY) || 'null');
     if (s && Array.isArray(s.list)) return s;
     const old = JSON.parse(localStorage.getItem(OLD_SNAPSHOT_KEY) || 'null');
-    if (old) return { list: [{ n: 1, ...old }], sel: 0, active: !!old.active };
+    if (old) return { list: [{ ...old }], sel: 0, active: !!old.active };
   } catch (e) { /* ignore */ }
   return { list: [], sel: 0, active: false };
 }
@@ -356,9 +356,8 @@ function saveRouteSnapshot() {
     return;
   }
   const now = parkNow();
-  const nextN = snapStore.list.reduce((m, s) => Math.max(m, s.n || 0), 0) + 1;
+
   snapStore.list.push({
-    n: nextN,
     day: now.day,
     closeMinutes: parkCloseMinutes,
     savedAtMinutes: now.minutes,
@@ -464,7 +463,7 @@ function renderSnapshotInfo() {
       li.className = i === snapStore.sel ? 'selected' : '';
       const span = document.createElement('span');
       span.className = 'item-label';
-      span.textContent = `Snapshot ${sn.n} · ${minsToTime(sn.savedAtMinutes)}`;
+      span.textContent = `Snapshot ${i + 1} · ${minsToTime(sn.savedAtMinutes)}`;
       span.addEventListener('click', () => { selectSnapshot(i); closeAllDropdowns(); });
       const x = document.createElement('button');
       x.className = 'mini-x';
@@ -474,7 +473,7 @@ function renderSnapshotInfo() {
       li.appendChild(x);
       list.appendChild(li);
     });
-    dropLabel.textContent = s ? `Snapshot ${s.n} · ${minsToTime(s.savedAtMinutes)}` : '';
+    dropLabel.textContent = s ? `Snapshot ${snapStore.sel + 1} · ${minsToTime(s.savedAtMinutes)}` : '';
   }
 
   if (info) info.textContent = '';
