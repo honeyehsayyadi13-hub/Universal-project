@@ -766,6 +766,7 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
 
     closed_ride_keys = set(closed_ride_keys or [])
     override_closed_keys = set(override_closed_keys or [])
+    override_closed_keys &= closed_ride_keys
     closed_ride_keys -= override_closed_keys
     breaks = breaks or []
 

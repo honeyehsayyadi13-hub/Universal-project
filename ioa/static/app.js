@@ -342,6 +342,7 @@ function loadSnapshotRoute() {
 }
 
 function restoreSnapshotRoute() {
+  preUseState = { route: [], timePinned: {} };
   if (trackingSnapshot()) {
     loadSnapshotRoute();
     renderRouteBar();
@@ -391,6 +392,7 @@ function deleteSnapshot(i) {
   const wasSelected = i === snapStore.sel;
   snapStore.list.splice(i, 1);
   if (wasSelected) {
+    if (snapStore.active) restorePreUseState();
     snapStore.active = false;
     snapStore.sel = Math.max(0, snapStore.list.length - 1);
   } else if (i < snapStore.sel) {
@@ -400,12 +402,25 @@ function deleteSnapshot(i) {
   renderRouteBar();
 }
 
+let preUseState = null;
+function restorePreUseState() {
+  if (!preUseState) return;
+  state.route = preUseState.route;
+  state.timePinned = preUseState.timePinned;
+  preUseState = null;
+}
+
 // Use / Stop Using
 function toggleSnapshotUse() {
   const s = currentSnapshot();
   if (!s || isSnapshotExpired(s)) return;
   snapStore.active = !snapStore.active;
-  if (snapStore.active) loadSnapshotRoute();
+  if (snapStore.active) {
+    preUseState = { route: state.route, timePinned: state.timePinned };
+    loadSnapshotRoute();
+  } else {
+    restorePreUseState();
+  }
   persistSnapshot();
   renderRouteBar();
 }
