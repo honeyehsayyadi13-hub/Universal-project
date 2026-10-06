@@ -218,7 +218,9 @@ function clearConflictingSentinelPins(sentinelValue, exceptKey) {
 function executeDrop(srcIdx, destIdx) {
   if (srcIdx === null || destIdx === null || srcIdx === destIdx) return;
 
-  if (isStopDone(state.route[srcIdx]) || isStopDone(state.route[destIdx])) return;
+  if (isStopDone(state.route[srcIdx])) return;
+  if (isStopDone(state.route[destIdx])) { markRouteStopDone(srcIdx); return; }
+  routeAltered = true;
   const first   = firstFutureIdx();
   const isFirst = destIdx === first;
   const isLast  = destIdx === state.route.length - 1;
@@ -296,7 +298,7 @@ function loadSnapshot() {
 
 let snap = loadSnapshot();
 let preUseState = null;
-
+let routeAltered = false;   // true once a generated route is dragged/edited
 function persistSnapshot() {
   try {
     if (snap) localStorage.setItem(SNAPSHOT_KEY, JSON.stringify(snap));
@@ -314,7 +316,7 @@ function trackingSnapshot() {
   return snap && snap.active && !isSnapshotExpired(snap) ? snap : null;
 }
 
-function isStopDone(stop) { return !!stop.done; }
+function isStopDone(stop) { return !!stop.done && !!trackingSnapshot(); }
 
 function firstFutureIdx() {
   const i = state.route.findIndex(s => !s.done);
@@ -335,7 +337,7 @@ function syncSnapshotDone() {
 
 // Planned stops whose queue-join time has passed turn green (and get saved).
 function advanceDone() {
-  if (!trackingSnapshot()) return false;
+  if (!trackingSnapshot() || routeAltered) return false;
   const nowMin = parkNow().minutes;
   let changed = false;
   for (let i = firstFutureIdx(); i < state.route.length; i++) {
@@ -365,6 +367,7 @@ function markRouteStopDone(srcIdx) {
   if (!stop || stop.done) return;
   state.route.splice(srcIdx, 1);
   delete state.timePinned[stop.uid];
+  routeAltered = true;
   stop.done = true;
   stop.manual = true;
   stop.predictedWait = null;
@@ -376,7 +379,7 @@ function markRouteStopDone(srcIdx) {
 
 function toggleSnapshotUse() {
   if (trackingSnapshot()) {
-    snap.active = false;
+    snap = null;
     persistSnapshot();
     const prev = preUseState || { route: [], timePinned: {} };
     state.route = prev.route;
@@ -397,7 +400,7 @@ function toggleSnapshotUse() {
   const seen = new Set(done.filter(d => !d.manual).map(d => `${d.rideId}:${d.queueJoinMinutes}`));
   const future = [];
   state.route.forEach(s => {
-    if (s.queueJoinMinutes != null && s.queueJoinMinutes <= now.minutes) {
+    if (!routeAltered && s.queueJoinMinutes != null && s.queueJoinMinutes <= now.minutes) {
       if (!seen.has(`${s.rideId}:${s.queueJoinMinutes}`)) done.push({ ...s, done: true });
     } else {
       future.push(s);
@@ -445,13 +448,13 @@ setInterval(refreshDoneState, 30000);
 
 function renderSnapshotInfo() {
   const useBtn = document.getElementById('useSnapshotBtn');
-  const drop = document.getElementById('snapshotDrop');
+
   const on = !!trackingSnapshot();
   if (useBtn) {
     useBtn.textContent = on ? 'Stop Using' : 'Use';
     useBtn.classList.toggle('in-use', on);
   }
-  if (drop) drop.style.display = on ? 'block' : 'none';
+
 }
 const PRESET_KEY = 'urp.presets';
 let presets = JSON.parse(localStorage.getItem(PRESET_KEY) || '[]');
@@ -681,26 +684,7 @@ $('#generateBreakBtn').addEventListener('click', () => {
 
 $('#addPresetBtn').addEventListener('click', addPreset);
 $('#useSnapshotBtn')?.addEventListener('click', toggleSnapshotUse);
-const snapshotDropEl = document.getElementById('snapshotDrop');
-snapshotDropEl?.addEventListener('dragover', e => {
-  e.preventDefault();
-  e.dataTransfer.dropEffect = 'move';
-  snapshotDropEl.classList.add('drag-over');
-});
-snapshotDropEl?.addEventListener('dragleave', () => snapshotDropEl.classList.remove('drag-over'));
-snapshotDropEl?.addEventListener('drop', e => {
-  e.preventDefault();
-  snapshotDropEl.classList.remove('drag-over');
-  if (!trackingSnapshot()) return;
-  if (dragSrcIdx !== null) {
-    const src = dragSrcIdx;
-    dragSrcIdx = null;
-    markRouteStopDone(src);
-    return;
-  }
-  const rideId = e.dataTransfer.getData('text/plain');
-  if (rideById[rideId]) addManualDone(rideId);
-});
+
 
 // ═══════════════ SIDEBAR RIDE LIST ═══════════════
 
@@ -1614,6 +1598,11 @@ function renderRouteBar() {
         wrap.classList.remove('drag-over');
         const src = dragSrcIdx;
         dragSrcIdx = null;
+        if (src === null) {
+          const rideId = e.dataTransfer.getData('text/plain');
+          if (trackingSnapshot() && stop.done && rideById[rideId]) addManualDone(rideId);
+          return;
+        }
         executeDrop(src, i);
       });
 
@@ -1672,13 +1661,6 @@ function renderRouteBar() {
         wrap.classList.remove('dragging');
         document.querySelectorAll('.route-stop').forEach(s => s.classList.remove('drag-over'));
         const overStop = el?.closest('.route-stop');
-        if (el?.closest('#snapshotDrop') && trackingSnapshot()) {
-          const srcIdx = touchDragSrcIdx;
-          touchDragSrcIdx = null;
-          touchDragging = false;
-          markRouteStopDone(srcIdx);
-          return;
-        }
         const dropIdx  = overStop ? parseInt(overStop.dataset.idx) : -1;
         const src = touchDragSrcIdx;
         touchDragSrcIdx = null;
@@ -1772,6 +1754,7 @@ function renderRouteBar() {
         }
         delete state.timePinned[stop.uid];
         state.route.splice(i, 1);
+        routeAltered = true;
         const remaining = state.route.filter(s => s.rideId === stop.rideId).length;
         state.maxBeforeInfinity[stop.rideId] = remaining;
         state.maxCounts[stop.rideId] = remaining;
@@ -1959,6 +1942,7 @@ async function generateRoute(triggerBtn) {
 
     state.timePinned = newTP;
     state.route = [...doneStops, ...state.route];
+    routeAltered = false;
     syncSnapshotDone();
 
     const stillPinnedRideIds = new Set(Object.values(newTP).map(p => p.rideId));
