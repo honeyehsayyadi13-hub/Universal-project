@@ -64,6 +64,10 @@ import itertools
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from collections import defaultdict
+import threading
+
+# Per-request earliest queue-join times for force-opened rides ({db_id: datetime}).
+_ctx = threading.local()
 
 from supabase import create_client, Client
 
@@ -107,7 +111,7 @@ MAX_2OPT_PASSES = 3              # cap full 2-opt sweeps for larger stop lists
 DEFAULT_PARK_CLOSE_HOUR = 20     # 8:00 PM -- fallback used only when live park hours can't be fetched
 DEFAULT_PARK_CLOSE_MINUTE = 0
 ENTRANCE_DB_ID = 0               # matches the "id" of the entrance row in `rides`
-START_BUFFER_MIN = 30            # gap between generating and the first ride
+FORCE_OPEN_BUFFER_MIN = 30       # a force-opened ride can't be queued sooner than this from now
 POST_BREAK_BUFFER_MIN = 2        # time to get moving again after a break ends
 PARK_TIMEZONE = ZoneInfo("America/New_York")  # Universal Orlando is Eastern time
 MAX_DRAG_DRIFT_MIN = 30          # a dragged-and-dropped ride must land within this many
@@ -335,6 +339,10 @@ def _simulate_route(order, histories, walk_map, durations, start_time, break_win
         if wt:
             clock += timedelta(minutes=wt)
             total += wt
+
+        earliest = getattr(_ctx, "earliest", {}).get(db_id)
+        if earliest is not None and clock < earliest:
+            clock = earliest
 
         queue_join_clock = clock
         predicted_wait = _predict_wait(
@@ -771,7 +779,7 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
     breaks = breaks or []
 
     if start_time is None:
-        start_time = datetime.now(PARK_TIMEZONE).replace(tzinfo=None) + timedelta(minutes=START_BUFFER_MIN)
+        start_time = datetime.now(PARK_TIMEZONE).replace(tzinfo=None)
     elif start_time.tzinfo is not None:
         start_time = start_time.astimezone(PARK_TIMEZONE).replace(tzinfo=None)
 
@@ -825,6 +833,11 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
 
     start_db_id = ENTRANCE_DB_ID if start_key == "entrance" else key_to_id.get(start_key, ENTRANCE_DB_ID)
     break_windows = _resolve_break_windows(breaks, start_time.date())
+
+    _ctx.earliest = {
+        key_to_id[k]: start_time + timedelta(minutes=FORCE_OPEN_BUFFER_MIN)
+        for k in override_closed_keys if k in key_to_id
+    }
 
     close_hour = close_hour if close_hour is not None else DEFAULT_PARK_CLOSE_HOUR
     close_minute = close_minute if close_minute is not None else DEFAULT_PARK_CLOSE_MINUTE
