@@ -107,6 +107,7 @@ MAX_2OPT_PASSES = 3              # cap full 2-opt sweeps for larger stop lists
 DEFAULT_PARK_CLOSE_HOUR = 20     # 8:00 PM -- fallback used only when live park hours can't be fetched
 DEFAULT_PARK_CLOSE_MINUTE = 0
 ENTRANCE_DB_ID = 0               # matches the "id" of the entrance row in `rides`
+START_BUFFER_MIN = 30            # gap between generating and the first ride
 POST_BREAK_BUFFER_MIN = 2        # time to get moving again after a break ends
 PARK_TIMEZONE = ZoneInfo("America/New_York")  # Universal Orlando is Eastern time
 MAX_DRAG_DRIFT_MIN = 30          # a dragged-and-dropped ride must land within this many
@@ -769,7 +770,7 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
     breaks = breaks or []
 
     if start_time is None:
-        start_time = datetime.now(PARK_TIMEZONE).replace(tzinfo=None)
+        start_time = datetime.now(PARK_TIMEZONE).replace(tzinfo=None) + timedelta(minutes=START_BUFFER_MIN)
     elif start_time.tzinfo is not None:
         start_time = start_time.astimezone(PARK_TIMEZONE).replace(tzinfo=None)
 
@@ -798,6 +799,10 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
 
     all_db_ids = [key_to_id[k] for k in checked]
     histories = _load_wait_history(all_db_ids)
+    for key in override_closed_keys:
+        db_id = key_to_id.get(key)
+        if db_id in histories:
+            histories[db_id] = [(ts, w) for ts, w in histories[db_id] if w > 0]
     walk_map = _load_walk_times()
     try:
         durations = _load_ride_durations()
