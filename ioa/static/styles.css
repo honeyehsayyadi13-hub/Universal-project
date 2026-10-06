@@ -1021,19 +1021,13 @@ input { font-family: inherit; }
 #snapshotRow .pill-btn { min-width: 80px; }
 #deleteSnapshotBtn:disabled { opacity: 0.4; cursor: default; filter: none; }
 
-/* light/dark mode button */
-#darkModeToggle {
-  flex-direction: row;
-  padding: 6px 14px;
-  border-radius: 8px;
+/* light/dark checkbox: color fill instead of a checkmark */
+#darkModeCheckbox {
   background: #FFF3B0;
-  border: 1.5px solid #E7C94A;
-  transition: background 0.15s ease, border-color 0.15s ease;
+  border-color: #E7C94A;
 }
-#darkModeToggle .checkbox { display: none; }
-#darkModeToggle .mode-toggle-label { color: #5A4A00; }
-#darkModeToggle.is-dark {
+#darkModeCheckbox::after { display: none; }
+#darkModeCheckbox.checked {
   background: #3A4452;
   border-color: #566273;
 }
-#darkModeToggle.is-dark .mode-toggle-label { color: #DCE3EA; }

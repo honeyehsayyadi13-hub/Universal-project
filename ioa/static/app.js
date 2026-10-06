@@ -4,7 +4,6 @@
    ════════════════════════════════════════════════════════════════ */
 
 const API_BASE = '';
-const STATUS_POLL_MS = 8000;
 
 // ── ride catalogue (mirrors ride_names / raw_buttons / _ride_image_paths) ──
 const RIDES = [
@@ -50,15 +49,6 @@ const state = {
   closedChecked: Object.fromEntries(RIDES.map(r => [r.id, false])),
   tierLists: null, // filled in below, once DEFAULT_TIER_ORDER exists
 };
-
-function getInstanceIndex(route, pos) {
-  const rideId = route[pos].rideId;
-  let count = 0;
-  for (let i = 0; i < pos; i++) if (route[i].rideId === rideId) count++;
-  return count;
-}
-
-function getUniqueKey(rideId, instanceIndex) { return `${rideId}:${instanceIndex}`; }
 
 // Stable per-stop id, generated once when a stop is created (in generateRoute)
 // and never recomputed from array position. Pins are keyed by this instead
@@ -179,7 +169,6 @@ function applyDarkMode() {
   if (!mapImageEl.src.endsWith(wantedSrc)) mapImageEl.src = wantedSrc;
 
   document.getElementById('darkModeCheckbox')?.classList.toggle('checked', darkModeOn);
-  document.getElementById('darkModeToggle')?.classList.toggle('is-dark', darkModeOn);
   const label = document.getElementById('darkModeLabel');
   if (label) label.textContent = darkModeOn ? 'Light Mode' : 'Dark Mode';
 }
@@ -270,7 +259,6 @@ const startOptions = [{ id: 'entrance', label: 'Entrance' },
   ...RIDES.map(r => ({ id: r.id, label: r.name }))];
 
 // ── presets (persisted in localStorage) ────────────────────────
-// ── park clock + snapshot (completely separate from the sidebar presets) ──
 // ── park clock + snapshots (completely separate from the sidebar presets) ──
 const SNAPSHOT_KEY = 'urp.snapshots';
 const OLD_SNAPSHOT_KEY = 'urp.snapshot';
@@ -510,7 +498,6 @@ function addPreset() {
   selectedPresetId = presetIdCounter;
   savePresets();
   renderPresetDropdown();
-  renderRouteBar();
 }
 
 
@@ -1272,9 +1259,6 @@ function toggleWaitBubbles() {
   renderWaitBubbles();
 }
 
-function pinSizeForZoom() {
-  return PIN_SIZE;
-}
 
 function updatePinLayout() {
   if (!mapFitWidth) return;
