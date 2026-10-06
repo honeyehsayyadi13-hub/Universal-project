@@ -995,19 +995,7 @@ input { font-family: inherit; }
 }
 .snap-icon-btn:not(:disabled) { opacity: 1; cursor: pointer; }
 
-#snapshotSelect {
-  display: none;
-  min-width: 190px;
-  max-width: 100%;
-  background: var(--white);
-  border: 1.5px solid var(--paper-line);
-  border-radius: var(--radius-sm);
-  padding: 5px 8px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--ink);
-  text-align: center;
-}
+
 
 .until-chip {
   font-size: 9.5px;
@@ -1019,7 +1007,7 @@ input { font-family: inherit; }
 
 #snapshotRow { flex-wrap: wrap; }
 #snapshotRow .pill-btn { min-width: 80px; }
-#deleteSnapshotBtn:disabled { opacity: 0.4; cursor: default; filter: none; }
+
 
 /* light/dark checkbox: color fill instead of a checkmark */
 #darkModeCheckbox {
@@ -1027,7 +1015,12 @@ input { font-family: inherit; }
   border-color: #E7C94A;
 }
 #darkModeCheckbox::after { display: none; }
+#darkModeCheckbox { width: 24px; height: 24px; }
 #darkModeCheckbox.checked {
   background: #1B1F26;
-  border-color: #DCE3EA;
+  border-color: #FFFFFF;
+  box-shadow: 0 0 0 2px var(--gold);
 }
+
+#topBar:not(.collapsed) #topBarContent { overflow: visible; }
+#snapshotDropdown { display: none; flex: none; width: 220px; max-width: 100%; }

@@ -262,7 +262,7 @@ const startOptions = [{ id: 'entrance', label: 'Entrance' },
 // ── park clock + snapshots (completely separate from the sidebar presets) ──
 const SNAPSHOT_KEY = 'urp.snapshots';
 const OLD_SNAPSHOT_KEY = 'urp.snapshot';
-const SNAPSHOT_DROPDOWN_MIN = 3;   // dropdown appears at this many snapshots
+const SNAPSHOT_DROPDOWN_MIN = 1;   // dropdown appears at this many snapshots
 const SNAPSHOT_MAX = 10;           // oldest are dropped past this
 const PARK_TZ = 'America/New_York';
 let parkCloseMinutes = 20 * 60;    // fallback until /api/park-hours answers
@@ -387,11 +387,16 @@ function selectSnapshot(i) {
   renderRouteBar();
 }
 
-function deleteSnapshot() {
-  if (!currentSnapshot()) return;
-  snapStore.list.splice(snapStore.sel, 1);
-  snapStore.sel = Math.max(0, snapStore.list.length - 1);
-  snapStore.active = false;
+function deleteSnapshot(i) {
+  if (i < 0 || i >= snapStore.list.length) return;
+  const wasSelected = i === snapStore.sel;
+  snapStore.list.splice(i, 1);
+  if (wasSelected) {
+    snapStore.active = false;
+    snapStore.sel = Math.max(0, snapStore.list.length - 1);
+  } else if (i < snapStore.sel) {
+    snapStore.sel--;
+  }
   persistSnapshot();
   renderRouteBar();
 }
@@ -437,7 +442,9 @@ function renderSnapshotInfo() {
   const info = document.getElementById('snapshotInfo');
   const useBtn = document.getElementById('useSnapshotBtn');
   const label = document.getElementById('snapshotLabel');
-  const select = document.getElementById('snapshotSelect');
+  const dropdown = document.getElementById('snapshotDropdown');
+  const list = document.getElementById('snapshotDropdownList');
+  const dropLabel = document.getElementById('snapshotDropdownLabel');
   const s = currentSnapshot();
   const valid = !!s && !isSnapshotExpired(s);
 
@@ -445,24 +452,29 @@ function renderSnapshotInfo() {
     useBtn.disabled = !valid;
     useBtn.textContent = valid && snapStore.active ? 'Stop Using' : 'Use';
     useBtn.classList.toggle('in-use', valid && snapStore.active);
-    const delBtn = document.getElementById('deleteSnapshotBtn');
-    if (delBtn) delBtn.disabled = !s;
   }
 
   const showDropdown = snapStore.list.length >= SNAPSHOT_DROPDOWN_MIN;
   if (label) label.style.display = showDropdown ? 'none' : '';
-  if (select) {
-    select.style.display = showDropdown ? 'block' : 'none';
-    if (showDropdown) {
-      select.innerHTML = '';
-      snapStore.list.forEach((sn, i) => {
-        const opt = document.createElement('option');
-        opt.value = String(i);
-        opt.textContent = `Snapshot ${sn.n} · ${minsToTime(sn.savedAtMinutes)}`;
-        select.appendChild(opt);
-      });
-      select.value = String(snapStore.sel);
-    }
+  if (dropdown && list && dropLabel) {
+    dropdown.style.display = showDropdown ? 'block' : 'none';
+    list.innerHTML = '';
+    snapStore.list.forEach((sn, i) => {
+      const li = document.createElement('li');
+      li.className = i === snapStore.sel ? 'selected' : '';
+      const span = document.createElement('span');
+      span.className = 'item-label';
+      span.textContent = `Snapshot ${sn.n} · ${minsToTime(sn.savedAtMinutes)}`;
+      span.addEventListener('click', () => { selectSnapshot(i); closeAllDropdowns(); });
+      const x = document.createElement('button');
+      x.className = 'mini-x';
+      x.textContent = '✕';
+      x.addEventListener('click', ev => { ev.stopPropagation(); deleteSnapshot(i); });
+      li.appendChild(span);
+      li.appendChild(x);
+      list.appendChild(li);
+    });
+    dropLabel.textContent = s ? `Snapshot ${s.n} · ${minsToTime(s.savedAtMinutes)}` : '';
   }
 
   if (info) info.textContent = '';
@@ -646,6 +658,7 @@ function renderPresetDropdown() {
 
 setupDropdown({ dropdown: $('#startDropdown') });
 setupDropdown({ dropdown: $('#presetDropdown') });
+setupDropdown({ dropdown: $('#snapshotDropdown') });
 
 // ═══════════════ BREAKS ═══════════════
 
@@ -694,8 +707,6 @@ $('#generateBreakBtn').addEventListener('click', () => {
 
 $('#addPresetBtn').addEventListener('click', addPreset);
 $('#useSnapshotBtn')?.addEventListener('click', toggleSnapshotUse);
-$('#deleteSnapshotBtn')?.addEventListener('click', deleteSnapshot);
-$('#snapshotSelect')?.addEventListener('change', e => selectSnapshot(parseInt(e.target.value, 10)));
 $('#saveSnapshotBtn')?.addEventListener('click', () => {
   saveRouteSnapshot();
 });

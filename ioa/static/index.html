@@ -73,11 +73,17 @@
       <div id="topBarContent">
         <div id="snapshotBox">
           <span id="snapshotLabel">Snapshot</span>
-          <select id="snapshotSelect"></select>
+          <div class="dropdown" id="snapshotDropdown">
+            <button class="dropdown-btn" id="snapshotDropdownBtn">
+              <span id="snapshotDropdownLabel"></span>
+              <svg class="chevron" viewBox="0 0 10 6"><path d="M1 1l4 4 4-4"/></svg>
+            </button>
+            <ul class="dropdown-list" id="snapshotDropdownList"></ul>
+          </div>
           <div id="snapshotRow">
             <button id="saveSnapshotBtn" class="pill-btn pill-btn--success">Save</button>
             <button id="useSnapshotBtn" class="pill-btn">Use</button>
-            <button id="deleteSnapshotBtn" class="pill-btn pill-btn--danger" disabled>Delete</button>
+            
           </div>
           <div id="snapshotInfo"></div>
         </div>
