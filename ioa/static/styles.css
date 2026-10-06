@@ -789,7 +789,7 @@ input { font-family: inherit; }
   height: auto;
   user-select: none;
   -webkit-user-drag: none;
-  filter: brightness(1.25);
+  filter: brightness(1);
 }
 
 #pinLayer { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
@@ -1028,6 +1028,6 @@ input { font-family: inherit; }
 }
 #darkModeCheckbox::after { display: none; }
 #darkModeCheckbox.checked {
-  background: #3A4452;
-  border-color: #566273;
+  background: #1B1F26;
+  border-color: #DCE3EA;
 }

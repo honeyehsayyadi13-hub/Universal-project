@@ -170,7 +170,7 @@ function applyDarkMode() {
 
   document.getElementById('darkModeCheckbox')?.classList.toggle('checked', darkModeOn);
   const label = document.getElementById('darkModeLabel');
-  if (label) label.textContent = darkModeOn ? 'Light Mode' : 'Dark Mode';
+  if (label) label.textContent = darkModeOn ? 'Dark Mode' : 'Light Mode';
 }
 
 function applyAdvancedMode() {
