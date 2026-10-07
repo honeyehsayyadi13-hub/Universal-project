@@ -537,12 +537,13 @@ function applyPreset(id) {
   });
 
   selectedPresetId = p.id;
-  state.route = [];
+  state.route = state.route.filter(isStopDone);   // keep green/yellow stops if a snapshot is in use
   renderStartDropdown();
   renderSidebarList();
   renderPresetDropdown();
   renderRouteBar();
   renderPins();
+  generateRoute($('#generateRouteBtn'));
 }
 
 // ── DOM refs ────────────────────────────────────────────────────
@@ -1721,15 +1722,7 @@ function renderRouteBar() {
       timeChip.className = 'time-chip';
       timeChip.textContent = stop.manual ? 'xxx' : minsToTime(stop.queueJoinMinutes);
 
-      let untilChip = null;
-      if (trackingSnapshot() && !done && i === firstFutureIdx() && stop.queueJoinMinutes != null) {
-        const until = Math.max(0, stop.queueJoinMinutes - parkNow().minutes);
-        untilChip = document.createElement('span');
-        untilChip.className = 'until-chip';
-        untilChip.textContent = until >= 60
-          ? `in ${Math.floor(until / 60)}h ${until % 60}m`
-          : `in ${until}m`;
-      }
+
 
       const remove = document.createElement('button');
       remove.className = 'stop-remove';
@@ -1766,7 +1759,7 @@ function renderRouteBar() {
       const chipGroup = document.createElement('div');
       chipGroup.className = 'chip-group';
       chipGroup.append(chip, timeChip);
-      if (untilChip) chipGroup.append(untilChip);
+
       card.append(pill, chipGroup, remove);
       wrap.appendChild(card);
       rowEl.appendChild(wrap);

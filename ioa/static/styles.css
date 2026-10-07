@@ -995,13 +995,7 @@ input { font-family: inherit; }
 
 
 
-.until-chip {
-  font-size: 9.5px;
-  font-weight: 700;
-  color: var(--teal);
-  text-align: center;
-  white-space: nowrap;
-}
+
 
 #snapshotRow { flex-wrap: wrap; }
 #snapshotRow .pill-btn { min-width: 80px; }

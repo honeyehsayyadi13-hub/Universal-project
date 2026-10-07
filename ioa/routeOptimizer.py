@@ -826,6 +826,9 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
             if key in checked and key in key_to_id and wait is not None:
                 current_waits[key_to_id[key]] = wait
 
+    for key in override_closed_keys:
+        print("DEBUG force-open", key, "usable history samples:", len(histories.get(key_to_id.get(key), [])))
+
     historical_now_by_id = {
         db_id: _historical_wait_curve(histories.get(db_id, []), start_time)
         for db_id in all_db_ids
