@@ -456,7 +456,7 @@ function renderSnapshotInfo() {
 const PRESET_KEY = 'urp.presets';
 let presets = JSON.parse(localStorage.getItem(PRESET_KEY) || '[]');
 let presetIdCounter = presets.reduce((m, p) => Math.max(m, p.id), 0);
-let selectedPresetId = null;
+let selectedPresetId = 'default';
 
 function savePresets() { localStorage.setItem(PRESET_KEY, JSON.stringify(presets)); }
 
@@ -490,9 +490,36 @@ function addPreset() {
 function deletePreset(id) {
   presets = presets.filter(p => p.id !== id);
   presets.forEach((p, i) => { if (/^Preset \d+$/.test(p.name)) p.name = `Preset ${i + 1}`; });
-  if (selectedPresetId === id) selectedPresetId = null;
+  if (selectedPresetId === id) selectedPresetId = 'default';
   savePresets();
   renderPresetDropdown();
+}
+
+function applyDefaultPreset() {
+  RIDES.forEach(r => {
+    state.visible[r.id] = true;
+    state.counts[r.id] = 1;
+    state.lastCount[r.id] = 1;
+    state.locked[r.id] = false;
+    state.lockBeforeBump[r.id] = false;
+    state.maxCounts[r.id] = Infinity;
+    state.maxBeforeInfinity[r.id] = 0;
+    state.maxWasZeroBeforeLock[r.id] = false;
+    state.closedChecked[r.id] = false;
+  });
+  state.breaks = [];
+  state.selectedStart = 'entrance';
+  state.timePinned = {};
+  state.pinnedLocked = {};
+  state.tierLists = getInitialTierLists();
+  selectedPresetId = 'default';
+  state.route = state.route.filter(isStopDone);
+  renderStartDropdown();
+  renderSidebarList();
+  renderPresetDropdown();
+  renderRouteBar();
+  renderPins();
+  generateRoute($('#generateRouteBtn'));
 }
 
 function applyPreset(id) {
@@ -604,33 +631,37 @@ function renderStartDropdown() {
 function renderPresetDropdown() {
   const list = $('#presetDropdownList');
   list.innerHTML = '';
-  if (!presets.length) {
-    const li = document.createElement('li');
-    li.className = 'empty';
-    li.textContent = 'No presets saved';
-    list.appendChild(li);
-  } else {
-    presets.forEach(p => {
-      const li = document.createElement('li');
-      li.className = p.id === selectedPresetId ? 'selected' : '';
-      const span = document.createElement('span');
-      span.className = 'item-label';
-      span.textContent = p.name;
-      span.addEventListener('click', () => { applyPreset(p.id); closeAllDropdowns(); });
-      const x = document.createElement('button');
-      x.className = 'mini-x';
-      x.textContent = '✕';
-      x.addEventListener('click', ev => { ev.stopPropagation(); deletePreset(p.id); });
-      li.appendChild(span);
-      li.appendChild(x);
-      list.appendChild(li);
-    });
-  }
-  const label = presets.find(p => p.id === selectedPresetId)?.name
-    || (presets.length ? 'Select preset…' : '');
-  $('#presetDropdownLabel').textContent = label;
-}
 
+  const defLi = document.createElement('li');
+  defLi.className = selectedPresetId === 'default' ? 'selected' : '';
+  const defSpan = document.createElement('span');
+  defSpan.className = 'item-label';
+  defSpan.textContent = 'Default';
+  defSpan.addEventListener('click', () => { applyDefaultPreset(); closeAllDropdowns(); });
+  defLi.appendChild(defSpan);
+  list.appendChild(defLi);
+
+  presets.forEach(p => {
+    const li = document.createElement('li');
+    li.className = p.id === selectedPresetId ? 'selected' : '';
+    const span = document.createElement('span');
+    span.className = 'item-label';
+    span.textContent = p.name;
+    span.addEventListener('click', () => { applyPreset(p.id); closeAllDropdowns(); });
+    const x = document.createElement('button');
+    x.className = 'mini-x';
+    x.textContent = '✕';
+    x.addEventListener('click', ev => { ev.stopPropagation(); deletePreset(p.id); });
+    li.appendChild(span);
+    li.appendChild(x);
+    list.appendChild(li);
+  });
+
+  $('#presetDropdownLabel').textContent =
+    selectedPresetId === 'default'
+      ? 'Default'
+      : (presets.find(p => p.id === selectedPresetId)?.name || 'Default');
+}
 setupDropdown({ dropdown: $('#startDropdown') });
 setupDropdown({ dropdown: $('#presetDropdown') });
 
@@ -1068,7 +1099,7 @@ function renderSidebarList() {
   if (advancedModeOn) {
     renderTieredRideList();
   } else {
-    RIDES.forEach(r => {
+    flattenPriorityOrder().map(id => rideById[id]).filter(Boolean).forEach(r => {
       const row = buildRideRow(r);
       row.draggable = true;
       row.addEventListener('dragstart', e => {
