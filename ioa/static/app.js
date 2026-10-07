@@ -139,12 +139,11 @@ function removeFromTierLists(rideId) {
   }
 }
 
-function moveRideInTierLists(draggedId, tier, targetId, before) {
-  removeFromTierLists(draggedId);
+function moveRideInTierLists(draggedId, tier, targetId) {
   const arr = state.tierLists[tier];
   let idx = arr.indexOf(targetId);
+  removeFromTierLists(draggedId);
   if (idx === -1) idx = arr.length;
-  if (!before) idx += 1;
   arr.splice(idx, 0, draggedId);
   saveTierLists();
 }
@@ -236,9 +235,7 @@ function executeDrop(srcIdx, destIdx) {
   } else if (isLast) {
     state.route.push(moved);
   } else {
-    let insertAt = state.route.indexOf(targetStop);
-    if (insertAt === -1) insertAt = destIdx;
-    state.route.splice(insertAt, 0, moved);
+    state.route.splice(destIdx, 0, moved);
   }
 
   state.timePinned[moved.uid] = { rideId: moved.rideId, targetMinutes };
@@ -932,17 +929,14 @@ function renderTieredRideList() {
         row.classList.add('dragging');
       });
       row.addEventListener('dragend', () => {
-        row.classList.remove('dragging', 'drag-over-top', 'drag-over-bottom');
+        row.classList.remove('dragging', 'drag-over-row');
       });
 
       row.addEventListener('dragover', e => {
         e.preventDefault();
         e.stopPropagation();
         e.dataTransfer.dropEffect = 'move';
-        const rect = row.getBoundingClientRect();
-        const before = (e.clientY - rect.top) < rect.height / 2;
-        row.classList.toggle('drag-over-top', before);
-        row.classList.toggle('drag-over-bottom', !before);
+        row.classList.add('drag-over-row');
       });
       row.addEventListener('dragleave', () => {
         row.classList.remove('drag-over-top', 'drag-over-bottom');
@@ -953,7 +947,7 @@ function renderTieredRideList() {
         row.classList.remove('drag-over-top', 'drag-over-bottom');
         const draggedId = e.dataTransfer.getData('text/plain');
         if (!draggedId || draggedId === r.id) return;
-        moveRideInTierLists(draggedId, tier, r.id, false);
+        moveRideInTierLists(draggedId, tier, r.id);
         renderSidebarList();
       });
 
@@ -1001,10 +995,7 @@ function renderTieredRideList() {
         const overRow = el?.closest('.tier-row');
         const overGroup = el?.closest('.tier-group');
         if (overRow && overRow !== row) {
-          const rect = overRow.getBoundingClientRect();
-          const before = (touch.clientY - rect.top) < rect.height / 2;
-          overRow.classList.toggle('drag-over-top', before);
-          overRow.classList.toggle('drag-over-bottom', !before);
+          overRow.classList.add('drag-over-row');
         } else if (overGroup) {
           overGroup.classList.add('drag-over');
         }
@@ -1033,9 +1024,7 @@ function renderTieredRideList() {
           const targetId = overRow.dataset.rideId;
           if (!targetId || targetId === draggedId) return;
           const targetTier = Number(overRow.closest('.tier-group').dataset.tier);
-          const rect = overRow.getBoundingClientRect();
-          const before = (touch.clientY - rect.top) < rect.height / 2;
-          moveRideInTierLists(draggedId, targetTier, targetId, before);
+          moveRideInTierLists(draggedId, targetTier, targetId);
           renderSidebarList();
         } else if (overGroup) {
           const targetTier = Number(overGroup.dataset.tier);
