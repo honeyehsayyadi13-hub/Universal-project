@@ -296,6 +296,7 @@ function loadSnapshot() {
 let snap = loadSnapshot();
 let preUseState = null;
 let routeAltered = false;   // true once a generated route is dragged/edited
+let regeneratedSinceUse = false;
 function persistSnapshot() {
   try {
     if (snap) localStorage.setItem(SNAPSHOT_KEY, JSON.stringify(snap));
@@ -378,10 +379,18 @@ function toggleSnapshotUse() {
   if (trackingSnapshot()) {
     snap = null;
     persistSnapshot();
-    const prev = preUseState || { route: [], timePinned: {} };
-    state.route = prev.route;
-    state.timePinned = prev.timePinned;
+    if (preUseState && !regeneratedSinceUse) {
+      state.route = preUseState.route;
+      state.timePinned = preUseState.timePinned;
+    } else {
+      const doneUids = state.route.filter(s => s.done).map(s => s.uid);
+      state.route = state.route.filter(s => !s.done);
+      doneUids.forEach(uid => delete state.timePinned[uid]);
+    }
     preUseState = null;
+    regeneratedSinceUse = false;
+    routePlaceholderEl.style.color = '';
+    routePlaceholderEl.textContent = 'No route yet — check some rides and hit “Get Optimal Route”.';
     renderRouteBar();
     return;
   }
@@ -392,6 +401,7 @@ function toggleSnapshotUse() {
   }
   snap.active = true;
   preUseState = { route: state.route, timePinned: state.timePinned };
+  regeneratedSinceUse = false;
 
   const done = snap.done.map(d => ({ ...d, uid: nextUid(), done: true }));
   const seen = new Set(done.filter(d => !d.manual).map(d => `${d.rideId}:${d.queueJoinMinutes}`));
@@ -414,12 +424,9 @@ function toggleSnapshotUse() {
 
 // After a reload, a snapshot that was in use comes back with its green/yellow stops.
 function restoreSnapshotRoute() {
-  const s = trackingSnapshot();
-  if (!s) return;
+  if (!trackingSnapshot()) return;
   preUseState = { route: [], timePinned: {} };
-  state.route = s.done.map(d => ({ ...d, uid: nextUid(), done: true }));
-  state.timePinned = {};
-  renderRouteBar();
+  regeneratedSinceUse = true;
 }
 
 // After park close (or a new day) the snapshot disappears.
@@ -1842,7 +1849,10 @@ async function generateRoute(triggerBtn) {
   const ride_locked = {};
   RIDES.forEach(r => { if (state.locked[r.id]) ride_locked[r.id] = true; });
 
-  const doneStops = state.route.filter(isStopDone);
+  let doneStops = state.route.filter(isStopDone);
+  if (!doneStops.length && trackingSnapshot()) {
+    doneStops = trackingSnapshot().done.map(d => ({ ...d, uid: nextUid(), done: true }));
+  }
   const doneUids  = new Set(doneStops.map(s => s.uid));
   const completed_counts = {};
   doneStops.forEach(s => { completed_counts[s.rideId] = (completed_counts[s.rideId] || 0) + 1; });
@@ -1956,6 +1966,7 @@ async function generateRoute(triggerBtn) {
     state.timePinned = newTP;
     state.route = [...doneStops, ...state.route];
     routeAltered = false;
+    if (trackingSnapshot()) regeneratedSinceUse = true;
     syncSnapshotDone();
 
     const stillPinnedRideIds = new Set(Object.values(newTP).map(p => p.rideId));
