@@ -1889,6 +1889,7 @@ async function generateRoute(triggerBtn) {
   }
   routePlaceholderEl.style.color = '';
   routePlaceholderEl.textContent = 'Generating…';
+  document.getElementById('generatingGif')?.classList.add('show');
   routePlaceholderEl.style.display = 'block';
   routeItemsEl.classList.remove('active');
 
@@ -1987,6 +1988,7 @@ async function generateRoute(triggerBtn) {
    } finally {
     routeGenerating = false;
     btns.forEach(b => { if (b) b.disabled = false; });
+    document.getElementById('generatingGif')?.classList.remove('show');
     renderRouteBar();
   }
 }
