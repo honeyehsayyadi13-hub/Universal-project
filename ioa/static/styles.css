@@ -1023,3 +1023,13 @@ input { font-family: inherit; }
   box-shadow: 0 0 0 2px var(--gold);
 }
 .route-pill.done.manual::after { color: var(--gold-dark); }
+
+#generatingGif {
+  display: none;
+  width: 90px;
+  height: 90px;
+  object-fit: contain;
+  margin: 6px auto 0;
+  border-radius: var(--radius-md);
+}
+#generatingGif.show { display: block; }
