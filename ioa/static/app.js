@@ -1933,8 +1933,8 @@ async function generateRoute(triggerBtn) {
     state.timePinned = newTP;
     if (rideLogVisible) state.route = [...doneStops, ...state.route];
     routeAltered = false;
-    if (trackingSnapshot()) regeneratedSinceUse = true;
-    syncRideLog();
+    //if (trackingSnapshot()) regeneratedSinceUse = true; - possibly unneeded?
+    //syncRideLog();
 
     const stillPinnedRideIds = new Set(Object.values(newTP).map(p => p.rideId));
     Object.keys(state.pinnedLocked).forEach(rideId => {
