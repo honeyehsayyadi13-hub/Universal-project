@@ -65,6 +65,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from collections import defaultdict
 import threading
+import time
 
 # Per-request earliest queue-join times for force-opened rides ({db_id: datetime}).
 _ctx = threading.local()
@@ -110,6 +111,11 @@ BRUTE_FORCE_LIMIT = 7            # exact solve (permutations) up to this many st
 MAX_2OPT_PASSES = 3              # cap full 2-opt sweeps for larger stop lists
 DEFAULT_PARK_CLOSE_HOUR = 20     # 8:00 PM -- fallback used only when live park hours can't be fetched
 DEFAULT_PARK_CLOSE_MINUTE = 0
+HISTORY_WINDOW_DAYS = 150        # only learn from the most recent ~5 months of readings
+HISTORY_PAGE_SIZE = 1000         # Supabase returns at most 1000 rows per request
+HISTORY_REFRESH_SEC = 600        # re-check Supabase for new readings at most every 10 min
+MIN_HISTORY_WEIGHT = 10.0        # need ~this many effective samples near the target time, else "no history"
+HISTORY_BIN_MIN = 5              # history is bucketed into 5-minute time-of-day bins
 ENTRANCE_DB_ID = 0               # matches the "id" of the entrance row in `rides`
 FORCE_OPEN_BUFFER_MIN = 30       # a force-opened ride can't be queued sooner than this from now
 POST_BREAK_BUFFER_MIN = 2        # time to get moving again after a break ends
@@ -156,25 +162,66 @@ def _parse_ts(ts):
     return dt
 
 
+_history_cache = {}        # db_id -> [(naive park-time timestamp, waittime), ...]
+_history_last_raw = {}     # db_id -> raw timestamp string of the newest row fetched
+_history_fetched_at = {}   # db_id -> time.time() of the last refresh
+_history_lock = threading.Lock()
+
+
+def _fetch_ride_rows(db_id, after_raw=None):
+    """Page through ride_waits for one ride (Supabase caps each response at 1000 rows).
+    First call pulls the last HISTORY_WINDOW_DAYS days; later calls pull only newer rows."""
+    client = _get_client()
+    cutoff = (datetime.now(PARK_TIMEZONE) - timedelta(days=HISTORY_WINDOW_DAYS)).isoformat()
+    out, start = [], 0
+    while True:
+        q = (
+            client.table("ride_waits")
+            .select("ride_id, timestamp, waittime, issue_with_ride")
+            .eq("ride_id", db_id)
+        )
+        q = q.gt("timestamp", after_raw) if after_raw else q.gte("timestamp", cutoff)
+        resp = q.order("timestamp").range(start, start + HISTORY_PAGE_SIZE - 1).execute()
+        rows = resp.data or []
+        out.extend(rows)
+        if len(rows) < HISTORY_PAGE_SIZE:
+            break
+        start += HISTORY_PAGE_SIZE
+    return out
+
+
 def _load_wait_history(db_ids):
-    """Return {db_id: [(timestamp, waittime), ...]} using valid, non-issue rows."""
+    """Return {db_id: [(timestamp, waittime), ...]} using valid, non-issue rows.
+    History is kept in memory and only topped up with new rows every
+    HISTORY_REFRESH_SEC seconds, so only the first request after a restart is slow."""
     history = defaultdict(list)
     if not db_ids:
         return history
-    resp = (
-        _get_client()
-        .table("ride_waits")
-        .select("ride_id, timestamp, waittime, issue_with_ride")
-        .in_("ride_id", db_ids)
-        .execute()
-    )
-    for row in resp.data:
-        if row.get("issue_with_ride"):
-            continue
-        if row.get("waittime") is None:
-            continue
-        history[row["ride_id"]].append((_parse_ts(row["timestamp"]), row["waittime"]))
+    now_s = time.time()
+    with _history_lock:
+        for db_id in db_ids:
+            age = now_s - _history_fetched_at.get(db_id, 0.0)
+            if db_id not in _history_cache or age >= HISTORY_REFRESH_SEC:
+                try:
+                    rows = _fetch_ride_rows(db_id, _history_last_raw.get(db_id))
+                except Exception:
+                    if db_id not in _history_cache:
+                        raise
+                    rows = []
+                bucket = _history_cache.setdefault(db_id, [])
+                for row in rows:
+                    _history_last_raw[db_id] = row["timestamp"]
+                    if row.get("issue_with_ride") or row.get("waittime") is None:
+                        continue
+                    bucket.append((_parse_ts(row["timestamp"]), row["waittime"]))
+                _history_fetched_at[db_id] = now_s
+            history[db_id] = list(_history_cache[db_id])
     return history
+
+def warm_history_cache():
+    """Preload wait history for every ride so the first real request is fast."""
+    key_to_id, _ = _load_ride_id_map()
+    _load_wait_history([i for i in key_to_id.values() if i != ENTRANCE_DB_ID])
 
 
 def _load_walk_times():
@@ -211,6 +258,45 @@ def _walk_time(walk_map, a_db_id, b_db_id):
 
 
 # ── prediction ───────────────────────────────────────────────────────
+_NBINS = 1440 // HISTORY_BIN_MIN
+
+
+def _get_bins(history_for_ride, target_time):
+    """Bucket a ride's samples into time-of-day bins, with the weekday and recency
+    weights (which are the same for every target time on a given date) already applied.
+    Cached per request in _ctx.bins."""
+    cache = getattr(_ctx, "bins", None)
+    if cache is None:
+        cache = _ctx.bins = {}
+    key = (id(history_for_ride), len(history_for_ride), target_time.date())
+    hit = cache.get(key)
+    if hit is not None:
+        return hit[0], hit[1]
+
+    ref_time = target_time.replace(hour=12, minute=0, second=0, microsecond=0)
+    target_weekday = target_time.weekday()
+    target_is_weekend = target_weekday in WEEKEND_DAYS
+
+    bw = [0.0] * _NBINS
+    bws = [0.0] * _NBINS
+    for ts, wait in history_for_ride:
+        if ts.weekday() == target_weekday:
+            day_weight = SAME_DAY_WEIGHT
+        elif (ts.weekday() in WEEKEND_DAYS) == target_is_weekend:
+            day_weight = WEEKEND_GROUP_WEIGHT
+        else:
+            day_weight = DIFF_DAY_WEIGHT
+        age_days = max(0.0, (ref_time - ts).total_seconds() / 86400.0)
+        w = day_weight * 0.5 ** (age_days / RECENCY_HALF_LIFE_DAYS)
+        b = ((ts.hour * 60 + ts.minute) // HISTORY_BIN_MIN) % _NBINS
+        bw[b] += w
+        bws[b] += w * wait
+
+    # keep a reference to the list so id() can't be reused within this request
+    cache[key] = (bw, bws, history_for_ride)
+    return bw, bws
+
+
 def _historical_wait_curve(history_for_ride, target_time):
     """
     Kernel-weighted historical average wait at this time-of-day.
@@ -219,43 +305,27 @@ def _historical_wait_curve(history_for_ride, target_time):
     if not history_for_ride:
         return None
 
+    bw, bws = _get_bins(history_for_ride, target_time)
     target_minutes = target_time.hour * 60 + target_time.minute
-    target_weekday = target_time.weekday()
-    target_is_weekend = target_weekday in WEEKEND_DAYS
+    center_bin = target_minutes // HISTORY_BIN_MIN
+    reach = int(4 * TIME_KERNEL_BANDWIDTH_MIN // HISTORY_BIN_MIN) + 1
 
-    weighted_sum, weight_total = 0.0, 0.0
-    for ts, wait in history_for_ride:
-        sample_minutes = ts.hour * 60 + ts.minute
-        raw_delta = abs(sample_minutes - target_minutes)
-        delta = min(raw_delta, 1440 - raw_delta)
-        time_kernel = math.exp(-(delta ** 2) / (2 * TIME_KERNEL_BANDWIDTH_MIN ** 2))
+    num = den = 0.0
+    for off in range(-reach, reach + 1):
+        b = (center_bin + off) % _NBINS
+        if bw[b] <= 0:
+            continue
+        bin_center = b * HISTORY_BIN_MIN + HISTORY_BIN_MIN / 2.0
+        raw = abs(bin_center - target_minutes)
+        delta = min(raw, 1440 - raw)
+        k = math.exp(-(delta ** 2) / (2 * TIME_KERNEL_BANDWIDTH_MIN ** 2))
+        num += k * bws[b]
+        den += k * bw[b]
 
-        if ts.weekday() == target_weekday:
-            day_weight = SAME_DAY_WEIGHT
-        elif (ts.weekday() in WEEKEND_DAYS) == target_is_weekend:
-            day_weight = WEEKEND_GROUP_WEIGHT
-        else:
-            day_weight = DIFF_DAY_WEIGHT
+    if den < MIN_HISTORY_WEIGHT:
+        return None
 
-        age_days = max(0.0, (target_time - ts).total_seconds() / 86400.0)
-        recency_weight = 0.5 ** (age_days / RECENCY_HALF_LIFE_DAYS)
-
-        w = time_kernel * day_weight * recency_weight
-        weighted_sum += w * wait
-        weight_total += w
-
-    if weight_total < 1e-6:
-        fb_sum, fb_weight = 0.0, 0.0
-        for ts, wait in history_for_ride:
-            age_days = max(0.0, (target_time - ts).total_seconds() / 86400.0)
-            w = 0.5 ** (age_days / RECENCY_HALF_LIFE_DAYS)
-            fb_sum += w * wait
-            fb_weight += w
-        if fb_weight > 1e-9:
-            return fb_sum / fb_weight
-        return sum(wait for _, wait in history_for_ride) / len(history_for_ride)
-
-    return weighted_sum / weight_total
+    return num / den
 
 
 def _predict_wait(history_for_ride, target_time, current_wait=None, now=None, historical_now=None):
@@ -284,7 +354,7 @@ def _predict_wait(history_for_ride, target_time, current_wait=None, now=None, hi
         ratio = max(ANCHOR_RATIO_MIN, min(ANCHOR_RATIO_MAX, ratio))
         anchor_adjusted = historical_target * ratio
     else:
-        anchor_adjusted = current_wait + historical_target
+        anchor_adjusted = max(0.0, historical_target + (current_wait - historical_now))
 
     predicted = anchor_weight * anchor_adjusted + (1 - anchor_weight) * historical_target
 
@@ -828,6 +898,14 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
 
     for key in override_closed_keys:
         print("DEBUG force-open", key, "usable history samples:", len(histories.get(key_to_id.get(key), [])))
+
+    # Rides that have a live reading are anchored to it, so their baseline must
+    # come from PREVIOUS days only. Otherwise today's samples are counted twice.
+    today_date = start_time.date()
+    for db_id in all_db_ids:
+        if db_id in current_waits:
+            histories[db_id] = [(ts, w) for ts, w in histories.get(db_id, []) if ts.date() < today_date]
+    _ctx.bins = {}
 
     historical_now_by_id = {
         db_id: _historical_wait_curve(histories.get(db_id, []), start_time)

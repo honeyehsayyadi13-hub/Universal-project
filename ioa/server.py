@@ -4,7 +4,7 @@ import threading
 from flask import Flask, jsonify, request, send_from_directory
 
 import Data
-from routeOptimizer import compute_and_print_route
+from routeOptimizer import compute_and_print_route, warm_history_cache
 
 app = Flask(__name__, static_folder="static", static_url_path="")
 
@@ -13,6 +13,16 @@ app = Flask(__name__, static_folder="static", static_url_path="")
 # sleeps 60 s (not 5 s) because /api/rides does its own on-demand fetch
 # with a 30 s cache -- the thread is only a backstop, not the live feed.
 threading.Thread(target=Data.update_backend, daemon=True).start()
+
+
+def _warm():
+    try:
+        warm_history_cache()
+    except Exception:
+        app.logger.exception("history warm-up failed")
+
+
+threading.Thread(target=_warm, daemon=True).start()
 
 
 @app.route("/")
