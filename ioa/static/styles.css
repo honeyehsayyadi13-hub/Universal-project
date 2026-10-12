@@ -976,12 +976,12 @@ input { font-family: inherit; }
 .route-stop.done { cursor: default; }
 
 
-#snapshotLabel { font-family: 'Baloo 2', sans-serif; font-weight: 700; font-size: 14px; flex: 1; }
+
 #logToggleBtn { background: var(--teal); flex-shrink: 0; }
 
 #snapshotBox { display: flex; flex-direction: column; align-items: center; gap: 6px; flex-shrink: 0; }
 #snapshotTitleRow { display: flex; align-items: center; justify-content: center; gap: 10px; }
-#snapshotLabel { flex: none; text-align: center; }
+
 #snapshotRow { justify-content: center; }
 #snapshotRow .pill-btn { min-width: 96px; }
 .snap-icon-btn {
@@ -1016,11 +1016,11 @@ input { font-family: inherit; }
 
 
 .route-pill.done.manual {
-  background: #FFF3B0;
-  border-color: var(--gold);
-  box-shadow: 0 0 0 2px var(--gold);
+  background: #E6F9B0;
+  border-color: #9BC53D;
+  box-shadow: 0 0 0 2px #9BC53D;
 }
-.route-pill.done.manual::after { color: var(--gold-dark); }
+.route-pill.done.manual::after { color: #5E8A12; }
 
 #generatingGif {
   display: none;

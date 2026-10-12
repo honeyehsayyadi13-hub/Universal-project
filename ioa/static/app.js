@@ -404,6 +404,17 @@ function markRouteStopDone(srcIdx) {
   renderRouteBar();
 }
 
+// Saves the not-yet-done part of the route so it can be caught up after the app was closed.
+function persistPlan() {
+  if (!rideLog || isLogExpired(rideLog)) return;
+  rideLog.plan = state.route.filter(s => !s.done).map(s => ({
+    rideId: s.rideId,
+    predictedWait: s.predictedWait,
+    queueJoinMinutes: s.queueJoinMinutes,
+  }));
+  persistRideLog();
+}
+
 function toggleLogVisible() {
   rideLogVisible = !rideLogVisible;
   try { localStorage.setItem(LOG_VISIBLE_KEY, rideLogVisible); } catch (e) { /* ignore */ }
@@ -414,7 +425,11 @@ function toggleLogVisible() {
 
 function initRideLog() {
   expireLog();
-  if (rideLogVisible) state.route = [...logStops(), ...state.route];
+  const plan = (rideLog && rideLog.plan ? rideLog.plan : [])
+    .map(p => ({ ...p, uid: nextUid() }));
+  state.route = [...(rideLogVisible ? logStops() : []), ...plan];
+  routeAltered = false;
+  advanceDone();          // marks everything whose time passed while the app was closed
   renderRouteBar();
 }
 
@@ -1516,6 +1531,7 @@ mapViewportEl.addEventListener('touchcancel', () => {
 function renderRouteBar() {
   advanceDone();
   renderSnapshotInfo();
+  persistPlan();
   if (!state.route.length) {
     routePlaceholderEl.style.display = 'block';
     routeItemsEl.classList.remove('active');
@@ -1818,6 +1834,8 @@ async function generateRoute(triggerBtn) {
   const ride_locked = {};
   RIDES.forEach(r => { if (state.locked[r.id]) ride_locked[r.id] = true; });
 
+  ensureLog();
+  persistRideLog();
   const doneStops = logStops();
   const doneUids  = new Set(doneStops.map(s => s.uid));
   const completed_counts = {};
