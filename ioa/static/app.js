@@ -258,8 +258,9 @@ const startOptions = [{ id: 'entrance', label: 'Entrance' },
   ...RIDES.map(r => ({ id: r.id, label: r.name }))];
 
 // ── presets (persisted in localStorage) ────────────────────────
-// ── park clock + daily snapshot (separate from the sidebar presets) ──
-const SNAPSHOT_KEY = 'urp.snapshotDay';
+// ── park clock + daily ride log (separate from the sidebar presets) ──
+const RIDE_LOG_KEY = 'urp.rideLog';
+const LOG_VISIBLE_KEY = 'urp.logVisible';
 const PARK_TZ = 'America/New_York';
 let parkCloseMinutes = 20 * 60;    // fallback until /api/park-hours answers
 
@@ -284,181 +285,149 @@ async function fetchParkClose() {
   } catch (e) { /* keep fallback */ }
 }
 
-// snap = { day, closeMinutes, active, done: [{rideId, predictedWait, queueJoinMinutes, manual}] } or null
-function loadSnapshot() {
+// rideLog = { day, closeMinutes, done: [{rideId, predictedWait, queueJoinMinutes, manual}] } or null
+function loadRideLog() {
   try {
-    const s = JSON.parse(localStorage.getItem(SNAPSHOT_KEY) || 'null');
-    if (s && Array.isArray(s.done)) return s;
+    const l = JSON.parse(localStorage.getItem(RIDE_LOG_KEY) || 'null');
+    if (l && Array.isArray(l.done)) return l;
   } catch (e) { /* ignore */ }
   return null;
 }
 
-let snap = loadSnapshot();
-let preUseState = null;
+let rideLog = loadRideLog();
+let rideLogVisible = localStorage.getItem(LOG_VISIBLE_KEY) !== 'false';
 let routeAltered = false;   // true once a generated route is dragged/edited
-let regeneratedSinceUse = false;
-function persistSnapshot() {
+
+function persistRideLog() {
   try {
-    if (snap) localStorage.setItem(SNAPSHOT_KEY, JSON.stringify(snap));
-    else localStorage.removeItem(SNAPSHOT_KEY);
+    if (rideLog) localStorage.setItem(RIDE_LOG_KEY, JSON.stringify(rideLog));
+    else localStorage.removeItem(RIDE_LOG_KEY);
   } catch (e) { /* ignore */ }
 }
 
-function isSnapshotExpired(s) {
-  if (!s) return true;
+function isLogExpired(l) {
+  if (!l) return true;
   const now = parkNow();
-  return s.day !== now.day || now.minutes >= s.closeMinutes;
+  return l.day !== now.day || now.minutes >= l.closeMinutes;
 }
 
-function trackingSnapshot() {
-  return snap && snap.active && !isSnapshotExpired(snap) ? snap : null;
+// Drops the log after park close / on a new day. Callers re-render.
+function expireLog() {
+  if (!rideLog || !isLogExpired(rideLog)) return false;
+  rideLog = null;
+  persistRideLog();
+  state.route = state.route.filter(s => !s.done);
+  return true;
 }
 
-function isStopDone(stop) { return !!stop.done && !!trackingSnapshot(); }
+function ensureLog() {
+  expireLog();
+  if (!rideLog) {
+    const now = parkNow();
+    rideLog = { day: now.day, closeMinutes: parkCloseMinutes, done: [] };
+  }
+  return rideLog;
+}
+
+// Fresh route-stop copies of everything in the log.
+function logStops() {
+  if (!rideLog || isLogExpired(rideLog)) return [];
+  return rideLog.done.map(d => ({ ...d, uid: nextUid(), done: true }));
+}
+
+function isStopDone(stop) { return !!stop.done; }
 
 function firstFutureIdx() {
   const i = state.route.findIndex(s => !s.done);
   return i === -1 ? state.route.length : i;
 }
 
-// Copies the green + yellow stops into the saved snapshot.
-function syncSnapshotDone() {
-  if (!snap) return;
-  snap.done = state.route.filter(s => s.done).map(s => ({
+// Rebuilds the log from the done stops on screen (only possible while the log is shown).
+function syncRideLog() {
+  if (!rideLog || !rideLogVisible) return;
+  rideLog.done = state.route.filter(s => s.done).map(s => ({
     rideId: s.rideId,
     predictedWait: s.predictedWait,
     queueJoinMinutes: s.queueJoinMinutes,
     manual: !!s.manual,
   }));
-  persistSnapshot();
+  persistRideLog();
 }
 
-// Planned stops whose queue-join time has passed turn green (and get saved).
+// After an untouched Generate, stops turn green (and are logged) as their time passes.
 function advanceDone() {
-  if (!trackingSnapshot() || routeAltered) return false;
+  if (routeAltered) return false;
   const nowMin = parkNow().minutes;
   let changed = false;
-  for (let i = firstFutureIdx(); i < state.route.length; i++) {
+  while (true) {
+    const i = firstFutureIdx();
     const s = state.route[i];
-    if (s.queueJoinMinutes == null || s.queueJoinMinutes > nowMin) break;
-    s.done = true;
+    if (!s || s.queueJoinMinutes == null || s.queueJoinMinutes > nowMin) break;
+    ensureLog();
     delete state.timePinned[s.uid];
+    rideLog.done.push({
+      rideId: s.rideId,
+      predictedWait: s.predictedWait,
+      queueJoinMinutes: s.queueJoinMinutes,
+      manual: false,
+    });
+    if (rideLogVisible) s.done = true;
+    else state.route.splice(i, 1);
     changed = true;
   }
-  if (changed) syncSnapshotDone();
+  if (changed) persistRideLog();
   return changed;
 }
 
-// Drag a ride from the sidebar into the snapshot -> yellow.
+// Drag a ride from the sidebar onto a green/yellow stop -> yellow.
 function addManualDone(rideId) {
+  ensureLog();
   state.route.splice(firstFutureIdx(), 0, {
     rideId, predictedWait: null, queueJoinMinutes: null,
     uid: nextUid(), done: true, manual: true,
   });
-  syncSnapshotDone();
+  syncRideLog();
   renderRouteBar();
 }
 
-// Drag a planned stop into the snapshot -> yellow, removed from the plan.
+// Drag a planned stop onto a green/yellow stop -> yellow, removed from the plan.
 function markRouteStopDone(srcIdx) {
   const stop = state.route[srcIdx];
   if (!stop || stop.done) return;
   state.route.splice(srcIdx, 1);
   delete state.timePinned[stop.uid];
   routeAltered = true;
-  stop.done = true;
-  stop.manual = true;
-  stop.predictedWait = null;
-  stop.queueJoinMinutes = null;
+  Object.assign(stop, { done: true, manual: true, predictedWait: null, queueJoinMinutes: null });
   state.route.splice(firstFutureIdx(), 0, stop);
-  syncSnapshotDone();
+  ensureLog();
+  syncRideLog();
   renderRouteBar();
 }
 
-function toggleSnapshotUse() {
-  if (trackingSnapshot()) {
-    snap = null;
-    persistSnapshot();
-    if (preUseState && !regeneratedSinceUse) {
-      state.route = preUseState.route;
-      state.timePinned = preUseState.timePinned;
-    } else {
-      const doneUids = state.route.filter(s => s.done).map(s => s.uid);
-      state.route = state.route.filter(s => !s.done);
-      doneUids.forEach(uid => delete state.timePinned[uid]);
-    }
-    preUseState = null;
-    regeneratedSinceUse = false;
-    routePlaceholderEl.style.color = '';
-    routePlaceholderEl.textContent = 'No route yet — check some rides and hit “Get Optimal Route”.';
-    renderRouteBar();
-    return;
-  }
-
-  const now = parkNow();
-  if (!snap || isSnapshotExpired(snap)) {
-    snap = { day: now.day, closeMinutes: parkCloseMinutes, done: [] };
-  }
-  snap.active = true;
-  preUseState = { route: state.route, timePinned: state.timePinned };
-  regeneratedSinceUse = false;
-
-  const done = snap.done.map(d => ({ ...d, uid: nextUid(), done: true }));
-  const seen = new Set(done.filter(d => !d.manual).map(d => `${d.rideId}:${d.queueJoinMinutes}`));
-  const future = [];
-  state.route.forEach(s => {
-    if (!routeAltered && s.queueJoinMinutes != null && s.queueJoinMinutes <= now.minutes) {
-      if (!seen.has(`${s.rideId}:${s.queueJoinMinutes}`)) done.push({ ...s, done: true });
-    } else {
-      future.push(s);
-    }
-  });
-  const keptPins = {};
-  future.forEach(s => { if (state.timePinned[s.uid]) keptPins[s.uid] = state.timePinned[s.uid]; });
-
-  state.route = [...done, ...future];
-  state.timePinned = keptPins;
-  syncSnapshotDone();
+function toggleLogVisible() {
+  rideLogVisible = !rideLogVisible;
+  try { localStorage.setItem(LOG_VISIBLE_KEY, rideLogVisible); } catch (e) { /* ignore */ }
+  const future = state.route.filter(s => !s.done);
+  state.route = rideLogVisible ? [...logStops(), ...future] : future;
   renderRouteBar();
 }
 
-// After a reload, a snapshot that was in use comes back with its green/yellow stops.
-function restoreSnapshotRoute() {
-  if (!trackingSnapshot()) return;
-  preUseState = { route: [], timePinned: {} };
-  regeneratedSinceUse = true;
-}
-
-// After park close (or a new day) the snapshot disappears.
-function expireSnapshots() {
-  if (!snap || !isSnapshotExpired(snap)) return;
-  const wasActive = snap.active;
-  snap = null;
-  persistSnapshot();
-  if (wasActive) {
-    state.route = [];
-    state.timePinned = {};
-    preUseState = null;
-  }
+function initRideLog() {
+  expireLog();
+  if (rideLogVisible) state.route = [...logStops(), ...state.route];
   renderRouteBar();
 }
 
 function refreshDoneState() {
-  expireSnapshots();
+  const expired = expireLog();
   const changed = advanceDone();
-  if ((changed || trackingSnapshot()) && dragSrcIdx === null && !touchDragging) renderRouteBar();
+  if ((expired || changed) && dragSrcIdx === null && !touchDragging) renderRouteBar();
 }
 setInterval(refreshDoneState, 30000);
 
 function renderSnapshotInfo() {
-  const useBtn = document.getElementById('useSnapshotBtn');
-
-  const on = !!trackingSnapshot();
-  if (useBtn) {
-    useBtn.textContent = on ? 'Stop Using' : 'Use';
-    useBtn.classList.toggle('in-use', on);
-  }
-
+  const btn = document.getElementById('logToggleBtn');
+  if (btn) btn.textContent = rideLogVisible ? 'Hide Log' : 'Show Log';
 }
 const PRESET_KEY = 'urp.presets';
 let presets = JSON.parse(localStorage.getItem(PRESET_KEY) || '[]');
@@ -719,7 +688,7 @@ $('#generateBreakBtn').addEventListener('click', () => {
 });
 
 $('#addPresetBtn').addEventListener('click', addPreset);
-$('#useSnapshotBtn')?.addEventListener('click', toggleSnapshotUse);
+$('#logToggleBtn')?.addEventListener('click', toggleLogVisible);
 
 
 // ═══════════════ SIDEBAR RIDE LIST ═══════════════
@@ -1628,7 +1597,7 @@ function renderRouteBar() {
         dragSrcIdx = null;
         if (src === null) {
           const rideId = e.dataTransfer.getData('text/plain');
-          if (trackingSnapshot() && stop.done && rideById[rideId]) addManualDone(rideId);
+          if (stop.done && rideById[rideId]) addManualDone(rideId);
           return;
         }
         executeDrop(src, i);
@@ -1768,7 +1737,7 @@ function renderRouteBar() {
       remove.addEventListener('click', () => {
         if (done) {
           state.route.splice(i, 1);
-          syncSnapshotDone();
+          syncRideLog();
           renderRouteBar();
           return;
         }
@@ -1849,10 +1818,7 @@ async function generateRoute(triggerBtn) {
   const ride_locked = {};
   RIDES.forEach(r => { if (state.locked[r.id]) ride_locked[r.id] = true; });
 
-  let doneStops = state.route.filter(isStopDone);
-  if (!doneStops.length && trackingSnapshot()) {
-    doneStops = trackingSnapshot().done.map(d => ({ ...d, uid: nextUid(), done: true }));
-  }
+  const doneStops = logStops();
   const doneUids  = new Set(doneStops.map(s => s.uid));
   const completed_counts = {};
   doneStops.forEach(s => { completed_counts[s.rideId] = (completed_counts[s.rideId] || 0) + 1; });
@@ -1965,10 +1931,10 @@ async function generateRoute(triggerBtn) {
     });
 
     state.timePinned = newTP;
-    state.route = [...doneStops, ...state.route];
+    if (rideLogVisible) state.route = [...doneStops, ...state.route];
     routeAltered = false;
     if (trackingSnapshot()) regeneratedSinceUse = true;
-    syncSnapshotDone();
+    syncRideLog();
 
     const stillPinnedRideIds = new Set(Object.values(newTP).map(p => p.rideId));
     Object.keys(state.pinnedLocked).forEach(rideId => {
@@ -1983,7 +1949,7 @@ async function generateRoute(triggerBtn) {
     }
   } catch (err) {
     console.error(err);
-        state.route = doneStops;
+        state.route = rideLogVisible ? doneStops : [];
     routePlaceholderEl.textContent = `Couldn't generate a route: ${err.message}`;
    } finally {
     routeGenerating = false;
@@ -2128,8 +2094,7 @@ function init() {
   renderRouteBar();
   pollStatus();
   fetchParkClose();
-  restoreSnapshotRoute();
-  expireSnapshots();
+  initRideLog();
   updateTogglePositions(); 
 
 

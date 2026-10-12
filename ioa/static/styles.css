@@ -977,9 +977,7 @@ input { font-family: inherit; }
 
 
 #snapshotLabel { font-family: 'Baloo 2', sans-serif; font-weight: 700; font-size: 14px; flex: 1; }
-#useSnapshotBtn { background: var(--teal); flex-shrink: 0; }
-#useSnapshotBtn.in-use { background: var(--danger); }
-#useSnapshotBtn:disabled { opacity: 0.4; cursor: default; filter: none; }
+#logToggleBtn { background: var(--teal); flex-shrink: 0; }
 
 #snapshotBox { display: flex; flex-direction: column; align-items: center; gap: 6px; flex-shrink: 0; }
 #snapshotTitleRow { display: flex; align-items: center; justify-content: center; gap: 10px; }
