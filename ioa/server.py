@@ -18,6 +18,7 @@ threading.Thread(target=Data.update_backend, daemon=True).start()
 def _warm():
     try:
         warm_history_cache()
+        print("history warm-up finished", flush=True)
     except Exception:
         app.logger.exception("history warm-up failed")
 

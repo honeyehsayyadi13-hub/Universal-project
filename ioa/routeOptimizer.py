@@ -952,7 +952,7 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
                 _ctx.park_ratio = max(CROWD_RATIO_MIN, min(CROWD_RATIO_MAX, num / den))
     except Exception:
         _ctx.park_ratio = None
-    print("DEBUG park_ratio =", _ctx.park_ratio)
+    print("DEBUG park_ratio =", _ctx.park_ratio, flush=True)
 
     start_db_id = ENTRANCE_DB_ID if start_key == "entrance" else key_to_id.get(start_key, ENTRANCE_DB_ID)
     break_windows = _resolve_break_windows(breaks, start_time.date())
