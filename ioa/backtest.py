@@ -6,7 +6,11 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
+from dotenv import find_dotenv
+load_dotenv(find_dotenv(usecwd=True))   # searches the current folder, then parent folders
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
+print("SUPABASE_URL set?", bool(os.environ.get("SUPABASE_URL")),
+      "| SUPABASE_KEY set?", bool(os.environ.get("SUPABASE_KEY")))
 
 import routeOptimizer as ro
 

@@ -100,6 +100,7 @@ WEEKEND_GROUP_WEIGHT = 0.6       # weight when both days are weekend (or both we
 DIFF_DAY_WEIGHT = 0.35           # weight for a weekday-vs-weekend mismatch
 WEEKEND_DAYS = {5, 6}            # Saturday, Sunday (Monday == 0)
 RECENCY_HALF_LIFE_DAYS = 45      # historical samples lose half their weight every 45 days
+ANCHOR_MODE = "ratio"            # "ratio" or "add" -- how the live reading shifts the historical curve
 ANCHOR_DECAY_HOURS = 3.0         # how many hours out we keep trusting today's live reading
 MIN_MEANINGFUL_BASELINE_MIN = 3.0 # min historical baseline for ratio-based anchoring
 ANCHOR_RATIO_MIN = 0.15          # min ratio clamp for live anchor
@@ -115,6 +116,11 @@ HISTORY_WINDOW_DAYS = 150        # only learn from the most recent ~5 months of 
 HISTORY_PAGE_SIZE = 1000         # Supabase returns at most 1000 rows per request
 HISTORY_REFRESH_SEC = 600        # re-check Supabase for new readings at most every 10 min
 MIN_HISTORY_WEIGHT = 10.0        # need ~this many effective samples near the target time, else "no history"
+CROWD_TAU_OWN_HOURS = 3.0        # a ride's own live ratio fades toward the park-wide ratio over this long
+CROWD_TAU_PARK_HOURS = 16.0      # the park-wide ratio fades toward "normal" (1.0) over this long
+CROWD_RATIO_MIN = 0.3
+CROWD_RATIO_MAX = 4.0
+CROWD_MIN_RIDES = 5              # need at least this many open rides with live data to trust the park factor
 HISTORY_BIN_MIN = 5              # history is bucketed into 5-minute time-of-day bins
 ENTRANCE_DB_ID = 0               # matches the "id" of the entrance row in `rides`
 FORCE_OPEN_BUFFER_MIN = 30       # a force-opened ride can't be queued sooner than this from now
@@ -328,7 +334,7 @@ def _historical_wait_curve(history_for_ride, target_time):
     return num / den
 
 
-def _predict_wait(history_for_ride, target_time, current_wait=None, now=None, historical_now=None):
+def _predict_wait(history_for_ride, target_time, current_wait=None, now=None, historical_now=None, park_ratio=None):
     """
     Predicts the wait at `target_time`, anchored to a live reading when
     available and decaying toward the historical curve further out.
@@ -347,9 +353,17 @@ def _predict_wait(history_for_ride, target_time, current_wait=None, now=None, hi
         return max(0.0, float(current_wait))
 
     hours_ahead = max(0.0, (target_time - now).total_seconds() / 3600.0)
+
+    # Park-wide crowd factor: the ride's own live ratio fades toward the park-wide
+    # ratio, and the park-wide ratio fades slowly toward 1.0 (normal).
+    if park_ratio is not None and historical_now > MIN_MEANINGFUL_BASELINE_MIN:
+        own = max(CROWD_RATIO_MIN, min(CROWD_RATIO_MAX, current_wait / historical_now))
+        r = park_ratio + (own - park_ratio) * math.exp(-hours_ahead / CROWD_TAU_OWN_HOURS)
+        r = 1.0 + (r - 1.0) * math.exp(-hours_ahead / CROWD_TAU_PARK_HOURS)
+        return max(0.0, historical_target * r)
     anchor_weight = math.exp(-hours_ahead / ANCHOR_DECAY_HOURS)
 
-    if historical_now > MIN_MEANINGFUL_BASELINE_MIN:
+    if ANCHOR_MODE == "ratio" and historical_now > MIN_MEANINGFUL_BASELINE_MIN:
         ratio = current_wait / historical_now
         ratio = max(ANCHOR_RATIO_MIN, min(ANCHOR_RATIO_MAX, ratio))
         anchor_adjusted = historical_target * ratio
@@ -421,6 +435,7 @@ def _simulate_route(order, histories, walk_map, durations, start_time, break_win
             current_wait=current_waits.get(db_id),
             now=start_time,
             historical_now=historical_now_by_id.get(db_id),
+            park_ratio=getattr(_ctx, "park_ratio", None),
         )
         clock += timedelta(minutes=predicted_wait)
         total += predicted_wait
@@ -843,6 +858,7 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
                 ride_locked[key] = True
 
     closed_ride_keys = set(closed_ride_keys or [])
+    all_closed_keys = set(closed_ride_keys)   # includes force-open overrides; used for the park crowd factor
     override_closed_keys = set(override_closed_keys or [])
     override_closed_keys &= closed_ride_keys
     closed_ride_keys -= override_closed_keys
@@ -911,6 +927,32 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
         db_id: _historical_wait_curve(histories.get(db_id, []), start_time)
         for db_id in all_db_ids
     }
+
+    # Park-wide crowd factor: total live wait of all open rides / total normal wait.
+    _ctx.park_ratio = None
+    try:
+        pr_live = {
+            key_to_id[k]: w for k, w in (live_waits or {}).items()
+            if w is not None and k in key_to_id and k not in all_closed_keys
+        }
+        if pr_live:
+            pr_hist = _load_wait_history(list(pr_live))
+            num = den = 0.0
+            used = 0
+            for db_id, wait in pr_live.items():
+                hn = historical_now_by_id.get(db_id)
+                if hn is None:
+                    prev = [(ts, w) for ts, w in pr_hist.get(db_id, []) if ts.date() < today_date]
+                    hn = _historical_wait_curve(prev, start_time)
+                if hn is not None and hn > MIN_MEANINGFUL_BASELINE_MIN:
+                    num += wait
+                    den += hn
+                    used += 1
+            if used >= CROWD_MIN_RIDES and den > 0:
+                _ctx.park_ratio = max(CROWD_RATIO_MIN, min(CROWD_RATIO_MAX, num / den))
+    except Exception:
+        _ctx.park_ratio = None
+    print("DEBUG park_ratio =", _ctx.park_ratio)
 
     start_db_id = ENTRANCE_DB_ID if start_key == "entrance" else key_to_id.get(start_key, ENTRANCE_DB_ID)
     break_windows = _resolve_break_windows(breaks, start_time.date())
