@@ -1135,7 +1135,20 @@ function renderscarezoneByIdPins() {
     img.onerror = () => { img.style.display = 'none'; pin.textContent = l.name.split(' ')[0]; };
     pin.appendChild(img);
     pin.addEventListener('contextmenu', e => e.preventDefault());
-    pin.addEventListener('click', e => { e.stopPropagation(); hidePopup(); });
+    pin.addEventListener('click', e => {
+      e.stopPropagation();
+      const now = Date.now();
+      if (now - lastPinTapTime < DOUBLE_TAP_MS && lastPinTapRideId === z.id) {
+        lastPinTapTime = 0;
+        lastPinTapRideId = null;
+        hidePopup();
+        toggleWaitBubbles();
+        return;
+      }
+      lastPinTapTime = now;
+      lastPinTapRideId = z.id;
+      showPopup(z.id, pin);
+    });
     pinElements.push({ el: pin, rideId: l.id, mx: l.x, my: l.y, sizeMult: l.sizeMult ?? 1 });
     pinLayerEl.appendChild(pin);
   });
@@ -1266,6 +1279,13 @@ function renderWaitBubbles() {
   waitBubbleLayerEl.innerHTML = '';
   waitBubbleElements = [];
   if (!showWaitBubbles) { return; }
+  SCAREZONES.forEach(z => {
+    const bubble = document.createElement('div');
+    bubble.className = 'wait-bubble';
+    bubble.textContent = z.name;
+    waitBubbleLayerEl.appendChild(bubble);
+    waitBubbleElements.push({ el: bubble, rideId: z.id });
+  });
   RIDES.forEach(r => {
     const wait = state.liveWaits[r.id];
     const isOpen = state.liveOpen[r.id];
@@ -1284,7 +1304,7 @@ function updateBubbleLayout() {
   const fitH = mapFitWidth * (MAP_NATIVE_H / MAP_NATIVE_W);
   const t = zoomT();
   waitBubbleElements.forEach(({ el, rideId }) => {
-    const r = rideById[rideId];
+    const r = rideById[rideId] || scarezoneById[rideId];
     const centerX = mapPanX + (lerp(r.x, r.realX, t) / MAP_NATIVE_W) * mapFitWidth * mapZoom;
     const centerY = mapPanY + (lerp(r.y, r.realY, t) / MAP_NATIVE_H) * fitH * mapZoom;
     el.style.left = centerX + 'px';
