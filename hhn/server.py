@@ -42,7 +42,7 @@ def rides():
         from zoneinfo import ZoneInfo
         now = datetime.now(ZoneInfo("America/New_York"))
         close_hour, close_minute = park_hours
-        if (2, 0) <= (now.hour, now.minute) < (18, 30):
+        if (2, 0) <= (now.hour, now.minute) < (13, 0):
             payload = {k: {**v, "is_open": False, "waittime": 0} for k, v in payload.items()}
 
     return jsonify(payload)
