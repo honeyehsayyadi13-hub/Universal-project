@@ -2184,3 +2184,101 @@ function init() {
 }
 
 init();
+
+// ═══════ TEMP: PIN DRAG TOOL (delete this whole block when done) ═══════
+(function pinDragTool() {
+  // Make pins draggable on touch screens and unselectable
+  const style = document.createElement('style');
+  style.textContent = '.pin{touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;}';
+  document.head.appendChild(style);
+
+  // Readout bar at the bottom of the screen
+  const bar = document.createElement('div');
+  bar.style.cssText = 'position:fixed;left:6px;bottom:6px;z-index:99999;background:rgba(0,0,0,.85);color:#0f0;font:12px monospace;padding:6px 8px;border-radius:6px;display:flex;gap:8px;align-items:center;max-width:calc(100vw - 12px);flex-wrap:wrap;';
+  const txt = document.createElement('span');
+  txt.textContent = 'Drag a pin to move it';
+  const copyBtn = document.createElement('button');
+  copyBtn.textContent = 'Copy all';
+  bar.append(txt, copyBtn);
+  bar.addEventListener('click', e => e.stopPropagation());
+  document.body.appendChild(bar);
+
+  let drag = null;
+  let suppressClick = false;
+
+  // Convert a pointer position into map coordinates (the 1000x800 space)
+  function toMap(e) {
+    refreshMapViewportRect();
+    const fitH = mapFitWidth * (MAP_NATIVE_H / MAP_NATIVE_W);
+    return {
+      x: (e.clientX - mapViewportRect.left - mapPanX) / (mapFitWidth * mapZoom) * MAP_NATIVE_W,
+      y: (e.clientY - mapViewportRect.top  - mapPanY) / (fitH * mapZoom) * MAP_NATIVE_H,
+    };
+  }
+
+  function show(r) {
+    const mode = zoomT() < 0.5 ? 'editing x,y' : 'editing realX,realY';
+    txt.textContent = `${r.name}  x: ${r.x}, y: ${r.y}, realX: ${r.realX}, realY: ${r.realY}  (${mode})`;
+  }
+
+  pinLayerEl.addEventListener('pointerdown', e => {
+    const entry = pinElements.find(p => p.el === e.target.closest('.pin'));
+    if (!entry) return;
+    const r = rideById[entry.rideId] || scarezoneById[entry.rideId];
+    if (!r) return;
+    const p = toMap(e);
+    const t = zoomT();
+    drag = {
+      r, moved: false, sx: e.clientX, sy: e.clientY,
+      offX: lerp(r.x, r.realX, t) - p.x,   // keeps the pin from jumping to your finger
+      offY: lerp(r.y, r.realY, t) - p.y,
+    };
+    show(r);
+  });
+
+  document.addEventListener('pointermove', e => {
+    if (!drag) return;
+    if (!drag.moved) {
+      if (Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) < 5) return;
+      drag.moved = true;
+      hidePopup();
+    }
+    const p = toMap(e);
+    const tx = p.x + drag.offX, ty = p.y + drag.offY;
+    const r = drag.r, t = zoomT();
+    if (t < 0.5) {            // zoomed out: edit x, y
+      r.x = Math.round((tx - r.realX * t) / (1 - t));
+      r.y = Math.round((ty - r.realY * t) / (1 - t));
+    } else {                  // zoomed in: edit realX, realY
+      r.realX = Math.round((tx - r.x * (1 - t)) / t);
+      r.realY = Math.round((ty - r.y * (1 - t)) / t);
+    }
+    updatePinLayout();
+    show(r);
+  });
+
+  function endDrag() {
+    if (!drag) return;
+    if (drag.moved) {         // stop the drop from counting as a tap/click
+      suppressClick = true;
+      setTimeout(() => { suppressClick = false; }, 100);
+    }
+    drag = null;
+  }
+  document.addEventListener('pointerup', endDrag);
+  document.addEventListener('pointercancel', endDrag);
+
+  pinLayerEl.addEventListener('click', e => {
+    if (suppressClick) { e.stopPropagation(); e.preventDefault(); }
+  }, true);
+
+  copyBtn.addEventListener('click', () => {
+    const lines = [...RIDES, ...SCAREZONES]
+      .map(r => `${r.id}: x: ${r.x}, y: ${r.y}, realX: ${r.realX}, realY: ${r.realY}`)
+      .join('\n');
+    console.log(lines);
+    try { navigator.clipboard.writeText(lines); } catch (err) { /* see console */ }
+    copyBtn.textContent = 'Copied!';
+    setTimeout(() => { copyBtn.textContent = 'Copy all'; }, 1200);
+  });
+})();
