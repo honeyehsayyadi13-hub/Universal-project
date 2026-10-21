@@ -27,6 +27,15 @@ const MAP_NATIVE_W = 1000;
 const MAP_NATIVE_H = 800;
 const rideById = Object.fromEntries(RIDES.map(r => [r.id, r]));
 
+// Icon-only map markers (no wait times, not in the sidebar or route).
+const SCAREZONES = [
+  { id: 'carnival', name: 'Infernal Carnival of Nightmares', icon: 'assets/logos/restroom.png', x: 300, y: 500, realX: 300, realY: 500, sizeMult: 0.8, brightness: 1.4 },
+  { id: 'sideshow', name: 'Sideshow of Decay', icon: 'assets/logos/restroom.png', x: 400, y: 500, realX: 400, realY: 500, sizeMult: 0.8, brightness: 1.4 },
+  { id: 'clowntown', name: 'Downtown Clowntown', icon: 'assets/logos/restroom.png', x: 500, y: 500, realX: 500, realY: 500, sizeMult: 0.8, brightness: 1.4 },
+  { id: 'fortnite', name: 'FORTNITEMARES', icon: 'assets/logos/restroom.png', x: 600, y: 500, realX: 600, realY: 500, sizeMult: 0.8, brightness: 1.4 },
+];
+const scarezoneById = Object.fromEntries(SCAREZONES.map(l => [l.id, l]));
+
 // ── state ───────────────────────────────────────────────────────
 const state = {
   visible: Object.fromEntries(RIDES.map(r => [r.id, true])),
@@ -1109,6 +1118,30 @@ let pinElements = [];
 
 
 function renderPins() {
+  renderRidePins();
+  renderscarezoneByIdPins();
+  updatePinLayout();
+}
+
+function renderscarezoneByIdPins() {
+  SCAREZONES.forEach(l => {
+    const pin = document.createElement('button');
+    pin.className = 'pin scarezone';
+    const img = document.createElement('img');
+    img.src = l.icon;
+    img.alt = l.name;
+    img.draggable = false;
+    img.style.setProperty('--icon-brightness', l.brightness ?? 1.4);
+    img.onerror = () => { img.style.display = 'none'; pin.textContent = l.name.split(' ')[0]; };
+    pin.appendChild(img);
+    pin.addEventListener('contextmenu', e => e.preventDefault());
+    pin.addEventListener('click', e => { e.stopPropagation(); hidePopup(); });
+    pinElements.push({ el: pin, rideId: l.id, mx: l.x, my: l.y, sizeMult: l.sizeMult ?? 1 });
+    pinLayerEl.appendChild(pin);
+  });
+}
+
+function renderRidePins() {
   pinLayerEl.innerHTML = '';
   pinElements = [];
   RIDES.forEach(r => {
@@ -1270,7 +1303,7 @@ function updatePinLayout() {
   const fitH = mapFitWidth * (MAP_NATIVE_H / MAP_NATIVE_W);
   const t = zoomT();
   pinElements.forEach(entry => {
-    const r = rideById[entry.rideId];
+    const r = rideById[entry.rideId] || scarezoneById[entry.rideId];
     const mx = lerp(r.x, r.realX, t);
     const my = lerp(r.y, r.realY, t);
     entry.mx = mx;
