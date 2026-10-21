@@ -1,0 +1,1089 @@
+"""
+route_optimizer.py (the main algorithm)
+
+Computes the best order to visit a selected set of rides using:
+  - Historical wait-time data (Supabase 'ride_waits' table) to predict
+    future wait times, based on time-of-day / day-of-week patterns.
+  - Static walk-time data (Supabase 'walk_times' table) to account for
+    travel time between rides.
+  - Ride-duration data (Supabase 'ride_duration' table) to account for
+    how long you're actually on the ride once you board.
+
+Rules this version enforces:
+  1. Currently-closed rides are dropped completely, no matter what the
+     sidebar says about them (checked, locked, counted-up -- doesn't
+     matter, closed means closed).
+  2. A LOCKED ride is force-included at its best possible slot, even if
+     that isn't the globally "optimal" pick. A ride checked to go more
+     than once (count > 1) has those extra visits force-attempted too.
+     If there isn't enough daylight to fit everything that's forced,
+     the counted-up EXTRA visits are sacrificed first; only after every
+     extra is gone do LOCKED base visits start getting dropped.
+  3. Ride duration (time actually spent on the ride) is added on top of
+     wait time when simulating the day.
+  4. Breaks (guest-entered time windows) block out the schedule -- you
+     can't walk into a queue during a break; the plan waits until the
+     break ends, then adds a short post-break buffer before any walking
+     to the next ride starts (see POST_BREAK_BUFFER_MIN below).
+  5. Wait-time predictions are anchored to today's live reading (see
+     `Data.ride_waits` / the `live_waits` argument below) and decay
+     toward the plain historical time-of-day curve the further out the
+     prediction reaches.
+  6. Time-pinned rides (from drag-to-slot or click-to-lock) are forced
+     to specific times of day or positions (first/last), as long as
+     doing so doesn't cause other forced rides to drop before closing.
+     A ride pinned first/last is a HARD constraint and is honored
+     unconditionally, even overriding rule 1's ordinary elimination if
+     needed -- see _reorder_for_time_pins.
+  7. The plan doesn't stop the moment every checked/locked/counted ride
+     has been visited once -- it keeps cycling back through every
+     selected ride, for as long as there's still daylight left, so the
+     schedule runs all the way to park close instead of stopping early.
+
+Call `compute_and_print_route(...)` from a button press on the
+frontend. Results are returned as a list of
+(ride_key, predicted_wait, queue_join_minutes) tuples for the rides that
+actually fit before closing.
+
+Returns `None` if the route couldn't be computed at all (bad/missing
+selection, Supabase unreachable, etc.) -- callers should treat `None`
+as "no change", as opposed to `[]` which means "computed successfully,
+but nothing fit."
+
+Install:
+    pip install supabase
+
+Environment variables required:
+    SUPABASE_URL
+    SUPABASE_KEY
+"""
+
+import os
+import math
+import itertools
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+from collections import defaultdict
+import threading
+import time
+
+# Per-request earliest queue-join times for force-opened rides ({db_id: datetime}).
+_ctx = threading.local()
+
+from supabase import create_client, Client
+
+
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+
+_supabase_client = None
+
+
+def _get_client() -> Client:
+    global _supabase_client
+    if _supabase_client is None:
+        if not SUPABASE_URL or not SUPABASE_KEY:
+            raise RuntimeError(
+                "Missing SUPABASE_URL / SUPABASE_KEY environment variables. "
+                "Set them before calling the optimizer, e.g.:\n"
+                '  export SUPABASE_URL="https://xxxx.supabase.co"\n'
+                '  export SUPABASE_KEY="your-anon-or-service-key"'
+            )
+        _supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY)
+    return _supabase_client
+
+
+# ── tunables ──────────────────────────────────────────────────────────
+TIME_KERNEL_BANDWIDTH_MIN = 45   # width of the time-of-day matching window
+SAME_DAY_WEIGHT = 1.0            # weight boost for samples on the same weekday
+WEEKEND_GROUP_WEIGHT = 0.6       # weight when both days are weekend (or both weekday)
+DIFF_DAY_WEIGHT = 0.35           # weight for a weekday-vs-weekend mismatch
+WEEKEND_DAYS = {5, 6}            # Saturday, Sunday (Monday == 0)
+RECENCY_HALF_LIFE_DAYS = 45      # historical samples lose half their weight every 45 days
+ANCHOR_MODE = "ratio"            # "ratio" or "add" -- how the live reading shifts the historical curve
+ANCHOR_DECAY_HOURS = 3.0         # how many hours out we keep trusting today's live reading
+MIN_MEANINGFUL_BASELINE_MIN = 3.0 # min historical baseline for ratio-based anchoring
+ANCHOR_RATIO_MIN = 0.15          # min ratio clamp for live anchor
+ANCHOR_RATIO_MAX = 4.0           # max ratio clamp for live anchor
+DEFAULT_WAIT_MIN = 30            # fallback if a ride has zero usable history
+DEFAULT_WALK_MIN = 10            # fallback if a ride pair has no walk_times row
+DEFAULT_RIDE_DURATION_MIN = 3    # fallback if a ride has no ride_duration row
+BRUTE_FORCE_LIMIT = 7            # exact solve (permutations) up to this many stops
+MAX_2OPT_PASSES = 3              # cap full 2-opt sweeps for larger stop lists
+DEFAULT_PARK_CLOSE_HOUR = 20     # 8:00 PM -- fallback used only when live park hours can't be fetched
+DEFAULT_PARK_CLOSE_MINUTE = 0
+HISTORY_WINDOW_DAYS = 150        # only learn from the most recent ~5 months of readings
+HISTORY_PAGE_SIZE = 1000         # Supabase returns at most 1000 rows per request
+HISTORY_REFRESH_SEC = 600        # re-check Supabase for new readings at most every 10 min
+MIN_HISTORY_WEIGHT = 10.0        # need ~this many effective samples near the target time, else "no history"
+CROWD_TAU_OWN_HOURS = 3.0        # a ride's own live ratio fades toward the park-wide ratio over this long
+CROWD_TAU_PARK_HOURS = 16.0      # the park-wide ratio fades toward "normal" (1.0) over this long
+CROWD_RATIO_MIN = 0.3
+CROWD_RATIO_MAX = 4.0
+CROWD_MIN_RIDES = 5              # need at least this many open rides with live data to trust the park factor
+HISTORY_BIN_MIN = 5              # history is bucketed into 5-minute time-of-day bins
+ENTRANCE_DB_ID = 0               # matches the "id" of the entrance row in `rides`
+FORCE_OPEN_BUFFER_MIN = 30       # a force-opened ride can't be queued sooner than this from now
+POST_BREAK_BUFFER_MIN = 2        # time to get moving again after a break ends
+PARK_TIMEZONE = ZoneInfo("America/New_York")  # Universal Orlando is Eastern time
+MAX_DRAG_DRIFT_MIN = 30          # a dragged-and-dropped ride must land within this many
+                                  # minutes of the queue-join time of whatever ride it
+                                  # displaced, whenever a slot like that exists at all
+
+# ── ride importance ranking ──────────────────────────────────────────
+def _priority_fill_weights(ride_priority_order, checked_keys):
+    """
+    Turns a full ride_key ranking (most -> least important) into a
+    {ride_key: weight} map for _fill_until_close's round-robin fill.
+    """
+    order = list(ride_priority_order or [])
+    rank = {key: i for i, key in enumerate(order)}
+    fallback_rank = len(order)
+    weights = {}
+    for key in checked_keys:
+        r = rank.get(key, fallback_rank)
+        weights[key] = float(fallback_rank - r) + 1.0
+    return weights
+
+
+# ── data loading ─────────────────────────────────────────────────────
+def _load_ride_id_map():
+    """Return (key_to_id, id_to_key) using the short keys in `rides.name`."""
+    resp = _get_client().table("rides").select("id, name").execute()
+    key_to_id, id_to_key = {}, {}
+    for row in resp.data:
+        key_to_id[row["name"]] = row["id"]
+        id_to_key[row["id"]] = row["name"]
+    return key_to_id, id_to_key
+
+
+def _parse_ts(ts):
+    """Parse a Supabase timestamp into a NAIVE datetime in the park's local timezone."""
+    if isinstance(ts, datetime):
+        dt = ts
+    else:
+        dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(PARK_TIMEZONE).replace(tzinfo=None)
+    return dt
+
+
+_history_cache = {}        # db_id -> [(naive park-time timestamp, waittime), ...]
+_history_last_raw = {}     # db_id -> raw timestamp string of the newest row fetched
+_history_fetched_at = {}   # db_id -> time.time() of the last refresh
+_history_lock = threading.Lock()
+
+
+def _fetch_ride_rows(db_id, after_raw=None):
+    """Page through ride_waits for one ride (Supabase caps each response at 1000 rows).
+    First call pulls the last HISTORY_WINDOW_DAYS days; later calls pull only newer rows."""
+    client = _get_client()
+    cutoff = (datetime.now(PARK_TIMEZONE) - timedelta(days=HISTORY_WINDOW_DAYS)).isoformat()
+    out, start = [], 0
+    while True:
+        q = (
+            client.table("ride_waits")
+            .select("ride_id, timestamp, waittime, issue_with_ride")
+            .eq("ride_id", db_id)
+        )
+        q = q.gt("timestamp", after_raw) if after_raw else q.gte("timestamp", cutoff)
+        resp = q.order("timestamp").range(start, start + HISTORY_PAGE_SIZE - 1).execute()
+        rows = resp.data or []
+        out.extend(rows)
+        if len(rows) < HISTORY_PAGE_SIZE:
+            break
+        start += HISTORY_PAGE_SIZE
+    return out
+
+
+def _load_wait_history(db_ids):
+    """Return {db_id: [(timestamp, waittime), ...]} using valid, non-issue rows.
+    History is kept in memory and only topped up with new rows every
+    HISTORY_REFRESH_SEC seconds, so only the first request after a restart is slow."""
+    history = defaultdict(list)
+    if not db_ids:
+        return history
+    now_s = time.time()
+    with _history_lock:
+        for db_id in db_ids:
+            age = now_s - _history_fetched_at.get(db_id, 0.0)
+            if db_id not in _history_cache or age >= HISTORY_REFRESH_SEC:
+                try:
+                    rows = _fetch_ride_rows(db_id, _history_last_raw.get(db_id))
+                except Exception:
+                    if db_id not in _history_cache:
+                        raise
+                    rows = []
+                bucket = _history_cache.setdefault(db_id, [])
+                for row in rows:
+                    _history_last_raw[db_id] = row["timestamp"]
+                    if row.get("issue_with_ride") or row.get("waittime") is None:
+                        continue
+                    bucket.append((_parse_ts(row["timestamp"]), row["waittime"]))
+                _history_fetched_at[db_id] = now_s
+            history[db_id] = list(_history_cache[db_id])
+    return history
+
+def warm_history_cache():
+    """Preload wait history for every ride so the first real request is fast."""
+    key_to_id, _ = _load_ride_id_map()
+    _load_wait_history([i for i in key_to_id.values() if i != ENTRANCE_DB_ID])
+
+
+def _load_walk_times():
+    """Return {(start_db_id, end_db_id): minutes}."""
+    resp = (
+        _get_client()
+        .table("walk_times")
+        .select("start_ride_ID, end_ride_ID, walk_time")
+        .execute()
+    )
+    walk = {}
+    for row in resp.data:
+        wt = row["walk_time"]
+        if wt is None:
+            continue
+        walk[(row["start_ride_ID"], row["end_ride_ID"])] = wt
+    return walk
+
+
+def _load_ride_durations():
+    """Return {db_id: duration_minutes} from the `ride_duration` table."""
+    resp = _get_client().table("ride_duration").select("id, duration").execute()
+    return {row["id"]: row["duration"] for row in resp.data}
+
+
+def _walk_time(walk_map, a_db_id, b_db_id):
+    if a_db_id == b_db_id:
+        return 0
+    if (a_db_id, b_db_id) in walk_map:
+        return walk_map[(a_db_id, b_db_id)]
+    if (b_db_id, a_db_id) in walk_map:
+        return walk_map[(b_db_id, a_db_id)]
+    return DEFAULT_WALK_MIN
+
+
+# ── prediction ───────────────────────────────────────────────────────
+_NBINS = 1440 // HISTORY_BIN_MIN
+
+
+def _get_bins(history_for_ride, target_time):
+    """Bucket a ride's samples into time-of-day bins, with the weekday and recency
+    weights (which are the same for every target time on a given date) already applied.
+    Cached per request in _ctx.bins."""
+    cache = getattr(_ctx, "bins", None)
+    if cache is None:
+        cache = _ctx.bins = {}
+    key = (id(history_for_ride), len(history_for_ride), target_time.date())
+    hit = cache.get(key)
+    if hit is not None:
+        return hit[0], hit[1]
+
+    ref_time = target_time.replace(hour=12, minute=0, second=0, microsecond=0)
+    target_weekday = target_time.weekday()
+    target_is_weekend = target_weekday in WEEKEND_DAYS
+
+    bw = [0.0] * _NBINS
+    bws = [0.0] * _NBINS
+    for ts, wait in history_for_ride:
+        if ts.weekday() == target_weekday:
+            day_weight = SAME_DAY_WEIGHT
+        elif (ts.weekday() in WEEKEND_DAYS) == target_is_weekend:
+            day_weight = WEEKEND_GROUP_WEIGHT
+        else:
+            day_weight = DIFF_DAY_WEIGHT
+        age_days = max(0.0, (ref_time - ts).total_seconds() / 86400.0)
+        w = day_weight * 0.5 ** (age_days / RECENCY_HALF_LIFE_DAYS)
+        b = ((ts.hour * 60 + ts.minute) // HISTORY_BIN_MIN) % _NBINS
+        bw[b] += w
+        bws[b] += w * wait
+
+    # keep a reference to the list so id() can't be reused within this request
+    cache[key] = (bw, bws, history_for_ride)
+    return bw, bws
+
+
+def _historical_wait_curve(history_for_ride, target_time):
+    """
+    Kernel-weighted historical average wait at this time-of-day.
+    Returns None if there's no history at all to work from.
+    """
+    if not history_for_ride:
+        return None
+
+    bw, bws = _get_bins(history_for_ride, target_time)
+    target_minutes = target_time.hour * 60 + target_time.minute
+    center_bin = target_minutes // HISTORY_BIN_MIN
+    reach = int(4 * TIME_KERNEL_BANDWIDTH_MIN // HISTORY_BIN_MIN) + 1
+
+    num = den = 0.0
+    for off in range(-reach, reach + 1):
+        b = (center_bin + off) % _NBINS
+        if bw[b] <= 0:
+            continue
+        bin_center = b * HISTORY_BIN_MIN + HISTORY_BIN_MIN / 2.0
+        raw = abs(bin_center - target_minutes)
+        delta = min(raw, 1440 - raw)
+        k = math.exp(-(delta ** 2) / (2 * TIME_KERNEL_BANDWIDTH_MIN ** 2))
+        num += k * bws[b]
+        den += k * bw[b]
+
+    if den < MIN_HISTORY_WEIGHT:
+        return None
+
+    return num / den
+
+
+def _predict_wait(history_for_ride, target_time, current_wait=None, now=None, historical_now=None, park_ratio=None):
+    """
+    Predicts the wait at `target_time`, anchored to a live reading when
+    available and decaying toward the historical curve further out.
+    """
+    historical_target = _historical_wait_curve(history_for_ride, target_time)
+
+    if current_wait is None or now is None:
+        return historical_target if historical_target is not None else DEFAULT_WAIT_MIN
+
+    if historical_target is None:
+        return max(0.0, float(current_wait))
+
+    if historical_now is None:
+        historical_now = _historical_wait_curve(history_for_ride, now)
+    if historical_now is None:
+        return max(0.0, float(current_wait))
+
+    hours_ahead = max(0.0, (target_time - now).total_seconds() / 3600.0)
+
+    # Park-wide crowd factor: the ride's own live ratio fades toward the park-wide
+    # ratio, and the park-wide ratio fades slowly toward 1.0 (normal).
+    if park_ratio is not None and historical_now > MIN_MEANINGFUL_BASELINE_MIN:
+        own = max(CROWD_RATIO_MIN, min(CROWD_RATIO_MAX, current_wait / historical_now))
+        r = park_ratio + (own - park_ratio) * math.exp(-hours_ahead / CROWD_TAU_OWN_HOURS)
+        r = 1.0 + (r - 1.0) * math.exp(-hours_ahead / CROWD_TAU_PARK_HOURS)
+        return max(0.0, historical_target * r)
+    anchor_weight = math.exp(-hours_ahead / ANCHOR_DECAY_HOURS)
+
+    if ANCHOR_MODE == "ratio" and historical_now > MIN_MEANINGFUL_BASELINE_MIN:
+        ratio = current_wait / historical_now
+        ratio = max(ANCHOR_RATIO_MIN, min(ANCHOR_RATIO_MAX, ratio))
+        anchor_adjusted = historical_target * ratio
+    else:
+        anchor_adjusted = max(0.0, historical_target + (current_wait - historical_now))
+
+    predicted = anchor_weight * anchor_adjusted + (1 - anchor_weight) * historical_target
+
+    return max(0.0, predicted)
+
+
+# ── breaks ──────────────────────────────────────────────────────────
+def _resolve_break_windows(breaks, base_date):
+    """`breaks` is a list of (start_total_minutes, end_total_minutes) pairs.
+    Returns a list of (start_dt, end_dt) datetimes anchored to `base_date`."""
+    windows = []
+    midnight = datetime.combine(base_date, datetime.min.time())
+    for start_min, end_min in breaks or []:
+        windows.append((midnight + timedelta(minutes=start_min), midnight + timedelta(minutes=end_min)))
+    return windows
+
+
+def _apply_breaks(clock, break_windows):
+    """Push `clock` forward past any break window it currently falls inside.
+    If the clock was moved by any break, a one-time POST_BREAK_BUFFER_MIN
+    buffer is added on top before this function returns."""
+    moved_by_break = False
+    changed = True
+    while changed:
+        changed = False
+        for b_start, b_end in break_windows:
+            if b_start <= clock < b_end:
+                clock = b_end
+                changed = True
+                moved_by_break = True
+    if moved_by_break:
+        clock += timedelta(minutes=POST_BREAK_BUFFER_MIN)
+    return clock
+
+
+# ── route simulation ─────────────────────────────────────────────────
+def _simulate_route(order, histories, walk_map, durations, start_time, break_windows, start_db_id,
+                     current_waits=None, historical_now_by_id=None):
+    """Walk `order` (list of db_ids) starting at start_time from `start_db_id`.
+    Returns (total_time, details) where details is a list of dicts with timing info."""
+    current_waits = current_waits or {}
+    historical_now_by_id = historical_now_by_id or {}
+
+    clock = start_time
+    total = 0.0
+    details = []
+    prev = start_db_id
+    for db_id in order:
+        clock = _apply_breaks(clock, break_windows)
+
+        wt = _walk_time(walk_map, prev, db_id) if prev is not None else 0
+        if wt:
+            clock += timedelta(minutes=wt)
+            total += wt
+
+        earliest = getattr(_ctx, "earliest", {}).get(db_id)
+        if earliest is not None and clock < earliest:
+            clock = earliest
+
+        queue_join_clock = clock
+        predicted_wait = _predict_wait(
+            histories.get(db_id, []),
+            clock,
+            current_wait=current_waits.get(db_id),
+            now=start_time,
+            historical_now=historical_now_by_id.get(db_id),
+            park_ratio=getattr(_ctx, "park_ratio", None),
+        )
+        clock += timedelta(minutes=predicted_wait)
+        total += predicted_wait
+
+        ride_time = durations.get(db_id, DEFAULT_RIDE_DURATION_MIN)
+        clock += timedelta(minutes=ride_time)
+        total += ride_time
+
+        details.append({
+            "db_id": db_id,
+            "walk_from_prev": wt,
+            "predicted_wait": predicted_wait,
+            "ride_duration": ride_time,
+            "queue_join_clock": queue_join_clock,
+            "arrival_clock": clock,
+        })
+        prev = db_id
+
+    return total, details
+
+
+def _route_score(order, histories, walk_map, durations, start_time, closing_time, break_windows, start_db_id,
+                  current_waits=None, historical_now_by_id=None):
+    """
+    Score a candidate route for comparison.
+    Primary objective: maximize how many rides you actually get in line for before closing.
+    Secondary objective: minimize time spent on just those committed rides.
+    Returns (fits_count, committed_total_minutes, details).
+    """
+    _, details = _simulate_route(order, histories, walk_map, durations, start_time, break_windows, start_db_id,
+                                  current_waits=current_waits, historical_now_by_id=historical_now_by_id)
+    fits_count = 0
+    committed_total = 0.0
+    for d in details:
+        if d["queue_join_clock"] <= closing_time:
+            fits_count += 1
+            committed_total += d["walk_from_prev"] + d["predicted_wait"] + d["ride_duration"]
+        else:
+            break
+    return fits_count, committed_total, details
+
+
+def _better(score_a, score_b):
+    """True if score_a (fits_count, total_minutes) beats score_b."""
+    fits_a, total_a = score_a
+    fits_b, total_b = score_b
+    if fits_a != fits_b:
+        return fits_a > fits_b
+    return total_a < total_b - 1e-6
+
+
+def _solve_order(db_ids, histories, walk_map, durations, start_time, closing_time, break_windows, start_db_id,
+                  current_waits=None, historical_now_by_id=None):
+    """Find the best visiting order for the given (possibly-repeated) list of db_ids.
+    Exact brute force for small lists, nearest-neighbor + 2-opt for larger ones."""
+    if len(db_ids) == 0:
+        return [], 0.0, []
+
+    if len(db_ids) == 1:
+        order = list(db_ids)
+        _, total, details = _route_score(order, histories, walk_map, durations, start_time, closing_time, break_windows, start_db_id,
+                                          current_waits=current_waits, historical_now_by_id=historical_now_by_id)
+        return order, total, details
+
+    if len(db_ids) <= BRUTE_FORCE_LIMIT:
+        best_order, best_details = None, None
+        best_score = (-1, math.inf)
+        seen = set()
+        for perm in itertools.permutations(db_ids):
+            if perm in seen:
+                continue
+            seen.add(perm)
+            fits, total, details = _route_score(list(perm), histories, walk_map, durations, start_time, closing_time, break_windows, start_db_id,
+                                                  current_waits=current_waits, historical_now_by_id=historical_now_by_id)
+            if _better((fits, total), best_score):
+                best_order, best_score, best_details = list(perm), (fits, total), details
+        return best_order, best_score[1], best_details
+
+    remaining = list(db_ids)
+    order = []
+    last = start_db_id
+    while remaining:
+        nxt = min(remaining, key=lambda r: _walk_time(walk_map, last, r))
+        order.append(nxt)
+        remaining.remove(nxt)
+        last = nxt
+
+    fits, total, details = _route_score(order, histories, walk_map, durations, start_time, closing_time, break_windows, start_db_id,
+                                          current_waits=current_waits, historical_now_by_id=historical_now_by_id)
+    score = (fits, total)
+
+    improved = True
+    passes = 0
+    while improved and passes < MAX_2OPT_PASSES:
+        improved = False
+        passes += 1
+        for i in range(len(order) - 1):
+            for j in range(i + 1, len(order)):
+                candidate = order[:i] + order[i:j + 1][::-1] + order[j + 1:]
+                cand_fits, cand_total, cand_details = _route_score(
+                    candidate, histories, walk_map, durations, start_time, closing_time, break_windows, start_db_id,
+                    current_waits=current_waits, historical_now_by_id=historical_now_by_id
+                )
+                if _better((cand_fits, cand_total), score):
+                    order, score, details = candidate, (cand_fits, cand_total), cand_details
+                    improved = True
+    return order, score[1], details
+
+
+# ── forced (locked + counted-up) scheduling ───────────────────────────
+def _quick_fits_count(db_ids, histories, walk_map, durations, start_time, closing_time, break_windows, start_db_id,
+                       current_waits=None, historical_now_by_id=None):
+    """
+    Cheap feasibility check used ONLY to decide which forced items survive
+    the elimination loop below.
+    """
+    if not db_ids:
+        return 0
+    remaining = list(db_ids)
+    order = []
+    last = start_db_id
+    while remaining:
+        nxt = min(remaining, key=lambda r: _walk_time(walk_map, last, r))
+        order.append(nxt)
+        remaining.remove(nxt)
+        last = nxt
+    fits, _, _ = _route_score(
+        order, histories, walk_map, durations, start_time, closing_time, break_windows, start_db_id,
+        current_waits=current_waits, historical_now_by_id=historical_now_by_id
+    )
+    return fits
+
+
+def _fit_forced(forced_items, histories, walk_map, durations, start_time, closing_time, break_windows, start_db_id,
+                 current_waits=None, historical_now_by_id=None):
+    """
+    Try to schedule every item in `forced_items` (each a dict with db_id/ride_key/kind).
+    If they don't all fit before closing, drop the lowest-priority ones --
+    EXTRA (counted-up) visits first, then LOCKED base visits.
+    Returns (kept_items, dropped_items, order, details).
+    """
+    forced_items = list(forced_items)
+    dropped = []
+
+    while forced_items:
+        ids = [it["db_id"] for it in forced_items]
+        fits = _quick_fits_count(
+            ids, histories, walk_map, durations, start_time, closing_time, break_windows, start_db_id,
+            current_waits=current_waits, historical_now_by_id=historical_now_by_id
+        )
+        if fits >= len(forced_items):
+            order, _, details = _solve_order(
+                ids, histories, walk_map, durations, start_time, closing_time, break_windows, start_db_id,
+                current_waits=current_waits, historical_now_by_id=historical_now_by_id
+            )
+            return forced_items, dropped, order, details
+
+        drop_kind = "extra" if any(it["kind"] == "extra" for it in forced_items) else "locked"
+        for i, it in enumerate(forced_items):
+            if it["kind"] == drop_kind:
+                dropped.append(forced_items.pop(i))
+                break
+
+    return [], dropped, [], []
+
+
+# ── optional-visit insertion ─────────────────────────────────────────
+def _insert_optional(base_order, optional_items, histories, walk_map, durations,
+                      start_time, closing_time, break_windows, start_db_id,
+                      current_waits=None, historical_now_by_id=None):
+    """
+    Greedily inserts optional (unlocked, single-count) rides into the
+    already-fixed forced schedule, one at a time, always taking whichever
+    remaining ride + position adds the least time.
+    """
+    order = list(base_order)
+    included, remaining = [], list(optional_items)
+    must_fit = len(order)
+
+    changed = True
+    while remaining and changed:
+        changed = False
+        best = None
+        for item in remaining:
+            for pos in range(len(order) + 1):
+                candidate = order[:pos] + [item["db_id"]] + order[pos:]
+                _, details = _simulate_route(candidate, histories, walk_map, durations, start_time, break_windows, start_db_id,
+                                              current_waits=current_waits, historical_now_by_id=historical_now_by_id)
+                fits = sum(1 for d in details if d["queue_join_clock"] <= closing_time)
+                if fits < must_fit + 1:
+                    continue
+                added = details[pos]["walk_from_prev"] + details[pos]["predicted_wait"] + details[pos]["ride_duration"]
+                if best is None or added < best[0]:
+                    best = (added, candidate, item)
+        if best is not None:
+            _, candidate, item = best
+            order = candidate
+            included.append(item)
+            remaining.remove(item)
+            must_fit += 1
+            changed = True
+
+    return order, included, remaining
+
+
+# ── fill remaining daylight ──────────────────────────────────────────
+def _fill_until_close(order, candidate_ids, weights, histories, walk_map, durations,
+                       start_time, closing_time, break_windows, start_db_id,
+                       current_waits=None, historical_now_by_id=None, max_counts_by_id=None):
+    """
+    Keeps appending rides for as long as there's time to queue before closing.
+    Uses weighted round-robin so every ride cycles fairly, with ties broken
+    by recency (time since last visit) rather than predicted wait.
+    """
+    order = list(order)
+    if not candidate_ids:
+        return order
+
+    visit_counts = {db_id: 0 for db_id in candidate_ids}
+    for db_id in order:
+        if db_id in visit_counts:
+            visit_counts[db_id] += 1
+
+    last_visit_step = {db_id: -1 for db_id in candidate_ids}
+    for step_idx, db_id in enumerate(order):
+        if db_id in last_visit_step:
+            last_visit_step[db_id] = step_idx
+
+    step = len(order)
+
+    while True:
+        ranked = sorted(
+            candidate_ids,
+            key=lambda db_id: (
+                visit_counts[db_id] / weights.get(db_id, 1),
+                last_visit_step[db_id],
+                historical_now_by_id.get(db_id) if historical_now_by_id.get(db_id) is not None else DEFAULT_WAIT_MIN,
+                db_id,
+            ),
+        )
+
+        placed = False
+        for db_id in ranked:
+            max_for_db = (max_counts_by_id or {}).get(db_id, float('inf'))
+            if visit_counts[db_id] >= max_for_db:
+                continue
+            candidate = order + [db_id]
+            _, cand_details = _simulate_route(
+                candidate, histories, walk_map, durations, start_time, break_windows, start_db_id,
+                current_waits=current_waits, historical_now_by_id=historical_now_by_id
+            )
+            last = cand_details[-1]
+            if last["queue_join_clock"] > closing_time:
+                continue
+            order.append(db_id)
+            visit_counts[db_id] += 1
+            last_visit_step[db_id] = step
+            step += 1
+            placed = True
+            break
+
+        if not placed:
+            break
+
+    return order
+
+
+# ── time-pin reordering ──────────────────────────────────────────────
+def _reorder_for_time_pins(order, pins, histories, walk_map, durations,
+                            start_time, closing_time, break_windows, start_db_id,
+                            current_waits=None, historical_now_by_id=None):
+    """
+    Reorders / force-inserts rides to honor time-pin targets (from
+    drag-to-slot or click-to-lock).
+
+    `pins` is a list of {"db_id": int, "target_minutes": float} dicts, one
+    per pinned occurrence. Occurrences of the same ride are anonymous --
+    nothing in `order` distinguishes one visit from another -- so pins are
+    matched to occurrences purely by processing order, never by a caller-
+    supplied index (an index has no guaranteed correspondence once the
+    route has been rebuilt from scratch, and using one used to cause pins
+    to be silently dropped).
+
+    Sentinel values (0 = force first, 1440 = force last) are HARD
+    constraints, honored UNCONDITIONALLY -- even if the ride isn't
+    currently anywhere in `order` (e.g. it was dropped earlier by
+    _fit_forced running out of daylight). This is what guarantees a ride
+    pinned first/last always actually ends up first/last.
+
+    A normal (non-sentinel) pin also always results in the ride being
+    included: if it isn't in `order`, it's inserted; if it is, one
+    occurrence is moved. Either way we prefer a position within
+    MAX_DRAG_DRIFT_MIN minutes of the target time, preferring ones that
+    also preserve the pre-pin fits_count, but the drift window always
+    wins over fits_count.
+    """
+    order = list(order)
+    if not pins:
+        return order
+
+    fits_baseline, _, _ = _route_score(
+        order, histories, walk_map, durations, start_time, closing_time,
+        break_windows, start_db_id, current_waits=current_waits,
+        historical_now_by_id=historical_now_by_id,
+    )
+
+    ordered_pins = sorted(
+        pins,
+        key=lambda p: (0 if p["target_minutes"] == 0 else 2 if p["target_minutes"] == 1440 else 1,
+                       p["target_minutes"]),
+    )
+
+    last_anchor_index = -1
+
+    for pin in ordered_pins:
+        db_id = pin["db_id"]
+        target_minutes = pin["target_minutes"]
+
+        occ_pos = next((i for i, x in enumerate(order) if x == db_id), None)
+        if occ_pos is not None:
+            order_without = order[:occ_pos] + order[occ_pos + 1:]
+            anchor_in_without = (
+                last_anchor_index - 1 if last_anchor_index > occ_pos else last_anchor_index
+            )
+        else:
+            order_without = list(order)
+            anchor_in_without = last_anchor_index
+
+        if target_minutes == 0:
+            order = [db_id] + order_without
+            last_anchor_index = 0
+            continue
+
+        if target_minutes == 1440:
+            order = order_without + [db_id]
+            last_anchor_index = len(order) - 1
+            continue
+
+        min_pos = anchor_in_without + 1 if anchor_in_without is not None and anchor_in_without >= 0 else 0
+
+        candidates = []
+        for pos in range(min_pos, len(order_without) + 1):
+            candidate = order_without[:pos] + [db_id] + order_without[pos:]
+            fits, _, details = _route_score(
+                candidate, histories, walk_map, durations, start_time, closing_time,
+                break_windows, start_db_id, current_waits=current_waits,
+                historical_now_by_id=historical_now_by_id,
+            )
+            if pos >= len(details):
+                continue
+            qjc = details[pos]['queue_join_clock']
+            dist = abs(qjc.hour * 60 + qjc.minute - target_minutes)
+            candidates.append((dist, fits >= fits_baseline, pos))
+
+        if not candidates:
+            pos = min_pos
+            order = order_without[:pos] + [db_id] + order_without[pos:]
+            last_anchor_index = pos
+            continue
+
+        within_and_fits = [c for c in candidates if c[0] <= MAX_DRAG_DRIFT_MIN and c[1]]
+        within_only     = [c for c in candidates if c[0] <= MAX_DRAG_DRIFT_MIN]
+        fits_only       = [c for c in candidates if c[1]]
+
+        if within_and_fits:
+            pool = within_and_fits
+        elif within_only:
+            pool = within_only
+        elif fits_only:
+            pool = fits_only
+        else:
+            pool = candidates
+
+        best_pos = min(pool, key=lambda c: c[0])[2]
+        order = order_without[:best_pos] + [db_id] + order_without[best_pos:]
+        last_anchor_index = best_pos
+
+    return order
+
+
+# ── public entry point ──────────────────────────────────────────────
+def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None,
+                             breaks=None, start_time=None, start_key="entrance",
+                             live_waits=None, time_pinned=None, max_counts=None,
+                             close_hour=None, close_minute=None, override_closed_keys=None,
+                             ride_priority_order=None, completed_counts=None):
+    """
+    Main entry point for route computation.
+
+    Args:
+        ride_counts: {ride_key: count} for every CHECKED ride
+        ride_locked: {ride_key: bool} for force-included rides
+        closed_ride_keys: iterable of ride_keys that are currently closed
+        breaks: list of (start_min, end_min) pairs (minutes since midnight)
+        start_time: datetime to start from (defaults to now)
+        start_key: ride_key or "entrance" to start from
+        live_waits: {ride_key: current_wait_minutes} today's live readings
+        time_pinned: list of {ride_key, target_minutes} dicts (an
+            `instance_index` key may also be present from older clients
+            and is ignored -- occurrences are matched by processing
+            order now, not by a caller-supplied index)
+        max_counts: {ride_key: max_visits} upper limit per ride
+        override_closed_keys: iterable of ride_keys that are closed but have
+            been manually checked (Advanced Mode "yellow check")
+        ride_priority_order: list of ride_keys, most important first, from
+            Advanced Mode's drag-to-rank sidebar
+
+    Returns:
+        List of (ride_key, predicted_wait, queue_join_minutes) tuples for
+        rides that fit before closing. Returns [] if nothing fits.
+        Returns None if computation failed entirely.
+    """
+    ride_locked = dict(ride_locked or {})
+    completed_counts = dict(completed_counts or {})
+
+    if time_pinned:
+        for pin in time_pinned:
+            key = pin.get('ride_key')
+            if key and key not in ride_locked:
+                ride_locked[key] = True
+
+    closed_ride_keys = set(closed_ride_keys or [])
+    all_closed_keys = set(closed_ride_keys)   # includes force-open overrides; used for the park crowd factor
+    override_closed_keys = set(override_closed_keys or [])
+    override_closed_keys &= closed_ride_keys
+    closed_ride_keys -= override_closed_keys
+    breaks = breaks or []
+
+    if start_time is None:
+        start_time = datetime.now(PARK_TIMEZONE).replace(tzinfo=None)
+    elif start_time.tzinfo is not None:
+        start_time = start_time.astimezone(PARK_TIMEZONE).replace(tzinfo=None)
+
+    checked = {k: c for k, c in ride_counts.items() if c and c > 0}
+    if not checked:
+        return []
+
+    # RULE 1: Drop closed rides completely
+    checked = {k: c for k, c in checked.items() if k not in closed_ride_keys}
+    if not checked:
+        return []
+
+    try:
+        key_to_id, id_to_key = _load_ride_id_map()
+    except Exception as e:
+        import traceback
+        print("DEBUG route computation failed while loading ride ID map:")
+        print("DEBUG SUPABASE_URL =", repr(SUPABASE_URL))
+        print("DEBUG SUPABASE_KEY set? ", bool(SUPABASE_KEY))
+        traceback.print_exc()
+        return None
+
+    checked = {k: c for k, c in checked.items() if k in key_to_id}
+    if not checked:
+        return []
+
+    all_db_ids = [key_to_id[k] for k in checked]
+    histories = _load_wait_history(all_db_ids)
+    for key in override_closed_keys:
+        db_id = key_to_id.get(key)
+        if db_id in histories:
+            histories[db_id] = [(ts, w) for ts, w in histories[db_id] if w > 0]
+    walk_map = _load_walk_times()
+    try:
+        durations = _load_ride_durations()
+    except Exception:
+        durations = {}
+
+    current_waits = {}
+    if live_waits:
+        for key, wait in live_waits.items():
+            if key in override_closed_keys:
+                continue
+            if key in checked and key in key_to_id and wait is not None:
+                current_waits[key_to_id[key]] = wait
+
+    for key in override_closed_keys:
+        print("DEBUG force-open", key, "usable history samples:", len(histories.get(key_to_id.get(key), [])))
+
+    # Rides that have a live reading are anchored to it, so their baseline must
+    # come from PREVIOUS days only. Otherwise today's samples are counted twice.
+    today_date = start_time.date()
+    for db_id in all_db_ids:
+        if db_id in current_waits:
+            histories[db_id] = [(ts, w) for ts, w in histories.get(db_id, []) if ts.date() < today_date]
+    _ctx.bins = {}
+
+    historical_now_by_id = {
+        db_id: _historical_wait_curve(histories.get(db_id, []), start_time)
+        for db_id in all_db_ids
+    }
+
+    # Park-wide crowd factor: total live wait of all open rides / total normal wait.
+    _ctx.park_ratio = None
+    try:
+        pr_live = {
+            key_to_id[k]: w for k, w in (live_waits or {}).items()
+            if w is not None and k in key_to_id and k not in all_closed_keys
+        }
+        if pr_live:
+            pr_hist = _load_wait_history(list(pr_live))
+            num = den = 0.0
+            used = 0
+            for db_id, wait in pr_live.items():
+                hn = historical_now_by_id.get(db_id)
+                if hn is None:
+                    prev = [(ts, w) for ts, w in pr_hist.get(db_id, []) if ts.date() < today_date]
+                    hn = _historical_wait_curve(prev, start_time)
+                if hn is not None and hn > MIN_MEANINGFUL_BASELINE_MIN:
+                    num += wait
+                    den += hn
+                    used += 1
+            if used >= CROWD_MIN_RIDES and den > 0:
+                _ctx.park_ratio = max(CROWD_RATIO_MIN, min(CROWD_RATIO_MAX, num / den))
+    except Exception:
+        _ctx.park_ratio = None
+    print("DEBUG park_ratio =", _ctx.park_ratio, flush=True)
+
+    start_db_id = ENTRANCE_DB_ID if start_key == "entrance" else key_to_id.get(start_key, ENTRANCE_DB_ID)
+    break_windows = _resolve_break_windows(breaks, start_time.date())
+
+    _ctx.earliest = {
+        key_to_id[k]: start_time + timedelta(minutes=FORCE_OPEN_BUFFER_MIN)
+        for k in override_closed_keys if k in key_to_id
+    }
+
+    close_hour = close_hour if close_hour is not None else DEFAULT_PARK_CLOSE_HOUR
+    close_minute = close_minute if close_minute is not None else DEFAULT_PARK_CLOSE_MINUTE
+    closing_time = start_time.replace(hour=close_hour, minute=close_minute, second=0, microsecond=0)
+
+    max_counts_by_id = {}
+    if max_counts:
+        for key, max_val in max_counts.items():
+            if key in key_to_id and key in checked:
+                max_counts_by_id[key_to_id[key]] = float('inf') if max_val is None else float(max_val)
+
+    # RULE 2: Split into forced (locked base + counted-up extras) vs optional
+    locked_instances, extra_instances, optional_instances = [], [], []
+    for key, count in checked.items():
+        db_id = key_to_id[key]
+        done = int(completed_counts.get(key, 0))
+        remaining = count - done
+
+        max_for_ride = max_counts_by_id.get(db_id, float('inf'))
+        if max_for_ride != float('inf'):
+            max_for_ride = max(0, max_for_ride - done)
+            max_counts_by_id[db_id] = max_for_ride
+
+        if remaining <= 0 or max_for_ride == 0:
+            continue
+
+        is_locked = bool(ride_locked.get(key))
+        if is_locked:
+            locked_instances.append({"db_id": db_id, "ride_key": key, "kind": "locked"})
+        else:
+            optional_instances.append({"db_id": db_id, "ride_key": key, "kind": "optional"})
+        num_extras = remaining - 1
+        if max_for_ride != float('inf'):
+            num_extras = min(num_extras, max(0, int(max_for_ride) - 1))
+        for _ in range(num_extras):
+            extra_instances.append({"db_id": db_id, "ride_key": key, "kind": "extra"})
+
+    forced_pool = locked_instances + extra_instances
+    kept_forced, dropped_forced, forced_order, _ = _fit_forced(
+        forced_pool, histories, walk_map, durations, start_time, closing_time, break_windows, start_db_id,
+        current_waits=current_waits, historical_now_by_id=historical_now_by_id
+    )
+
+    final_order, included_optional, skipped_optional = _insert_optional(
+        forced_order, optional_instances, histories, walk_map, durations,
+        start_time, closing_time, break_windows, start_db_id,
+        current_waits=current_waits, historical_now_by_id=historical_now_by_id
+    )
+
+    # RULE 6: Fill remaining daylight with weighted round-robin
+    priority_weights_by_key = _priority_fill_weights(ride_priority_order, checked.keys())
+    fill_weights = {
+        key_to_id[k]: priority_weights_by_key[k]
+        for k in checked
+    }
+    final_order = _fill_until_close(
+        final_order, all_db_ids, fill_weights, histories, walk_map, durations,
+        start_time, closing_time, break_windows, start_db_id,
+        current_waits=current_waits, historical_now_by_id=historical_now_by_id,
+        max_counts_by_id=max_counts_by_id,
+    )
+
+    # RULE 6b: Honor time-pin placement requests (drag-to-slot, click-to-lock)
+    # Runs LAST -- after forced scheduling, optional insertion, and
+    # daylight-filling -- so a ride pinned "last" truly ends up last with
+    # nothing appended after it, and a ride pinned "first" truly ends up
+    # first no matter what the fill pass did.
+    if time_pinned:
+        pins = []
+        for pin in time_pinned:
+            key  = pin.get('ride_key')
+            tmin = pin.get('target_minutes')
+            if key and key in key_to_id and tmin is not None and key in checked:
+                pins.append({"db_id": key_to_id[key], "target_minutes": tmin})
+        if pins:
+            final_order = _reorder_for_time_pins(
+                final_order, pins, histories, walk_map, durations,
+                start_time, closing_time, break_windows, start_db_id,
+                current_waits=current_waits, historical_now_by_id=historical_now_by_id,
+            )
+
+    _, details = _simulate_route(final_order, histories, walk_map, durations, start_time, break_windows, start_db_id,
+                                  current_waits=current_waits, historical_now_by_id=historical_now_by_id)
+
+    # Extract committed rides (those that fit before closing)
+    committed = []
+    for d in details:
+        if d["queue_join_clock"] <= closing_time:
+            committed.append(d)
+        else:
+            break
+    skipped_details = details[len(committed):]
+
+    # RULE 6b (cont.): a ride pinned "first" or "last" is a HARD constraint
+    # -- has to hold even if its queue-join time technically lands after
+    # closing.
+    forced_last_db_id = None
+    forced_first_db_id = None
+    if time_pinned:
+        for pin in time_pinned:
+            key = pin.get('ride_key')
+            tmin = pin.get('target_minutes')
+            if key in key_to_id and key in checked:
+                if tmin == 1440:
+                    forced_last_db_id = key_to_id[key]
+                elif tmin == 0:
+                    forced_first_db_id = key_to_id[key]
+
+    if (forced_last_db_id is not None and details
+            and details[-1]["db_id"] == forced_last_db_id
+            and len(committed) < len(details)):
+        committed.append(details[-1])
+        skipped_details = skipped_details[:-1]
+
+    if (forced_first_db_id is not None and details
+            and details[0]["db_id"] == forced_first_db_id
+            and not committed):
+        committed.append(details[0])
+        skipped_details = skipped_details[1:] if skipped_details else skipped_details
+
+    return [
+        (id_to_key.get(d["db_id"], str(d["db_id"])),
+         d["predicted_wait"],
+         d["queue_join_clock"].hour * 60 + d["queue_join_clock"].minute)
+        for d in committed
+    ]

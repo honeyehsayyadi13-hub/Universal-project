@@ -1,0 +1,2134 @@
+/* app.js 
+════════════════════════════════════════════════════════════════
+   Universal Route Planner — front end
+   ════════════════════════════════════════════════════════════════ */
+
+const API_BASE = '';
+
+// ── ride catalogue (mirrors ride_names / raw_buttons / _ride_image_paths) ──
+const RIDES = [
+  { id: 'hulk',           name: 'The Incredible Hulk Coaster',                 displayName: "The Incredible Hulk",   icon: 'assets/logos/hulk_logo.png',            x: 456  , y: 668, realX: 454, realY: 741, sizeMult: 1, brightness: 1.4 },
+  { id: 'stormForce',     name: 'Storm Force Accelatron',                      displayName: "Storm Force", icon: 'assets/logos/stormForce_logo.png',      x: 429   , y: 762, realX: 387 , realY: 738, sizeMult: 1, brightness: 1.4 },
+  { id: 'doctorDoom',     name: "Doctor Doom's Fearfall",                      displayName: "Doctor Doom", icon: 'assets/logos/Doctor-dooms-fearfall-ride-logo-b.png', x: 305  , y: 695, realX: 329 , realY: 674, sizeMult: 1, brightness: 1.4 },
+  { id: 'spiderMan',      name: 'The Amazing Adventures of Spider-Man',        displayName: "Spider Man", icon: 'assets/logos/Amazing-adventures-spider-man-ride-logo-b.png', x: 305, y: 607, realX: 310 , realY: 622, sizeMult: 1, brightness: 1.4 },
+  { id: 'bilgeRat',       name: "Popeye & Bluto's Bilge-Rat Barges",           displayName: "Bilge-rat barges", icon: 'assets/logos/bilge_rat.png',            x: 321, y: 398, realX: 321, realY: 398, sizeMult: 1, brightness: 1.4 },
+  { id: 'ripsawFalls',    name: "Dudley Do-Right's Ripsaw Falls",              displayName: "Ripsaw Falls", icon: 'assets/logos/Dudley-do-rights-ripsaw-falls-water-ride-logo-b.png', x: 166, y: 411, realX: 166, realY: 411, sizeMult: 1, brightness: 1.4 },
+  { id: 'skullIsland',    name: 'Skull Island: Reign of Kong',                 displayName: "Skull Island", icon: 'assets/logos/Skull_Island-_Reign_of_Kong_Logo.png', x: 179, y: 246, realX: 179, realY: 246, sizeMult: 0.95, brightness: 1.6 },
+  { id: 'velociCoaster',  name: 'Jurassic World VelociCoaster',                displayName: "VelociCoaster", icon: 'assets/logos/velocicoaster.png',        x: 475 , y: 325, realX: 475, realY: 325, sizeMult: 1, brightness: 1.4 },
+  { id: 'riverAdventure', name: 'Jurassic Park River Adventure',               displayName: "River Adventure", icon: 'assets/logos/jurrasicPark.png',         x: 246, y: 164, realX: 329, realY: 194, sizeMult: 1, brightness: 1.6 },
+  { id: 'hogwartsTrain',  name: 'Hogwarts Express',                            displayName: "Hogwarts Express", icon: 'assets/logos/express.png',              x: 728   , y: 331, realX: 793, realY: 288, sizeMult: 1, brightness: 0.8 },
+  { id: 'hippogriff',     name: 'Flight of the Hippogriff',                    displayName: "Hippogriff", icon: 'assets/logos/hippogriph.png',           x: 657    , y: 106, realX: 587, realY: 152, sizeMult: 1, brightness: 1.4 },
+  { id: 'hagrid',         name: "Hagrid's Magical Creatures Motorbike Adventure", displayName: "Hagrids", icon: 'assets/logos/Hagrid27s_Magical_Creatures_Motorbike_Adventure.png', x: 714  , y: 228, realX: 697, realY: 238, sizeMult: 1, brightness: 1.4 },
+  { id: 'drSeussAirRide', name: 'High in the Sky Seuss Trolley Train Ride',    displayName: "Dr. Suess's Trolly", icon: 'assets/logos/seuss.png',                x: 684 , y: 531, realX: 680, realY: 578, sizeMult: 1.1, brightness: 1.4 },
+  { id: 'caroSeussel',    name: 'Caro-Seuss-el',                               displayName: "Caro-Suess-el", icon: 'assets/logos/caro.png',                 x: 587   , y: 603, realX: 587, realY: 603, sizeMult: 1.1, brightness: 1.4 },
+  { id: 'oneFishtwoFish', name: 'One Fish, Two Fish, Red Fish, Blue Fish',     displayName: "One Fish Two Fish", icon: 'assets/logos/blue.png',                 x: 720     , y: 655, realX: 650, realY: 626, sizeMult: 1, brightness: 1.4 },
+  { id: 'catInTheHat',    name: 'The Cat in the Hat',                          displayName: "Cat in the Hat", icon: 'assets/logos/cat.png',                  x: 634 , y: 744, realX: 645, realY: 715, sizeMult: 1, brightness: 1.4 },
+  { id: 'harryPotter',    name: 'Harry Potter and the Forbidden Journey',      displayName: "Forbidden Journey", icon: 'assets/logos/hogwarts.png',             x: 536  , y: 167, realX: 539, realY: 159, sizeMult: 1, brightness: 1.4 },
+];
+const MAP_NATIVE_W = 1000;
+const MAP_NATIVE_H = 800;
+const rideById = Object.fromEntries(RIDES.map(r => [r.id, r]));
+
+// ── state ───────────────────────────────────────────────────────
+const state = {
+  visible: Object.fromEntries(RIDES.map(r => [r.id, true])),
+  counts:  Object.fromEntries(RIDES.map(r => [r.id, 1])),
+  lastCount: Object.fromEntries(RIDES.map(r => [r.id, 1])),
+  locked:  Object.fromEntries(RIDES.map(r => [r.id, false])),
+  lockBeforeBump: Object.fromEntries(RIDES.map(r => [r.id, false])),
+  breaks: [],
+  selectedStart: 'entrance',
+  route: [],
+  liveWaits: {},
+  liveOpen: {},
+  timePinned: {},
+  maxCounts: Object.fromEntries(RIDES.map(r => [r.id, Infinity])),
+  maxBeforeInfinity: Object.fromEntries(RIDES.map(r => [r.id, 0])),
+  maxWasZeroBeforeLock: Object.fromEntries(RIDES.map(r => [r.id, false])),
+  pinnedLocked: {},
+  closedChecked: Object.fromEntries(RIDES.map(r => [r.id, false])),
+  tierLists: null, // filled in below, once DEFAULT_TIER_ORDER exists
+};
+
+// Stable per-stop id, generated once when a stop is created (in generateRoute)
+// and never recomputed from array position. Pins are keyed by this instead
+// of a recomputed "instance index", which used to collide whenever two
+// stops shared a rideId or the array got reordered.
+let routeUidCounter = 0;
+function nextUid() { return 'r' + (++routeUidCounter); }
+
+// If a ride ends up pinned/selected at more distinct spots in the top bar
+// than its sidebar count currently allows, bump that count up to match --
+// otherwise the sidebar would be asking for fewer visits than the person
+// just told the route to guarantee by pinning them.
+function ensureMinCountMatchesPinnedInstances(rideId) {
+  const pinnedInstanceCount = Object.values(state.timePinned)
+    .filter(p => p.rideId === rideId).length;
+  if (pinnedInstanceCount > state.counts[rideId]) {
+    state.counts[rideId] = pinnedInstanceCount;
+    state.lastCount[rideId] = pinnedInstanceCount;
+    if (!state.visible[rideId]) state.visible[rideId] = true;
+    if (state.maxCounts[rideId] !== Infinity && state.maxCounts[rideId] < pinnedInstanceCount) {
+      state.maxCounts[rideId] = pinnedInstanceCount;
+    }
+  }
+}
+
+function minsToTime(mins) {
+  if (mins == null) return '--';
+  const total = Math.round(mins) % 1440;
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  const period = h >= 12 ? 'PM' : 'AM';
+  const hour = h % 12 || 12;
+  return `${hour}:${String(m).padStart(2, '0')} ${period}`;
+}
+
+// ── advanced / dark mode ─────────────────────────────────────────
+const DARK_MODE_KEY = 'urp.darkMode';
+const ADVANCED_MODE_KEY = 'urp.advancedMode';
+const LIGHT_MAP_SRC = 'assets/lightMap.png';
+const DARK_MAP_SRC  = 'assets/darkMap.png';
+
+function getInitialDarkMode() {
+  const stored = localStorage.getItem(DARK_MODE_KEY);
+  if (stored === 'true')  return true;
+  if (stored === 'false') return false;
+  return !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+}
+
+let darkModeOn = getInitialDarkMode();
+let advancedModeOn = localStorage.getItem(ADVANCED_MODE_KEY) === 'true';
+
+const DEFAULT_TIER_ORDER = {
+  1: ['velociCoaster', 'hulk', 'hagrid'],
+  2: ['harryPotter', 'spiderMan', 'hippogriff'],
+  3: ['stormForce', 'doctorDoom', 'skullIsland', 'hogwartsTrain', 'riverAdventure'],
+  4: ['caroSeussel', 'oneFishtwoFish', 'drSeussAirRide', 'catInTheHat', 'ripsawFalls', 'bilgeRat'],
+};
+const TIER_LABELS = ['Most Important', 'Important', 'Less Important', 'Least Important'];
+
+function getInitialTierLists() {
+  const lists = { 1: [], 2: [], 3: [], 4: [] };
+  const seen = new Set();
+
+  [1, 2, 3, 4].forEach(tier => {
+    (DEFAULT_TIER_ORDER[tier] || []).forEach(id => {
+      if (rideById[id] && !seen.has(id)) {
+        lists[tier].push(id);
+        seen.add(id);
+      }
+    });
+  });
+
+  RIDES.forEach(r => {
+    if (!seen.has(r.id)) lists[4].push(r.id);
+  });
+
+  return lists;
+}
+
+function saveTierLists() {
+  // Intentionally a no-op -- tier order is preset-only now.
+}
+
+function removeFromTierLists(rideId) {
+  for (const tier of [1, 2, 3, 4]) {
+    const idx = state.tierLists[tier].indexOf(rideId);
+    if (idx !== -1) { state.tierLists[tier].splice(idx, 1); return; }
+  }
+}
+
+function moveRideInTierLists(draggedId, tier, targetId) {
+  const arr = state.tierLists[tier];
+  let idx = arr.indexOf(targetId);
+  removeFromTierLists(draggedId);
+  if (idx === -1) idx = arr.length;
+  arr.splice(idx, 0, draggedId);
+  saveTierLists();
+}
+
+let tierTouchSrcId = null;
+let tierTouchClone = null;
+let tierTouchStartX = 0, tierTouchStartY = 0;
+let tierTouchDragging = false;
+
+function flattenPriorityOrder() {
+  return [1, 2, 3, 4].flatMap(tier => state.tierLists[tier]);
+}
+
+state.tierLists = getInitialTierLists();
+
+function applyDarkMode() {
+  const mapPaneEl = document.getElementById('mapPane');
+  mapPaneEl?.classList.toggle('map-dark', darkModeOn);
+  mapViewportEl.classList.toggle('map-dark', darkModeOn);
+
+  const wantedSrc = darkModeOn ? DARK_MAP_SRC : LIGHT_MAP_SRC;
+  if (!mapImageEl.src.endsWith(wantedSrc)) mapImageEl.src = wantedSrc;
+
+  document.getElementById('darkModeCheckbox')?.classList.toggle('checked', darkModeOn);
+  const label = document.getElementById('darkModeLabel');
+  if (label) label.textContent = darkModeOn ? 'Dark Mode' : 'Light Mode';
+}
+
+function applyAdvancedMode() {
+  document.getElementById('advancedModeCheckbox')?.classList.toggle('checked', advancedModeOn);
+}
+
+document.getElementById('advancedModeToggle')?.addEventListener('click', () => {
+  advancedModeOn = !advancedModeOn;
+  localStorage.setItem(ADVANCED_MODE_KEY, advancedModeOn);
+  applyAdvancedMode();
+  renderSidebarList();
+});
+
+document.getElementById('darkModeToggle')?.addEventListener('click', () => {
+  darkModeOn = !darkModeOn;
+  localStorage.setItem(DARK_MODE_KEY, darkModeOn);
+  applyDarkMode();
+});
+
+let breakIdCounter = 0;
+let dragSrcIdx = null;
+let touchDragSrcIdx = null;
+let touchDragClone   = null;
+let touchStartX = 0, touchStartY = 0;
+let touchDragging = false;
+
+// Clears any OTHER pin that's claiming the same sentinel slot (first or
+// last), so only one stop can ever be "force first" or "force last" at a
+// time. Comparison is done as strings on both sides so this can never
+// silently no-op due to a string/number id type mismatch (that mismatch
+// used to wipe out the pin you'd just created, immediately).
+function clearConflictingSentinelPins(sentinelValue, exceptKey) {
+  for (const [key, pin] of Object.entries(state.timePinned)) {
+    if (String(key) === String(exceptKey)) continue;
+    if (pin.targetMinutes === sentinelValue) {
+      pin.targetMinutes = null;
+    }
+  }
+}
+
+// Moves the stop at srcIdx to destIdx, and pins it there. Uses stop.uid
+// (a stable id assigned once when the stop was created) as the pin key,
+// never a recomputed array-position-based index, so this can't collide
+// with another stop of the same ride and can't be lost on reorder.
+function executeDrop(srcIdx, destIdx) {
+  if (srcIdx === null || destIdx === null || srcIdx === destIdx) return;
+
+  if (isStopDone(state.route[srcIdx])) return;
+  if (isStopDone(state.route[destIdx])) { markRouteStopDone(srcIdx); return; }
+  routeAltered = true;
+  const first   = firstFutureIdx();
+  const isFirst = destIdx === first;
+  const isLast  = destIdx === state.route.length - 1;
+  const targetStop = state.route[destIdx];
+  const targetMinutes = isFirst ? 0
+                      : isLast  ? 1440
+                      : (targetStop?.queueJoinMinutes ?? null);
+
+  const moved = state.route.splice(srcIdx, 1)[0];
+
+  if (isFirst) {
+    state.route.splice(first, 0, moved);
+  } else if (isLast) {
+    state.route.push(moved);
+  } else {
+    state.route.splice(destIdx, 0, moved);
+  }
+
+  state.timePinned[moved.uid] = { rideId: moved.rideId, targetMinutes };
+
+  if (isFirst) clearConflictingSentinelPins(0, moved.uid);
+  if (isLast)  clearConflictingSentinelPins(1440, moved.uid);
+
+  if (!state.locked[moved.rideId]) {
+    state.locked[moved.rideId] = true;
+    state.pinnedLocked[moved.rideId] = true;
+  }
+
+  ensureMinCountMatchesPinnedInstances(moved.rideId);
+
+  renderRouteBar();
+  renderSidebarList();
+}
+
+const startOptions = [{ id: 'entrance', label: 'Entrance' },
+  ...RIDES.map(r => ({ id: r.id, label: r.name }))];
+
+// ── presets (persisted in localStorage) ────────────────────────
+// ── park clock + daily ride log (separate from the sidebar presets) ──
+const RIDE_LOG_KEY = 'urp.rideLog';
+const LOG_VISIBLE_KEY = 'urp.logVisible';
+const PARK_TZ = 'America/New_York';
+let parkCloseMinutes = 20 * 60;    // fallback until /api/park-hours answers
+
+function parkNow() {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: PARK_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(new Date());
+  const get = t => parts.find(p => p.type === t).value;
+  return {
+    day: `${get('year')}-${get('month')}-${get('day')}`,
+    minutes: parseInt(get('hour'), 10) * 60 + parseInt(get('minute'), 10),
+  };
+}
+
+async function fetchParkClose() {
+  try {
+    const res = await fetch(`${API_BASE}/api/park-hours`);
+    if (!res.ok) return;
+    const d = await res.json();
+    if (typeof d.close_minutes === 'number') parkCloseMinutes = d.close_minutes;
+  } catch (e) { /* keep fallback */ }
+}
+
+// rideLog = { day, closeMinutes, done: [{rideId, predictedWait, queueJoinMinutes, manual}] } or null
+function loadRideLog() {
+  try {
+    const l = JSON.parse(localStorage.getItem(RIDE_LOG_KEY) || 'null');
+    if (l && Array.isArray(l.done)) return l;
+  } catch (e) { /* ignore */ }
+  return null;
+}
+
+let rideLog = loadRideLog();
+let rideLogVisible = localStorage.getItem(LOG_VISIBLE_KEY) !== 'false';
+let routeAltered = false;   // true once a generated route is dragged/edited
+
+function persistRideLog() {
+  try {
+    if (rideLog) localStorage.setItem(RIDE_LOG_KEY, JSON.stringify(rideLog));
+    else localStorage.removeItem(RIDE_LOG_KEY);
+  } catch (e) { /* ignore */ }
+}
+
+function isLogExpired(l) {
+  if (!l) return true;
+  const now = parkNow();
+  return l.day !== now.day || now.minutes >= l.closeMinutes;
+}
+
+// Drops the log after park close / on a new day. Callers re-render.
+function expireLog() {
+  if (!rideLog || !isLogExpired(rideLog)) return false;
+  rideLog = null;
+  persistRideLog();
+  state.route = state.route.filter(s => !s.done);
+  return true;
+}
+
+function ensureLog() {
+  expireLog();
+  if (!rideLog) {
+    const now = parkNow();
+    rideLog = { day: now.day, closeMinutes: parkCloseMinutes, done: [] };
+  }
+  return rideLog;
+}
+
+// Fresh route-stop copies of everything in the log.
+function logStops() {
+  if (!rideLog || isLogExpired(rideLog)) return [];
+  return rideLog.done.map(d => ({ ...d, uid: nextUid(), done: true }));
+}
+
+function isStopDone(stop) { return !!stop.done; }
+
+function firstFutureIdx() {
+  const i = state.route.findIndex(s => !s.done);
+  return i === -1 ? state.route.length : i;
+}
+
+// Rebuilds the log from the done stops on screen (only possible while the log is shown).
+function syncRideLog() {
+  if (!rideLog || !rideLogVisible) return;
+  rideLog.done = state.route.filter(s => s.done).map(s => ({
+    rideId: s.rideId,
+    predictedWait: s.predictedWait,
+    queueJoinMinutes: s.queueJoinMinutes,
+    manual: !!s.manual,
+  }));
+  persistRideLog();
+}
+
+// After an untouched Generate, stops turn green (and are logged) as their time passes.
+function advanceDone() {
+  if (routeAltered) return false;
+  const nowMin = parkNow().minutes;
+  let changed = false;
+  while (true) {
+    const i = firstFutureIdx();
+    const s = state.route[i];
+    if (!s || s.queueJoinMinutes == null || s.queueJoinMinutes > nowMin) break;
+    ensureLog();
+    delete state.timePinned[s.uid];
+    rideLog.done.push({
+      rideId: s.rideId,
+      predictedWait: s.predictedWait,
+      queueJoinMinutes: s.queueJoinMinutes,
+      manual: false,
+    });
+    if (rideLogVisible) s.done = true;
+    else state.route.splice(i, 1);
+    changed = true;
+  }
+  if (changed) persistRideLog();
+  return changed;
+}
+
+// Drag a ride from the sidebar onto a green/yellow stop -> yellow.
+function addManualDone(rideId) {
+  ensureLog();
+  state.route.splice(firstFutureIdx(), 0, {
+    rideId, predictedWait: null, queueJoinMinutes: null,
+    uid: nextUid(), done: true, manual: true,
+  });
+  syncRideLog();
+  renderRouteBar();
+}
+
+// Drag a planned stop onto a green/yellow stop -> yellow, removed from the plan.
+function markRouteStopDone(srcIdx) {
+  const stop = state.route[srcIdx];
+  if (!stop || stop.done) return;
+  state.route.splice(srcIdx, 1);
+  delete state.timePinned[stop.uid];
+  routeAltered = true;
+  Object.assign(stop, { done: true, manual: true, predictedWait: null, queueJoinMinutes: null });
+  state.route.splice(firstFutureIdx(), 0, stop);
+  ensureLog();
+  syncRideLog();
+  renderRouteBar();
+}
+
+// Saves the not-yet-done part of the route so it can be caught up after the app was closed.
+function persistPlan() {
+  if (!rideLog || isLogExpired(rideLog)) return;
+  rideLog.plan = state.route.filter(s => !s.done).map(s => ({
+    rideId: s.rideId,
+    predictedWait: s.predictedWait,
+    queueJoinMinutes: s.queueJoinMinutes,
+  }));
+  persistRideLog();
+}
+
+function toggleLogVisible() {
+  rideLogVisible = !rideLogVisible;
+  try { localStorage.setItem(LOG_VISIBLE_KEY, rideLogVisible); } catch (e) { /* ignore */ }
+  const future = state.route.filter(s => !s.done);
+  state.route = rideLogVisible ? [...logStops(), ...future] : future;
+  renderRouteBar();
+}
+
+function initRideLog() {
+  expireLog();
+  const plan = (rideLog && rideLog.plan ? rideLog.plan : [])
+    .map(p => ({ ...p, uid: nextUid() }));
+  state.route = [...(rideLogVisible ? logStops() : []), ...plan];
+  routeAltered = false;
+  advanceDone();          // marks everything whose time passed while the app was closed
+  renderRouteBar();
+}
+
+function refreshDoneState() {
+  const expired = expireLog();
+  const changed = advanceDone();
+  if ((expired || changed) && dragSrcIdx === null && !touchDragging) renderRouteBar();
+}
+setInterval(refreshDoneState, 30000);
+
+function renderSnapshotInfo() {
+  const btn = document.getElementById('logToggleBtn');
+  if (btn) btn.textContent = rideLogVisible ? 'Hide Log' : 'Show Log';
+}
+const PRESET_KEY = 'urp.presets';
+let presets = JSON.parse(localStorage.getItem(PRESET_KEY) || '[]');
+let presetIdCounter = presets.reduce((m, p) => Math.max(m, p.id), 0);
+let selectedPresetId = 'default';
+
+function savePresets() { localStorage.setItem(PRESET_KEY, JSON.stringify(presets)); }
+
+function presetPayload() {
+  return {
+    visible: { ...state.visible },
+    counts: { ...state.counts },
+    locked: { ...state.locked },
+    lastCount: { ...state.lastCount },
+    breaks: JSON.parse(JSON.stringify(state.breaks)),
+    selectedStart: state.selectedStart,
+    timePinned: JSON.parse(JSON.stringify(state.timePinned)),
+    maxCounts: Object.fromEntries(Object.entries(state.maxCounts).map(([k,v]) => [k, v === Infinity ? null : v])),
+    maxBeforeInfinity: { ...state.maxBeforeInfinity },
+    maxWasZeroBeforeLock: { ...state.maxWasZeroBeforeLock },
+    pinnedLocked: { ...state.pinnedLocked },
+    tierLists: JSON.parse(JSON.stringify(state.tierLists)),
+    closedChecked: { ...state.closedChecked }
+  };
+}
+
+function addPreset() {
+  presetIdCounter += 1;
+  presets.push({ id: presetIdCounter, name: `Preset ${presets.length + 1}`, ...presetPayload() });
+  selectedPresetId = presetIdCounter;
+  savePresets();
+  renderPresetDropdown();
+}
+
+
+function deletePreset(id) {
+  presets = presets.filter(p => p.id !== id);
+  presets.forEach((p, i) => { if (/^Preset \d+$/.test(p.name)) p.name = `Preset ${i + 1}`; });
+  if (selectedPresetId === id) selectedPresetId = 'default';
+  savePresets();
+  renderPresetDropdown();
+}
+
+function applyDefaultPreset() {
+  RIDES.forEach(r => {
+    state.visible[r.id] = true;
+    state.counts[r.id] = 1;
+    state.lastCount[r.id] = 1;
+    state.locked[r.id] = false;
+    state.lockBeforeBump[r.id] = false;
+    state.maxCounts[r.id] = Infinity;
+    state.maxBeforeInfinity[r.id] = 0;
+    state.maxWasZeroBeforeLock[r.id] = false;
+    state.closedChecked[r.id] = false;
+  });
+  state.breaks = [];
+  state.selectedStart = 'entrance';
+  state.timePinned = {};
+  state.pinnedLocked = {};
+  state.tierLists = getInitialTierLists();
+  selectedPresetId = 'default';
+  state.route = state.route.filter(isStopDone);
+  renderStartDropdown();
+  renderSidebarList();
+  renderPresetDropdown();
+  renderRouteBar();
+  renderPins();
+  generateRoute($('#generateRouteBtn'));
+}
+
+function applyPreset(id) {
+  const p = presets.find(pr => pr.id === id);
+  if (!p) return;
+  RIDES.forEach(r => {
+    if (r.id in p.visible)   state.visible[r.id]   = p.visible[r.id];
+    if (r.id in p.counts)    state.counts[r.id]    = p.counts[r.id];
+    if (r.id in p.locked)    state.locked[r.id]    = p.locked[r.id];
+    if (r.id in p.lastCount) state.lastCount[r.id] = p.lastCount[r.id];
+  });
+  state.breaks = JSON.parse(JSON.stringify(p.breaks));
+  state.selectedStart = p.selectedStart;
+  // Note: a preset's saved timePinned refers to route stops (by uid) that
+  // no longer exist once the app reloads/generates a new route, so it
+  // isn't meaningfully restorable here -- cleared rather than applied.
+  state.timePinned = {};
+  RIDES.forEach(r => {
+    const savedMax = (p.maxCounts || {})[r.id];
+    state.maxCounts[r.id] = (savedMax === null || savedMax === undefined) ? Infinity : savedMax;
+    state.maxBeforeInfinity[r.id] = (p.maxBeforeInfinity || {})[r.id] ?? 0;
+    state.maxWasZeroBeforeLock[r.id] = (p.maxWasZeroBeforeLock || {})[r.id] ?? false;
+  });
+  state.pinnedLocked = { ...(p.pinnedLocked || {}) };
+
+  if (p.tierLists) {
+    const lists = { 1: [], 2: [], 3: [], 4: [] };
+    const seen = new Set();
+    [1, 2, 3, 4].forEach(tier => {
+      (p.tierLists[tier] || []).forEach(id => {
+        if (rideById[id] && !seen.has(id)) { lists[tier].push(id); seen.add(id); }
+      });
+    });
+    RIDES.forEach(r => { if (!seen.has(r.id)) lists[4].push(r.id); });
+    state.tierLists = lists;
+  } else {
+    state.tierLists = getInitialTierLists();
+  }
+
+  RIDES.forEach(r => {
+    state.closedChecked[r.id] = (p.closedChecked || {})[r.id] || false;
+  });
+
+  selectedPresetId = p.id;
+  state.route = state.route.filter(isStopDone);   // keep green/yellow stops if a snapshot is in use
+  renderStartDropdown();
+  renderSidebarList();
+  renderPresetDropdown();
+  renderRouteBar();
+  renderPins();
+  generateRoute($('#generateRouteBtn'));
+}
+
+// ── DOM refs ────────────────────────────────────────────────────
+const $ = sel => document.querySelector(sel);
+const sidebarEl        = $('#sidebar');
+const topBarEl          = $('#topBar');
+const sidebarListEl     = $('#sidebarList');
+const popupEl           = $('#popup');
+const pinLayerEl        = $('#pinLayer');
+const mapImageEl        = $('#mapImage');
+const mapInnerEl        = $('#mapInner');
+const mapViewportEl     = $('#mapViewport');
+const routeItemsEl      = $('#routeItems');
+const routePlaceholderEl= $('#routePlaceholder');
+const mapPaneEl = $('#mapPane');
+
+// ═══════════════ DROPDOWNS ═══════════════
+
+function setupDropdown({ dropdown }) {
+  dropdown.addEventListener('click', e => {
+    const isBtn = e.target.closest('.dropdown-btn');
+    if (isBtn) {
+      const wasOpen = dropdown.classList.contains('open');
+      closeAllDropdowns();
+      if (!wasOpen) dropdown.classList.add('open');
+    }
+  });
+}
+
+function closeAllDropdowns() {
+  document.querySelectorAll('.dropdown.open').forEach(d => d.classList.remove('open'));
+}
+
+document.addEventListener('click', e => {
+  if (!e.target.closest('.dropdown')) closeAllDropdowns();
+});
+
+function renderStartDropdown() {
+  const list = $('#startDropdownList');
+  list.innerHTML = '';
+  startOptions.forEach(opt => {
+    const li = document.createElement('li');
+    li.className = opt.id === state.selectedStart ? 'selected' : '';
+    const span = document.createElement('span');
+    span.className = 'item-label';
+    span.textContent = opt.label.replace(/\n/g, ' ');
+    li.appendChild(span);
+    li.addEventListener('click', () => {
+      state.selectedStart = opt.id;
+      renderStartDropdown();
+      closeAllDropdowns();
+    });
+    list.appendChild(li);
+  });
+  $('#startDropdownLabel').textContent = startOptions.find(o => o.id === state.selectedStart)?.label || 'Entrance';
+}
+
+function renderPresetDropdown() {
+  const list = $('#presetDropdownList');
+  list.innerHTML = '';
+
+  const defLi = document.createElement('li');
+  defLi.className = selectedPresetId === 'default' ? 'selected' : '';
+  const defSpan = document.createElement('span');
+  defSpan.className = 'item-label';
+  defSpan.textContent = 'Default';
+  defSpan.addEventListener('click', () => { applyDefaultPreset(); closeAllDropdowns(); });
+  defLi.appendChild(defSpan);
+  list.appendChild(defLi);
+
+  presets.forEach(p => {
+    const li = document.createElement('li');
+    li.className = p.id === selectedPresetId ? 'selected' : '';
+    const span = document.createElement('span');
+    span.className = 'item-label';
+    span.textContent = p.name;
+    span.addEventListener('click', () => { applyPreset(p.id); closeAllDropdowns(); });
+    const x = document.createElement('button');
+    x.className = 'mini-x';
+    x.textContent = '✕';
+    x.addEventListener('click', ev => { ev.stopPropagation(); deletePreset(p.id); });
+    li.appendChild(span);
+    li.appendChild(x);
+    list.appendChild(li);
+  });
+
+  $('#presetDropdownLabel').textContent =
+    selectedPresetId === 'default'
+      ? 'Default'
+      : (presets.find(p => p.id === selectedPresetId)?.name || 'Default');
+}
+setupDropdown({ dropdown: $('#startDropdown') });
+setupDropdown({ dropdown: $('#presetDropdown') });
+
+
+// ═══════════════ BREAKS ═══════════════
+
+function parseTimeInput(text) {
+  const m = /^(\d{1,2})(?::(\d{2}))?$/.exec(text.trim());
+  if (!m) return null;
+  const hour = parseInt(m[1], 10);
+  const minute = m[2] ? parseInt(m[2], 10) : 0;
+  if (hour < 1 || hour > 12 || minute < 0 || minute > 59) return null;
+  return { hour, minute };
+}
+
+function toAmPm(hour, minute) {
+  let period, hour24;
+  if ([9, 10, 11].includes(hour)) { period = 'AM'; hour24 = hour; }
+  else { period = 'PM'; hour24 = hour === 12 ? 12 : hour + 12; }
+  const totalMinutes = hour24 * 60 + minute;
+  const label = `${hour}:${String(minute).padStart(2, '0')} ${period}`;
+  return { totalMinutes, label };
+}
+
+function flashTimeError() {
+  const t1 = $('#time1Input'), t2 = $('#time2Input');
+  t1.classList.add('error'); t2.classList.add('error');
+  setTimeout(() => { t1.classList.remove('error'); t2.classList.remove('error'); t1.value = ''; t2.value = ''; }, 1400);
+}
+
+$('#generateBreakBtn').addEventListener('click', () => {
+  const t1 = parseTimeInput($('#time1Input').value);
+  const t2 = parseTimeInput($('#time2Input').value);
+  if (!t1 || !t2) return flashTimeError();
+  const a = toAmPm(t1.hour, t1.minute);
+  const b = toAmPm(t2.hour, t2.minute);
+  if (b.totalMinutes <= a.totalMinutes) return flashTimeError();
+  breakIdCounter += 1;
+  state.breaks.unshift({
+    id: breakIdCounter,
+    label: `Break: ${a.label} – ${b.label}`,
+    startMin: a.totalMinutes,
+    endMin: b.totalMinutes,
+  });
+  $('#time1Input').value = '';
+  $('#time2Input').value = '';
+  renderSidebarList();
+});
+
+$('#addPresetBtn').addEventListener('click', addPreset);
+$('#logToggleBtn')?.addEventListener('click', toggleLogVisible);
+
+
+// ═══════════════ SIDEBAR RIDE LIST ═══════════════
+
+function buildRideRow(r) {
+  const row = document.createElement('div');
+  row.className = 'row';
+
+  const isClosed = state.liveOpen[r.id] === false;
+
+  if (isClosed && !state.closedChecked[r.id]) {
+    if (state.visible[r.id]) state.lastCount[r.id] = state.counts[r.id] || state.lastCount[r.id];
+    state.visible[r.id] = false;
+    state.counts[r.id] = 0;
+    state.locked[r.id] = false;
+  } else if (!isClosed && state.closedChecked[r.id]) {
+    state.closedChecked[r.id] = false;
+  }
+
+  const closedOverride = isClosed && state.closedChecked[r.id];
+  const closedLocked = isClosed && !advancedModeOn;
+
+  const cb = document.createElement('div');
+  cb.className = 'checkbox'
+    + (state.visible[r.id] ? ' checked' : '')
+    + (closedOverride ? ' checked-closed' : '')
+    + (closedLocked ? ' closed-disabled' : '');
+  cb.addEventListener('click', () => {
+    if (isClosed) {
+      if (!advancedModeOn) return;
+      if (state.closedChecked[r.id]) {
+        state.closedChecked[r.id] = false;
+        state.lastCount[r.id] = state.counts[r.id] || state.lastCount[r.id];
+        state.visible[r.id] = false;
+        state.counts[r.id] = 0;
+        state.locked[r.id] = false;
+        if (popupState.rideId === r.id) hidePopup();
+      } else {
+        state.closedChecked[r.id] = true;
+        state.visible[r.id] = true;
+        state.counts[r.id] = state.lastCount[r.id] > 0 ? state.lastCount[r.id] : 1;
+      }
+      renderSidebarList();
+      renderPins();
+      return;
+    }
+    state.visible[r.id] = !state.visible[r.id];
+    if (state.visible[r.id]) {
+      state.counts[r.id] = state.lastCount[r.id];
+    } else {
+      state.lastCount[r.id] = state.counts[r.id];
+      state.counts[r.id] = 0;
+      state.locked[r.id] = false;
+      if (popupState.rideId === r.id) hidePopup();
+    }
+    renderSidebarList();
+    renderPins();
+  });
+
+  const name = document.createElement('span');
+  name.className = 'ride-name' + (isClosed ? ' ride-name-closed' : '');
+  name.textContent = (r.displayName ?? r.name).replace(/\n/g, ' ');
+
+  const spinner = document.createElement('div');
+  spinner.className = 'spinner';
+
+  const down = document.createElement('button');
+  down.className = 'spin-btn';
+  down.disabled = state.counts[r.id] <= 0;
+  down.innerHTML = '<svg viewBox="0 0 10 10"><polygon points="1,2 9,2 5,8"/></svg>';
+  down.addEventListener('click', () => {
+    const old = state.counts[r.id];
+    const next = Math.max(0, old - 1);
+    state.counts[r.id] = next;
+    if (old === 2 && next === 1) {
+      state.locked[r.id] = state.lockBeforeBump[r.id];
+      if (!state.lockBeforeBump[r.id] && state.maxWasZeroBeforeLock[r.id]) {
+        state.maxCounts[r.id] = 0;
+        state.maxWasZeroBeforeLock[r.id] = false;
+      }
+    }
+    if (next === 0 && old > 0) {
+      state.lastCount[r.id] = old;
+      state.visible[r.id] = false;
+      state.locked[r.id] = false;
+      if (popupState.rideId === r.id) hidePopup();
+    }
+    renderSidebarList();
+    renderPins();
+  });
+
+  const count = document.createElement('span');
+  count.className = 'spin-count';
+  count.textContent = state.counts[r.id];
+
+  const up = document.createElement('button');
+  up.className = 'spin-btn';
+  up.innerHTML = '<svg viewBox="0 0 10 10"><polygon points="1,8 9,8 5,2"/></svg>';
+  up.addEventListener('click', () => {
+    const old = state.counts[r.id];
+    state.counts[r.id] = old + 1;
+    if (!state.visible[r.id]) state.visible[r.id] = true;
+    if (old === 1) {
+      state.lockBeforeBump[r.id] = state.locked[r.id];
+      state.locked[r.id] = true;
+      if (state.maxCounts[r.id] === 0) {
+        state.maxWasZeroBeforeLock[r.id] = true;
+        state.maxCounts[r.id] = 1;
+      } else {
+        state.maxWasZeroBeforeLock[r.id] = false;
+      }
+    }
+    renderSidebarList();
+    renderPins();
+  });
+
+  spinner.append(down, count, up);
+
+  const maxSpinner = document.createElement('div');
+  maxSpinner.className = 'spinner';
+
+  const maxDown = document.createElement('button');
+  maxDown.className = 'spin-btn max-spin-btn';
+  maxDown.disabled = state.maxCounts[r.id] !== Infinity && (
+    state.maxCounts[r.id] === 0 ||
+    (state.locked[r.id] && state.maxCounts[r.id] <= 1)
+  );
+  maxDown.innerHTML = '<svg viewBox="0 0 10 10"><polygon points="1,2 9,2 5,8"/></svg>';
+  maxDown.addEventListener('click', () => {
+    const floor = state.locked[r.id] ? 1 : 0;
+    if (state.maxCounts[r.id] === Infinity) {
+      state.maxCounts[r.id] = Math.max(floor, state.maxBeforeInfinity[r.id] || 0);
+    } else {
+      state.maxCounts[r.id] = Math.max(floor, state.maxCounts[r.id] - 1);
+    }
+    renderSidebarList();
+  });
+
+  const maxCountEl = document.createElement('span');
+  maxCountEl.className = 'spin-count max-count';
+  maxCountEl.textContent = state.maxCounts[r.id] === Infinity ? '∞' : state.maxCounts[r.id];
+
+  const maxUp = document.createElement('button');
+  maxUp.className = 'spin-btn max-spin-btn';
+  maxUp.innerHTML = '<svg viewBox="0 0 10 10"><polygon points="1,8 9,8 5,2"/></svg>';
+  maxUp.addEventListener('click', () => {
+    if (state.maxCounts[r.id] === Infinity) {
+      state.maxCounts[r.id] = (state.maxBeforeInfinity[r.id] > 0 ? state.maxBeforeInfinity[r.id] : 0) + 1;
+    } else {
+      state.maxCounts[r.id]++;
+    }
+    renderSidebarList();
+  });
+
+  maxSpinner.append(maxDown, maxCountEl, maxUp);
+
+  const infBtn = document.createElement('button');
+  infBtn.className = 'infinity-btn' + (state.maxCounts[r.id] === Infinity ? ' active' : '');
+  infBtn.textContent = '∞';
+  infBtn.title = 'No maximum';
+  infBtn.addEventListener('click', () => {
+    if (state.maxCounts[r.id] !== Infinity) {
+      state.maxBeforeInfinity[r.id] = state.maxCounts[r.id];
+      state.maxCounts[r.id] = Infinity;
+      renderSidebarList();
+    }
+  });
+
+  const lockable = state.visible[r.id] && state.counts[r.id] > 0;
+  if (!lockable) state.locked[r.id] = false;
+  const lock = document.createElement('button');
+  lock.className = 'lock-btn' + (state.locked[r.id] ? ' locked' : '') + (lockable ? '' : ' disabled');
+  lock.innerHTML = state.locked[r.id]
+    ? '<svg viewBox="0 0 14 14"><rect x="3" y="6" width="8" height="6" rx="1"/><path d="M4.5 6V4a2.5 2.5 0 0 1 5 0v2"/></svg>'
+    : '<svg viewBox="0 0 14 14"><rect x="3" y="6" width="8" height="6" rx="1"/><path d="M4.5 6V4a2.5 2.5 0 0 1 5 0"/></svg>';
+  lock.addEventListener('click', () => {
+    if (!lockable) return;
+    const newLocked = !state.locked[r.id];
+    state.locked[r.id] = newLocked;
+    if (newLocked) {
+      if (state.maxCounts[r.id] === 0) {
+        state.maxWasZeroBeforeLock[r.id] = true;
+        state.maxCounts[r.id] = 1;
+      } else {
+        state.maxWasZeroBeforeLock[r.id] = false;
+      }
+    } else {
+      if (state.maxWasZeroBeforeLock[r.id]) {
+        state.maxCounts[r.id] = 0;
+        state.maxWasZeroBeforeLock[r.id] = false;
+      }
+    }
+    renderSidebarList();
+  });
+
+  row.append(cb, name, spinner, maxSpinner, infBtn, lock);
+  return row;
+}
+
+function renderTieredRideList() {
+  for (let tier = 1; tier <= 4; tier++) {
+    const divider = document.createElement('div');
+    divider.className = 'tier-divider';
+    divider.textContent = `Tier ${tier} — ${TIER_LABELS[tier - 1]}`;
+    sidebarListEl.appendChild(divider);
+
+    const group = document.createElement('div');
+    group.className = 'tier-group';
+    group.dataset.tier = tier;
+
+    group.addEventListener('dragover', e => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      group.classList.add('drag-over');
+    });
+    group.addEventListener('dragleave', () => group.classList.remove('drag-over'));
+    group.addEventListener('drop', e => {
+      e.preventDefault();
+      group.classList.remove('drag-over');
+      const rideId = e.dataTransfer.getData('text/plain');
+      if (!rideId) return;
+      removeFromTierLists(rideId);
+      state.tierLists[tier].push(rideId);
+      saveTierLists();
+      renderSidebarList();
+    });
+
+    const ridesInTier = state.tierLists[tier];
+    if (!ridesInTier.length) {
+      const empty = document.createElement('div');
+      empty.className = 'tier-empty';
+      empty.textContent = 'Drop a ride here';
+      group.appendChild(empty);
+    }
+
+    ridesInTier.forEach(rideId => {
+      const r = rideById[rideId];
+      if (!r) return;
+      const row = buildRideRow(r);
+      row.classList.add('tier-row');
+      row.draggable = true;
+
+      row.addEventListener('dragstart', e => {
+        e.dataTransfer.setData('text/plain', r.id);
+        e.dataTransfer.effectAllowed = 'move';
+        row.classList.add('dragging');
+      });
+      row.addEventListener('dragend', () => {
+        row.classList.remove('dragging', 'drag-over-row');
+      });
+
+      row.addEventListener('dragover', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = 'move';
+        row.classList.add('drag-over-row');
+      });
+      row.addEventListener('dragleave', () => {
+        row.classList.remove('drag-over-top', 'drag-over-bottom');
+      });
+      row.addEventListener('drop', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        row.classList.remove('drag-over-top', 'drag-over-bottom');
+        const draggedId = e.dataTransfer.getData('text/plain');
+        if (!draggedId || draggedId === r.id) return;
+        moveRideInTierLists(draggedId, tier, r.id);
+        renderSidebarList();
+      });
+
+      row.addEventListener('touchstart', e => {
+        const touch = e.touches[0];
+        tierTouchStartX   = touch.clientX;
+        tierTouchStartY   = touch.clientY;
+        tierTouchSrcId    = r.id;
+        tierTouchDragging = false;
+      }, { passive: true });
+
+      row.addEventListener('touchmove', e => {
+        if (tierTouchSrcId === null) return;
+        const touch = e.touches[0];
+        const dx = touch.clientX - tierTouchStartX;
+        const dy = touch.clientY - tierTouchStartY;
+
+        if (!tierTouchDragging) {
+          if (Math.hypot(dx, dy) < 8) return;
+          tierTouchDragging = true;
+          row.classList.add('dragging');
+          tierTouchClone = row.cloneNode(true);
+          Object.assign(tierTouchClone.style, {
+            position: 'fixed', pointerEvents: 'none', opacity: '0.85',
+            zIndex: '9999', width: row.offsetWidth + 'px',
+            transform: 'scale(1.02)', transition: 'none',
+            left: (touch.clientX - row.offsetWidth / 2) + 'px',
+            top:  (touch.clientY - 18) + 'px',
+          });
+          document.body.appendChild(tierTouchClone);
+        }
+
+        e.preventDefault();
+        tierTouchClone.style.left = (touch.clientX - tierTouchClone.offsetWidth / 2) + 'px';
+        tierTouchClone.style.top  = (touch.clientY - 18) + 'px';
+
+        tierTouchClone.style.visibility = 'hidden';
+        const el = document.elementFromPoint(touch.clientX, touch.clientY);
+        tierTouchClone.style.visibility = '';
+
+        document.querySelectorAll('.tier-row').forEach(r2 =>
+          r2.classList.remove('drag-over-top', 'drag-over-bottom'));
+        document.querySelectorAll('.tier-group').forEach(g => g.classList.remove('drag-over'));
+
+        const overRow = el?.closest('.tier-row');
+        const overGroup = el?.closest('.tier-group');
+        if (overRow && overRow !== row) {
+          overRow.classList.add('drag-over-row');
+        } else if (overGroup) {
+          overGroup.classList.add('drag-over');
+        }
+      }, { passive: false });
+
+      row.addEventListener('touchend', e => {
+        if (!tierTouchDragging) { tierTouchSrcId = null; return; }
+        const touch = e.changedTouches[0];
+        tierTouchClone.style.visibility = 'hidden';
+        const el = document.elementFromPoint(touch.clientX, touch.clientY);
+        tierTouchClone?.remove();
+        tierTouchClone = null;
+        row.classList.remove('dragging');
+        document.querySelectorAll('.tier-row').forEach(r2 =>
+          r2.classList.remove('drag-over-top', 'drag-over-bottom'));
+        document.querySelectorAll('.tier-group').forEach(g => g.classList.remove('drag-over'));
+
+        const draggedId = tierTouchSrcId;
+        tierTouchSrcId = null;
+        tierTouchDragging = false;
+        if (!draggedId) return;
+
+        const overRow = el?.closest('.tier-row');
+        const overGroup = el?.closest('.tier-group');
+        if (overRow) {
+          const targetId = overRow.dataset.rideId;
+          if (!targetId || targetId === draggedId) return;
+          const targetTier = Number(overRow.closest('.tier-group').dataset.tier);
+          moveRideInTierLists(draggedId, targetTier, targetId);
+          renderSidebarList();
+        } else if (overGroup) {
+          const targetTier = Number(overGroup.dataset.tier);
+          removeFromTierLists(draggedId);
+          state.tierLists[targetTier].push(draggedId);
+          saveTierLists();
+          renderSidebarList();
+        }
+      });
+
+      row.dataset.rideId = r.id;
+      group.appendChild(row);
+    });
+
+    sidebarListEl.appendChild(group);
+  }
+}
+
+function renderSidebarList() {
+  sidebarListEl.innerHTML = '';
+
+  state.breaks.forEach(b => {
+    const row = document.createElement('div');
+    row.className = 'row break-row';
+    const label = document.createElement('span');
+    label.className = 'break-row-label';
+    label.textContent = b.label;
+    const x = document.createElement('button');
+    x.className = 'mini-x';
+    x.textContent = '✕';
+    x.addEventListener('click', () => {
+      state.breaks = state.breaks.filter(br => br.id !== b.id);
+      renderSidebarList();
+    });
+    row.appendChild(x);
+    row.appendChild(label);
+    sidebarListEl.appendChild(row);
+  });
+
+  if (advancedModeOn) {
+    renderTieredRideList();
+  } else {
+    flattenPriorityOrder().map(id => rideById[id]).filter(Boolean).forEach(r => {
+      const row = buildRideRow(r);
+      row.draggable = true;
+      row.addEventListener('dragstart', e => {
+        e.dataTransfer.setData('text/plain', r.id);
+        e.dataTransfer.effectAllowed = 'move';
+      });
+      sidebarListEl.appendChild(row);
+    });
+  }
+}
+
+// ═══════════════ MAP PINS + POPUP ═══════════════
+
+const popupState = { rideId: null, anchorEl: null };
+
+let pinElements = [];
+
+
+function renderPins() {
+  pinLayerEl.innerHTML = '';
+  pinElements = [];
+  RIDES.forEach(r => {
+    const isClosed = state.liveOpen[r.id] === false;
+    if (!state.visible[r.id] && !isClosed) return;
+    const pin = document.createElement('button');
+    pin.className = 'pin';
+    if (state.liveOpen[r.id] === false) pin.classList.add('closed');
+    const img = document.createElement('img');
+    img.src = r.icon;
+    img.alt = r.name;
+
+    img.draggable = false;
+    img.style.setProperty('--icon-brightness', r.brightness ?? 1.4);
+    img.onerror = () => { img.style.display = 'none'; pin.textContent = r.name.split(' ')[0]; };
+    pin.appendChild(img);
+
+
+    pin.addEventListener('contextmenu', e => e.preventDefault());
+
+    const pinEntry = { el: pin, rideId: r.id, mx: r.x, my: r.y, sizeMult: r.sizeMult ?? 1 };
+    pinElements.push(pinEntry);
+
+    pin.addEventListener('click', e => {
+      e.stopPropagation();
+      const now = Date.now();
+      if (now - lastPinTapTime < DOUBLE_TAP_MS && lastPinTapRideId === r.id) {
+        lastPinTapTime = 0;
+        lastPinTapRideId = null;
+        hidePopup();
+        toggleWaitBubbles();
+        return;
+      }
+      lastPinTapTime = now;
+      lastPinTapRideId = r.id;
+      showPopup(r.id, pin);
+    });
+
+    pinLayerEl.appendChild(pin);
+  });
+  updatePinLayout();
+}
+
+function showPopup(rideId, anchorEl) {
+  popupState.rideId = rideId;
+  popupState.anchorEl = anchorEl;
+  const r = rideById[rideId];
+  const wait = state.liveWaits[rideId];
+  const isOpen = state.liveOpen[rideId];
+  let waitLine, waitCls = '';
+  if (wait == null && isOpen !== false) { waitLine = 'Loading…'; }
+  else if (isOpen === false) { waitLine = 'Ride is currently closed'; waitCls = 'closed'; }
+  else { waitLine = `Wait: ${wait} min`; }
+
+  popupEl.innerHTML = `${(r.displayName ?? r.name).replace(/\n/g, '<br>')}<div class="wait-line ${waitCls}">${waitLine}</div>`;
+  popupEl.classList.toggle('closed', isOpen === false);
+  popupEl.classList.remove('hidden');
+  positionPopup(anchorEl);
+}
+
+function positionPopup(anchorEl) {
+  if (!anchorEl || popupState.rideId == null) return;
+  const pinRect = anchorEl.getBoundingClientRect();
+  popupEl.style.left = (pinRect.left + pinRect.width / 2) + 'px';
+  popupEl.style.top  = pinRect.top + 'px';
+}
+
+function hidePopup() {
+  popupState.rideId = null;
+  popupState.anchorEl = null;
+  popupEl.classList.add('hidden');
+}
+
+document.addEventListener('click', e => {
+  if (!e.target.closest('.pin') && !e.target.closest('.popup')) hidePopup();
+
+  if (showWaitBubbles
+      && !e.target.closest('.pin')
+      && !e.target.closest('#sidebar')
+      && !e.target.closest('#topBar')
+      && !e.target.closest('#bottomBar')
+      && !e.target.closest('.edge-toggle')
+      && !e.target.closest('.dropdown')) {
+    toggleWaitBubbles();
+  }
+});
+
+// ═══════════════ MAP ZOOM & PAN ═══════════════
+
+const MIN_MAP_ZOOM = 1;
+const MAX_MAP_ZOOM = 4;
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+function zoomT() {
+  const raw = (mapZoom - MIN_MAP_ZOOM) / (MAX_MAP_ZOOM - MIN_MAP_ZOOM);
+  const c = Math.min(1, Math.max(0, raw));
+  return c * c * (3 - 2 * c);
+}
+
+
+const WHEEL_ZOOM_RATIO = 1.12; 
+
+const WHEEL_ZOOM_SENSITIVITY = 0.0015;
+
+let mapZoom = 1;
+let mapPanX = 0;
+let mapPanY = 0;
+let mapFitWidth = 0;
+
+const PIN_SIZE = 54 * 0.9 * 1.1;
+
+const waitBubbleLayerEl = document.getElementById('waitBubbleLayer');
+let showWaitBubbles = false;
+let waitBubbleElements = [];
+let lastWaitChipTapTime = 0; 
+const DOUBLE_TAP_MS = 350;
+let lastPinTapTime = 0;
+let lastPinTapRideId = null;
+
+function renderWaitBubbles() {
+  waitBubbleLayerEl.innerHTML = '';
+  waitBubbleElements = [];
+  if (!showWaitBubbles) { return; }
+  RIDES.forEach(r => {
+    const wait = state.liveWaits[r.id];
+    const isOpen = state.liveOpen[r.id];
+    if (wait == null && isOpen !== false) return;
+    const bubble = document.createElement('div');
+    bubble.className = 'wait-bubble' + (isOpen === false ? ' closed' : '');
+    bubble.textContent = isOpen === false ? 'Closed' : `${wait}m`;
+    waitBubbleLayerEl.appendChild(bubble);
+    waitBubbleElements.push({ el: bubble, rideId: r.id });
+  });
+  updateBubbleLayout();
+}
+
+function updateBubbleLayout() {
+  if (!mapFitWidth) return;
+  const fitH = mapFitWidth * (MAP_NATIVE_H / MAP_NATIVE_W);
+  const t = zoomT();
+  waitBubbleElements.forEach(({ el, rideId }) => {
+    const r = rideById[rideId];
+    const centerX = mapPanX + (lerp(r.x, r.realX, t) / MAP_NATIVE_W) * mapFitWidth * mapZoom;
+    const centerY = mapPanY + (lerp(r.y, r.realY, t) / MAP_NATIVE_H) * fitH * mapZoom;
+    el.style.left = centerX + 'px';
+    el.style.top  = (centerY - PIN_SIZE / 2) + 'px'; 
+  });
+}
+
+function toggleWaitBubbles() {
+  showWaitBubbles = !showWaitBubbles;
+  renderWaitBubbles();
+}
+
+
+function updatePinLayout() {
+  if (!mapFitWidth) return;
+  const fitH = mapFitWidth * (MAP_NATIVE_H / MAP_NATIVE_W);
+  const t = zoomT();
+  pinElements.forEach(entry => {
+    const r = rideById[entry.rideId];
+    const mx = lerp(r.x, r.realX, t);
+    const my = lerp(r.y, r.realY, t);
+    entry.mx = mx;
+    entry.my = my;
+
+    const size = PIN_SIZE * (entry.sizeMult ?? 1);
+    entry.el.style.width  = size + 'px';
+    entry.el.style.height = size + 'px';
+    entry.el.style.left   = (mapPanX + (mx / MAP_NATIVE_W) * mapFitWidth * mapZoom) + 'px';
+    entry.el.style.top    = (mapPanY + (my / MAP_NATIVE_H) * fitH * mapZoom) + 'px';
+  });
+
+  if (popupState.rideId && popupState.anchorEl) {
+    positionPopup(popupState.anchorEl);
+  }
+
+  updateBubbleLayout();
+}
+
+
+let mapViewportRect = mapViewportEl.getBoundingClientRect();
+function refreshMapViewportRect() { mapViewportRect = mapViewportEl.getBoundingClientRect(); }
+
+function computeMapFitWidth() {
+  const natural = mapImageEl.naturalWidth || MAP_NATIVE_W;
+  const available = mapViewportEl.clientWidth || natural;
+  mapFitWidth = Math.min(natural, available);
+  mapImageEl.style.maxWidth = 'none';
+  mapImageEl.style.width = mapFitWidth + 'px';
+}
+
+function clampMapPan() {
+  const viewportW = mapViewportEl.clientWidth;
+  const viewportH = mapViewportEl.clientHeight;
+  const baseW = mapImageEl.offsetWidth || mapFitWidth;
+  const baseH = mapImageEl.offsetHeight || (baseW * (MAP_NATIVE_H / MAP_NATIVE_W));
+  const scaledW = baseW * mapZoom;
+  const scaledH = baseH * mapZoom;
+
+  if (scaledW <= viewportW) {
+    mapPanX = (viewportW - scaledW) / 2;
+  } else {
+    mapPanX = Math.min(0, Math.max(viewportW - scaledW, mapPanX));
+  }
+
+  if (scaledH <= viewportH) {
+    mapPanY = (viewportH - scaledH) / 2;
+  } else {
+    mapPanY = Math.min(0, Math.max(viewportH - scaledH, mapPanY));
+  }
+}
+
+function applyMapTransform() {
+  mapInnerEl.style.transform = `translate(${mapPanX}px, ${mapPanY}px) scale(${mapZoom})`;
+  updatePinLayout();
+}
+
+function clampZoom(z) {
+  return Math.min(MAX_MAP_ZOOM, Math.max(MIN_MAP_ZOOM, z));
+}
+
+function zoomAtPoint(targetZoomRaw, clientX, clientY, baseZoom, basePanX, basePanY) {
+  const targetZoom = clampZoom(targetZoomRaw);
+  const rect = mapViewportRect;
+  const px = clientX - rect.left;
+  const py = clientY - rect.top;
+  const imgX = (px - basePanX) / baseZoom;
+  const imgY = (py - basePanY) / baseZoom;
+  mapZoom = targetZoom;
+  mapPanX = px - imgX * mapZoom;
+  mapPanY = py - imgY * mapZoom;
+  clampMapPan();
+  applyMapTransform();
+}
+
+let wheelRatioAccum = 1;
+let wheelClientX = 0, wheelClientY = 0;
+let wheelFrameQueued = false;
+
+mapViewportEl.addEventListener('wheel', e => {
+  e.preventDefault();
+  const deltaY = Math.max(-200, Math.min(200, e.deltaY));
+  wheelRatioAccum *= Math.exp(-deltaY * WHEEL_ZOOM_SENSITIVITY);
+  wheelClientX = e.clientX;
+  wheelClientY = e.clientY;
+  if (!wheelFrameQueued) {
+    wheelFrameQueued = true;
+    requestAnimationFrame(() => {
+      wheelFrameQueued = false;
+      const ratio = wheelRatioAccum;
+      wheelRatioAccum = 1;
+      refreshMapViewportRect();
+      zoomAtPoint(mapZoom * ratio, wheelClientX, wheelClientY, mapZoom, mapPanX, mapPanY);
+    });
+  }
+}, { passive: false });
+
+let zoomAnimClearTimer = null;
+mapImageEl.addEventListener('dblclick', e => {
+  refreshMapViewportRect();
+  const targetZoom = mapZoom >= MAX_MAP_ZOOM - 0.001
+    ? MIN_MAP_ZOOM
+    : Math.min(MAX_MAP_ZOOM, mapZoom * WHEEL_ZOOM_RATIO * WHEEL_ZOOM_RATIO);
+  mapInnerEl.classList.add('map-zoom-anim');
+  pinLayerEl.classList.add('pin-zoom-anim');
+  waitBubbleLayerEl.classList.add('pin-zoom-anim');
+  zoomAtPoint(targetZoom, e.clientX, e.clientY, mapZoom, mapPanX, mapPanY);
+  clearTimeout(zoomAnimClearTimer);
+  zoomAnimClearTimer = setTimeout(() => {
+    mapInnerEl.classList.remove('map-zoom-anim');
+    pinLayerEl.classList.remove('pin-zoom-anim');
+    waitBubbleLayerEl.classList.remove('pin-zoom-anim');
+  }, 260);
+});
+
+let panPointerId = null;
+let panStartX = 0, panStartY = 0, panStartPanX = 0, panStartPanY = 0;
+let isPanning = false;
+
+mapViewportEl.addEventListener('pointerdown', e => {
+  if (e.pointerType !== 'mouse') return;
+  if (e.target.closest('.pin') || e.target.closest('.popup')) return;
+  refreshMapViewportRect();
+  panPointerId = e.pointerId;
+  panStartX = e.clientX;
+  panStartY = e.clientY;
+  panStartPanX = mapPanX;
+  panStartPanY = mapPanY;
+  isPanning = false;
+});
+
+mapViewportEl.addEventListener('pointermove', e => {
+  if (panPointerId !== e.pointerId) return;
+  const dx = e.clientX - panStartX;
+  const dy = e.clientY - panStartY;
+  if (!isPanning) {
+    if (Math.hypot(dx, dy) < 6) return;
+    isPanning = true;
+    mapViewportEl.setPointerCapture(panPointerId);
+    mapViewportEl.classList.add('panning');
+  }
+  mapPanX = panStartPanX + dx;
+  mapPanY = panStartPanY + dy;
+  clampMapPan();
+  applyMapTransform();
+});
+
+function endMapPan(e) {
+  if (panPointerId !== e.pointerId) return;
+  if (isPanning) mapViewportEl.releasePointerCapture(panPointerId);
+  panPointerId = null;
+  isPanning = false;
+  mapViewportEl.classList.remove('panning');
+}
+mapViewportEl.addEventListener('pointerup', endMapPan);
+mapViewportEl.addEventListener('pointercancel', endMapPan);
+
+let t1Id = null, t2Id = null;
+let t1 = { x: 0, y: 0 }, t2 = { x: 0, y: 0 };
+let panBase = null;
+let pinchBase = null; 
+let touchFlushPending = false;
+
+function startPanBase() {
+  pinchBase = null;
+  panBase = { startX: t1.x, startY: t1.y, startPanX: mapPanX, startPanY: mapPanY };
+}
+
+function startPinchBase() {
+  panBase = null;
+  const midX = (t1.x + t2.x) / 2;
+  const midY = (t1.y + t2.y) / 2;
+  const dist = Math.hypot(t2.x - t1.x, t2.y - t1.y);
+  const rect = mapViewportRect;
+  pinchBase = {
+    imgX: (midX - rect.left - mapPanX) / mapZoom,
+    imgY: (midY - rect.top  - mapPanY) / mapZoom,
+    startDist: dist,
+    startZoom: mapZoom,
+  };
+}
+
+function flushTouchGesture() {
+  touchFlushPending = false;
+  if (pinchBase) {
+    const midX = (t1.x + t2.x) / 2;
+    const midY = (t1.y + t2.y) / 2;
+    const dist = Math.hypot(t2.x - t1.x, t2.y - t1.y);
+    if (pinchBase.startDist < 8 || dist < 8) return;
+    const newZoom = clampZoom(pinchBase.startZoom * (dist / pinchBase.startDist));
+    const rect = mapViewportRect;
+    mapZoom = newZoom;
+    mapPanX = (midX - rect.left) - pinchBase.imgX * newZoom;
+    mapPanY = (midY - rect.top)  - pinchBase.imgY * newZoom;
+    clampMapPan();
+    applyMapTransform();
+  } else if (panBase) {
+    mapPanX = panBase.startPanX + (t1.x - panBase.startX);
+    mapPanY = panBase.startPanY + (t1.y - panBase.startY);
+    clampMapPan();
+    applyMapTransform();
+  }
+}
+
+function scheduleTouchFlush() {
+  if (!touchFlushPending) {
+    touchFlushPending = true;
+    requestAnimationFrame(flushTouchGesture);
+  }
+}
+
+mapViewportEl.addEventListener('touchstart', e => {
+  refreshMapViewportRect();
+  for (let i = 0; i < e.changedTouches.length; i++) {
+    const t = e.changedTouches[i];
+    if (t1Id === null) {
+      t1Id = t.identifier; t1 = { x: t.clientX, y: t.clientY };
+    } else if (t2Id === null && t.identifier !== t1Id) {
+      t2Id = t.identifier; t2 = { x: t.clientX, y: t.clientY };
+    }
+  }
+  if (t2Id !== null) startPinchBase();
+  else startPanBase();
+}, { passive: true });
+
+mapViewportEl.addEventListener('touchmove', e => {
+  if (!pinchBase && e.target.closest('.pin')) return;
+  e.preventDefault();
+  for (let i = 0; i < e.changedTouches.length; i++) {
+    const t = e.changedTouches[i];
+    if (t.identifier === t1Id)      t1 = { x: t.clientX, y: t.clientY };
+    else if (t.identifier === t2Id) t2 = { x: t.clientX, y: t.clientY };
+  }
+  scheduleTouchFlush();
+}, { passive: false });
+
+mapViewportEl.addEventListener('touchend', e => {
+  for (let i = 0; i < e.changedTouches.length; i++) {
+    const id = e.changedTouches[i].identifier;
+    if (id === t1Id) {
+      if (t2Id !== null) { t1Id = t2Id; t1 = { ...t2 }; t2Id = null; }
+      else t1Id = null;
+    } else if (id === t2Id) {
+      t2Id = null;
+    }
+  }
+  if (t1Id !== null && t2Id === null) startPanBase();
+  else if (t1Id === null) { panBase = null; pinchBase = null; }
+}, { passive: true });
+
+mapViewportEl.addEventListener('touchcancel', () => {
+  t1Id = null; t2Id = null;
+  panBase = null; pinchBase = null;
+}, { passive: true });
+
+// ═══════════════ TOP ROUTE BAR ═══════════════
+function renderRouteBar() {
+  advanceDone();
+  renderSnapshotInfo();
+  persistPlan();
+  if (!state.route.length) {
+    routePlaceholderEl.style.display = 'block';
+    routeItemsEl.classList.remove('active');
+    routeItemsEl.innerHTML = '';
+    return;
+  }
+  routePlaceholderEl.style.display = 'none';
+  routeItemsEl.classList.add('active');
+  routeItemsEl.innerHTML = '';
+
+  const isMobile = window.matchMedia('(max-width: 760px)').matches;
+  const bigRow   = isMobile ? 4 : 6;
+  const smallRow = isMobile ? 3 : 5;
+  const total    = state.route.length;
+
+  const rows = [];
+  if (total <= bigRow) {
+    rows.push({ start: 0, end: total });
+  } else if (total <= bigRow * 2) {
+    rows.push({ start: 0,      end: bigRow });
+    rows.push({ start: bigRow, end: total  });
+  } else {
+    let cursor = 0, parity = 0;
+    while (cursor < total) {
+      const size = parity % 2 === 0 ? bigRow : smallRow;
+      rows.push({ start: cursor, end: Math.min(cursor + size, total) });
+      cursor += size;
+      parity++;
+    }
+  }
+
+  rows.forEach(({ start, end }) => {
+    const rowEl = document.createElement('div');
+    rowEl.className = 'route-row';
+
+    for (let i = start; i < end; i++) {
+      const stop = state.route[i];
+      const r = rideById[stop.rideId];
+      if (!r) continue;
+
+      const pinEntry   = state.timePinned[stop.uid];
+      const isLocked   = pinEntry && pinEntry.targetMinutes !== null;
+      const isHighlighted = !!pinEntry;
+      const done = isStopDone(stop);
+
+      const wrap = document.createElement('div');
+      wrap.className = 'route-stop';
+      wrap.draggable = !done;
+      if (done) wrap.classList.add('done');
+      wrap.dataset.idx = i;
+
+      wrap.addEventListener('dragstart', e => {
+        dragSrcIdx = i;
+        wrap.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+      });
+
+      wrap.addEventListener('dragend', () => {
+        dragSrcIdx = null;
+        document.querySelectorAll('.route-stop').forEach(el =>
+          el.classList.remove('dragging', 'drag-over'));
+      });
+
+      wrap.addEventListener('dragover', e => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        if (dragSrcIdx !== null && dragSrcIdx !== i) {
+          document.querySelectorAll('.route-stop').forEach(el => el.classList.remove('drag-over'));
+          wrap.classList.add('drag-over');
+        }
+      });
+
+      wrap.addEventListener('dragleave', () => wrap.classList.remove('drag-over'));
+
+      wrap.addEventListener('drop', e => {
+        e.preventDefault();
+        wrap.classList.remove('drag-over');
+        const src = dragSrcIdx;
+        dragSrcIdx = null;
+        if (src === null) {
+          const rideId = e.dataTransfer.getData('text/plain');
+          if (stop.done && rideById[rideId]) addManualDone(rideId);
+          return;
+        }
+        executeDrop(src, i);
+      });
+
+      wrap.addEventListener('touchstart', e => {
+        if (done) return;
+        const touch = e.touches[0];
+        touchStartX     = touch.clientX;
+        touchStartY     = touch.clientY;
+        touchDragSrcIdx = i;
+        touchDragging   = false;
+      }, { passive: true });
+
+      wrap.addEventListener('touchmove', e => {
+        if (touchDragSrcIdx === null) return;
+        const touch = e.touches[0];
+        const dx = touch.clientX - touchStartX;
+        const dy = touch.clientY - touchStartY;
+
+        if (!touchDragging) {
+          if (Math.hypot(dx, dy) < 8) return;
+          touchDragging = true;
+          wrap.classList.add('dragging');
+          touchDragClone = wrap.cloneNode(true);
+          Object.assign(touchDragClone.style, {
+            position: 'fixed', pointerEvents: 'none', opacity: '0.85',
+            zIndex: '9999', width: wrap.offsetWidth + 'px',
+            transform: 'scale(1.05)', transition: 'none',
+            left: (touch.clientX - wrap.offsetWidth / 2) + 'px',
+            top:  (touch.clientY - 30) + 'px',
+          });
+          document.body.appendChild(touchDragClone);
+        }
+
+        e.preventDefault();
+        touchDragClone.style.left = (touch.clientX - touchDragClone.offsetWidth / 2) + 'px';
+        touchDragClone.style.top  = (touch.clientY - 30) + 'px';
+
+        if (touchDragClone) touchDragClone.style.visibility = 'hidden';
+        const el = document.elementFromPoint(touch.clientX, touch.clientY);
+        if (touchDragClone) touchDragClone.style.visibility = '';
+        const overStop = el?.closest('.route-stop');
+        document.querySelectorAll('.route-stop').forEach(s => s.classList.remove('drag-over'));
+        if (overStop && overStop !== wrap) overStop.classList.add('drag-over');
+      }, { passive: false });
+
+      wrap.addEventListener('touchend', e => {
+        if (!touchDragging) {
+          touchDragSrcIdx = null;
+          return;
+        }
+        const touch = e.changedTouches[0];
+        if (touchDragClone) touchDragClone.style.visibility = 'hidden';
+        const el = document.elementFromPoint(touch.clientX, touch.clientY);
+        touchDragClone?.remove();
+        touchDragClone = null;
+        wrap.classList.remove('dragging');
+        document.querySelectorAll('.route-stop').forEach(s => s.classList.remove('drag-over'));
+        const overStop = el?.closest('.route-stop');
+        const dropIdx  = overStop ? parseInt(overStop.dataset.idx) : -1;
+        const src = touchDragSrcIdx;
+        touchDragSrcIdx = null;
+        touchDragging   = false;
+        if (dropIdx >= 0 && dropIdx !== src) executeDrop(src, dropIdx);
+      });
+
+      const card = document.createElement('div');
+      card.className = 'route-stop-card';
+
+      const pill = document.createElement('div');
+      pill.className = 'route-pill'
+        + (done ? (stop.manual ? ' done manual' : ' done') : isLocked ? ' time-locked' : isHighlighted ? ' highlighted' : '');
+
+      let pointerDownX = 0, pointerDownY = 0;
+      pill.addEventListener('pointerdown', e => { pointerDownX = e.clientX; pointerDownY = e.clientY; });
+      pill.addEventListener('pointerup', e => {
+        const dist = Math.hypot(e.clientX - pointerDownX, e.clientY - pointerDownY);
+        if (dist > 8) return;
+        if (done) return;
+        if (pinEntry) {
+          delete state.timePinned[stop.uid];
+          const anyStillPinned = Object.values(state.timePinned).some(p => p.rideId === stop.rideId);
+          if (!anyStillPinned && state.pinnedLocked[stop.rideId]) {
+            state.locked[stop.rideId] = false;
+            delete state.pinnedLocked[stop.rideId];
+          }
+        } else {
+          const isFirst = i === firstFutureIdx();
+          const isLast  = i === state.route.length - 1;
+          state.timePinned[stop.uid] = {
+            rideId: stop.rideId,
+            targetMinutes: isFirst ? 0 : isLast ? 1440 : (stop.queueJoinMinutes ?? null),
+          };
+          if (isFirst) clearConflictingSentinelPins(0, stop.uid);
+          if (isLast)  clearConflictingSentinelPins(1440, stop.uid);
+          if (!state.locked[stop.rideId]) {
+            state.locked[stop.rideId] = true;
+            state.pinnedLocked[stop.rideId] = true;
+          }
+          ensureMinCountMatchesPinnedInstances(stop.rideId);
+        }
+        renderRouteBar();
+        renderSidebarList();
+      });
+
+      const img = document.createElement('img');
+      img.src = r.icon;
+      img.alt = r.name;
+      img.draggable = false;
+      img.onerror = () => { img.remove(); pill.innerHTML = `<span>${r.name.split(' ')[0]}</span>`; };
+      pill.appendChild(img);
+
+      const chip = document.createElement('span');
+      chip.className = 'wait-chip';
+      chip.textContent = stop.manual ? 'xxx' : stop.predictedWait == null ? '--' : `${Math.round(stop.predictedWait)}m`;
+      chip.addEventListener('click', e => {
+        e.stopPropagation();
+        const now = Date.now();
+        if (now - lastWaitChipTapTime < DOUBLE_TAP_MS) {
+          lastWaitChipTapTime = 0;
+          toggleWaitBubbles();
+        } else {
+          lastWaitChipTapTime = now;
+        }
+      });
+
+      const timeChip = document.createElement('span');
+      timeChip.className = 'time-chip';
+      timeChip.textContent = stop.manual ? 'xxx' : minsToTime(stop.queueJoinMinutes);
+
+
+
+      const remove = document.createElement('button');
+      remove.className = 'stop-remove';
+      remove.textContent = '✕';
+      remove.addEventListener('click', () => {
+        if (done) {
+          state.route.splice(i, 1);
+          syncRideLog();
+          renderRouteBar();
+          return;
+        }
+        delete state.timePinned[stop.uid];
+        state.route.splice(i, 1);
+        routeAltered = true;
+        const remaining = state.route.filter(s => s.rideId === stop.rideId).length;
+        state.maxBeforeInfinity[stop.rideId] = remaining;
+        state.maxCounts[stop.rideId] = remaining;
+        const anyStillPinned = Object.values(state.timePinned).some(p => p.rideId === stop.rideId);
+        if (!anyStillPinned && state.pinnedLocked[stop.rideId]) {
+          state.locked[stop.rideId] = false;
+          delete state.pinnedLocked[stop.rideId];
+        }
+        if (remaining === 0) {
+          state.visible[stop.rideId] = false;
+          state.locked[stop.rideId] = false;
+          state.counts[stop.rideId] = 0;
+          delete state.pinnedLocked[stop.rideId];
+        }
+        renderRouteBar();
+        renderSidebarList();
+        renderPins();
+      });
+
+      const chipGroup = document.createElement('div');
+      chipGroup.className = 'chip-group';
+      chipGroup.append(chip, timeChip);
+
+      card.append(pill, chipGroup, remove);
+      wrap.appendChild(card);
+      rowEl.appendChild(wrap);
+
+      if (i < end - 1) {
+        const arrow = document.createElement('span');
+        arrow.className = 'route-arrow';
+        arrow.textContent = '→';
+        rowEl.appendChild(arrow);
+      }
+    }
+
+    routeItemsEl.appendChild(rowEl);
+  });
+}
+
+// ═══════════════ ROUTE GENERATION ═══════════════
+
+function extractRideIdAndWait(entry) {
+  if (Array.isArray(entry)) {
+    return {
+      rideId:            entry.length > 0 ? entry[0] : undefined,
+      predictedWait:     entry.length > 1 ? entry[1] : null,
+      queueJoinMinutes:  entry.length > 2 ? entry[2] : null,
+    };
+  }
+  if (entry && typeof entry === 'object') {
+    return {
+      rideId:           entry.ride_id ?? entry.id ?? entry.ride,
+      predictedWait:    entry.predicted_wait ?? entry.predicted_wait_minutes ?? entry.wait ?? null,
+      queueJoinMinutes: entry.queue_join_minutes ?? null,
+    };
+  }
+  return { rideId: entry, predictedWait: null, queueJoinMinutes: null };
+}
+
+let routeGenerating = false;
+
+async function generateRoute(triggerBtn) {
+  if (routeGenerating) return;
+  routeGenerating = true;
+
+  const btns = [document.getElementById('getRouteBtn'), document.getElementById('generateRouteBtn')];
+  btns.forEach(b => { if (b) b.disabled = true; });
+
+  const ride_counts = {};
+  RIDES.forEach(r => { if (state.visible[r.id] && state.counts[r.id] > 0) ride_counts[r.id] = state.counts[r.id]; });
+
+  const ride_locked = {};
+  RIDES.forEach(r => { if (state.locked[r.id]) ride_locked[r.id] = true; });
+
+  ensureLog();
+  persistRideLog();
+  const doneStops = logStops();
+  const doneUids  = new Set(doneStops.map(s => s.uid));
+  const completed_counts = {};
+  doneStops.forEach(s => { completed_counts[s.rideId] = (completed_counts[s.rideId] || 0) + 1; });
+
+  const closed_ride_keys = RIDES.filter(r => state.liveOpen[r.id] === false).map(r => r.id);
+  const override_closed_keys = RIDES.filter(r => state.closedChecked[r.id]).map(r => r.id);
+  const breaks = state.breaks.map(b => [b.startMin, b.endMin]);
+
+  // NOTE: no instance_index / route_index sent anymore -- occurrences of
+  // the same ride are anonymous, so there's nothing meaningful to index.
+  // The backend matches pins to occurrences purely by processing order.
+  const time_pinned = Object.entries(state.timePinned)
+    .filter(([uid]) => !doneUids.has(uid))
+    .map(([, p]) => p)
+    .filter(p => p.targetMinutes !== null)
+    .map(p => ({
+      ride_key: p.rideId,
+      target_minutes: p.targetMinutes,
+    }));
+
+  triggerBtn.classList.add('flash');
+  setTimeout(() => triggerBtn.classList.remove('flash'), 220);
+
+  const allCheckedClosed = Object.keys(ride_counts).length > 0 &&
+    Object.keys(ride_counts).every(id => state.liveOpen[id] === false && !state.closedChecked[id]);
+  if (allCheckedClosed) {
+    routePlaceholderEl.textContent = 'All rides are currently closed.';
+    routePlaceholderEl.style.color = 'var(--danger)';
+    routePlaceholderEl.style.display = 'block';
+    routeItemsEl.classList.remove('active');
+    routeGenerating = false;
+    btns.forEach(b => { if (b) b.disabled = false; });
+    return;
+  }
+  routePlaceholderEl.style.color = '';
+  routePlaceholderEl.textContent = 'Generating…';
+  document.getElementById('generatingGif')?.classList.add('show');
+  routePlaceholderEl.style.display = 'block';
+  routeItemsEl.classList.remove('active');
+
+  try {
+    const res = await fetch(`${API_BASE}/api/route`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ride_counts, ride_locked, closed_ride_keys, override_closed_keys, breaks,
+        completed_counts,
+        start_key: (doneStops.length && state.selectedStart === 'entrance')
+          ? doneStops[doneStops.length - 1].rideId
+          : state.selectedStart,
+        live_waits: state.liveWaits,
+        time_pinned,
+        ride_priority_order: flattenPriorityOrder(),
+        max_counts: Object.fromEntries(
+          RIDES
+            .filter(r => state.visible[r.id] && state.counts[r.id] > 0)
+            .map(r => [r.id, state.maxCounts[r.id] === Infinity ? null : state.maxCounts[r.id]])
+        ),
+      }),
+    });
+
+    const data = await res.json().catch(() => null);
+    if (!res.ok) throw new Error((data && data.error) ? data.error : `route request failed: ${res.status}`);
+    if (!Array.isArray(data)) throw new Error('Unexpected response from route service.');
+
+    // Snapshot the pins BEFORE the route array is replaced, so we still
+    // have their rideId/targetMinutes to work with afterward.
+    const oldPins = Object.entries(state.timePinned)
+      .filter(([uid, p]) => p.rideId && !doneUids.has(uid))
+      .map(([, p]) => p);
+
+    // Every stop gets a fresh, stable uid -- this is what makes pin
+    // tracking collision-proof no matter how many times the same ride
+    // repeats in the route.
+    state.route = data.map(entry => ({ ...extractRideIdAndWait(entry), uid: nextUid() }));
+
+    const newTP = {};
+    const claimed = new Set();
+
+    function claimStop(idx) {
+      if (idx == null || idx < 0 || idx >= state.route.length) return null;
+      const stop = state.route[idx];
+      if (claimed.has(stop.uid)) return null;
+      claimed.add(stop.uid);
+      return stop;
+    }
+
+    oldPins.forEach(pin => {
+      let stop = null;
+      if (pin.targetMinutes === 0) {
+        stop = claimStop(0);
+      } else if (pin.targetMinutes === 1440) {
+        stop = claimStop(state.route.length - 1);
+      } else if (pin.targetMinutes !== null) {
+        let bestIdx = -1, bestDist = Infinity;
+        state.route.forEach((s, idx) => {
+          if (s.rideId !== pin.rideId || claimed.has(s.uid)) return;
+          const qjm = s.queueJoinMinutes;
+          const dist = qjm == null ? Infinity : Math.abs(qjm - pin.targetMinutes);
+          if (dist < bestDist) { bestDist = dist; bestIdx = idx; }
+        });
+        stop = claimStop(bestIdx);
+      } else {
+        const idx = state.route.findIndex(s => s.rideId === pin.rideId && !claimed.has(s.uid));
+        stop = claimStop(idx);
+      }
+      if (stop) {
+        newTP[stop.uid] = { rideId: pin.rideId, targetMinutes: pin.targetMinutes };
+      }
+    });
+
+    state.timePinned = newTP;
+    if (rideLogVisible) state.route = [...doneStops, ...state.route];
+    routeAltered = false;
+    //if (trackingSnapshot()) regeneratedSinceUse = true; - possibly unneeded?
+    //syncRideLog();
+
+    const stillPinnedRideIds = new Set(Object.values(newTP).map(p => p.rideId));
+    Object.keys(state.pinnedLocked).forEach(rideId => {
+      if (!stillPinnedRideIds.has(rideId)) {
+        state.locked[rideId] = false;
+        delete state.pinnedLocked[rideId];
+      }
+    });
+
+    if (!state.route.length) {
+      routePlaceholderEl.textContent = 'Nothing fit before closing — try unchecking a few rides or starting earlier.';
+    }
+  } catch (err) {
+    console.error(err);
+        state.route = rideLogVisible ? doneStops : [];
+    routePlaceholderEl.textContent = `Couldn't generate a route: ${err.message}`;
+   } finally {
+    routeGenerating = false;
+    btns.forEach(b => { if (b) b.disabled = false; });
+    document.getElementById('generatingGif')?.classList.remove('show');
+    renderRouteBar();
+  }
+}
+
+$('#getRouteBtn').addEventListener('click', () => generateRoute($('#getRouteBtn')));
+$('#generateRouteBtn').addEventListener('click', () => generateRoute($('#generateRouteBtn')));
+
+
+
+// ═══════════════ LIVE STATUS POLLING ═══════════════
+
+async function pollStatus() {
+  try {
+    const res = await fetch(`${API_BASE}/api/rides`);
+    if (!res.ok) return;
+    const data = await res.json();
+    const waits = {}, open = {};
+    RIDES.forEach(r => {
+      const entry = data[r.id];
+      if (entry && typeof entry.waittime === 'number') {
+        waits[r.id] = entry.waittime;
+        open[r.id] = entry.is_open === false ? false : true;
+      } else {
+        waits[r.id] = null;
+        open[r.id] = null;
+      }
+    });
+    state.liveWaits = waits;
+    state.liveOpen  = open;
+    renderSidebarList();
+    renderPins();
+    if (showWaitBubbles) renderWaitBubbles();
+    if (popupState.rideId) showPopup(popupState.rideId, [...pinLayerEl.children].find(p => p.querySelector('img')?.alt === rideById[popupState.rideId]?.name));
+  } catch (err) {
+    // best-effort; app still works with unknown wait times
+  }
+}
+
+// ═══════════════ COLLAPSE TOGGLES ═══════════════
+
+$('#sidebarToggle').addEventListener('click', () => sidebarEl.classList.toggle('collapsed'));
+
+$('#topBarToggle').addEventListener('click', () => {
+  topBarEl.classList.toggle('collapsed');
+});
+
+topBarEl.addEventListener('transitionend', (e) => {
+  if (e.propertyName === 'grid-template-rows') updateTogglePositions();
+});
+
+function getBackButtonGap() {
+  const backBtnEl = document.getElementById('backBtn');
+  return parseFloat(getComputedStyle(backBtnEl).paddingBottom) || 10;
+}
+
+const MIN_MAP_HEIGHT = 64;
+
+function updateBottomBarMinHeight() {
+  const backBtnEl = document.getElementById('backBtn');
+  const gap = getBackButtonGap();
+  const minHeight = backBtnEl.offsetHeight + gap * 2;
+  mapPaneEl.style.setProperty('--bottombar-min-h', minHeight + 'px');
+  return minHeight;
+}
+
+function updateTogglePositions() {
+  const sidebarToggle = document.getElementById('sidebarToggle');
+  const topBarToggleEl = document.getElementById('topBarToggle');
+
+  const toggleTop = topBarEl.offsetHeight;
+  topBarToggleEl.style.top = toggleTop + 'px';
+
+
+  const toggleBottom = toggleTop + topBarToggleEl.offsetHeight;
+
+  const gap = getBackButtonGap();
+  const bottomBarMinHeight = updateBottomBarMinHeight();
+  const available = mapPaneEl.clientHeight - bottomBarMinHeight;
+  const maxTopOffset = Math.max(0, available - gap - MIN_MAP_HEIGHT);
+  const topOffset = Math.min(toggleBottom, maxTopOffset);
+
+  mapPaneEl.style.setProperty('--map-top-offset', topOffset + 'px');
+
+
+  if (typeof clampMapPan === 'function' && mapFitWidth) {
+    clampMapPan();
+    applyMapTransform();
+  }
+
+if (sidebarToggle) {
+  const half = sidebarToggle.offsetHeight / 2;
+  const minTop = topBarEl.offsetHeight + half;
+  const maxTop = mapPaneEl.clientHeight - bottomBarMinHeight - half;
+  let top = Math.max(mapPaneEl.clientHeight / 2, minTop);
+  top = Math.min(top, maxTop);
+  sidebarToggle.style.top = top + 'px';
+}
+}
+
+function updateTopBarMaxHeight() {
+  const bottomBarMinHeight = updateBottomBarMinHeight();
+  const topBarToggleEl = document.getElementById('topBarToggle');
+  const gap = getBackButtonGap();
+
+
+  const reserved = bottomBarMinHeight + topBarToggleEl.offsetHeight + gap;
+  const maxH = mapPaneEl.clientHeight - reserved;
+  mapPaneEl.style.setProperty('--topbar-max-h', Math.max(0, maxH) + 'px');
+}
+
+const topBarResizeObserver = new ResizeObserver(updateTogglePositions);
+topBarResizeObserver.observe(topBarEl);
+// ═══════════════ INIT ═══════════════
+
+function init() {
+  updateTopBarMaxHeight();
+  renderStartDropdown();
+  renderPresetDropdown();
+  renderSidebarList();
+
+  applyDarkMode();
+  applyAdvancedMode();
+
+  function refreshMapImageSizing() {
+    computeMapFitWidth();
+    refreshMapViewportRect();
+    clampMapPan();
+    applyMapTransform();
+  }
+  mapImageEl.addEventListener('load', refreshMapImageSizing);
+
+  if (mapImageEl.complete) {
+    refreshMapImageSizing();
+  }
+
+  renderPins();
+  renderRouteBar();
+  pollStatus();
+  fetchParkClose();
+  initRideLog();
+  updateTogglePositions(); 
+
+
+  if (window.matchMedia('(max-width: 760px)').matches) {
+    sidebarEl.classList.add('collapsed');
+  }
+
+  window.addEventListener('resize', () => {
+    if (popupState.rideId) hidePopup();
+    updateTopBarMaxHeight();
+    updateTogglePositions();
+    computeMapFitWidth();
+    refreshMapViewportRect();
+    clampMapPan();
+    applyMapTransform();
+  });
+}
+
+init();
