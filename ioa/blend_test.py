@@ -19,7 +19,7 @@ HORIZONS_MIN = [15, 30, 60, 120, 180, 240]
 MAX_GAP_MIN = 10
 LONG_WAIT_MIN, TOL_SHORT, TOL_LONG = 60, 5, 10
 
-R = namedtuple("R", "idx h actual live old new ht hmed")
+R = namedtuple("R", "idx h actual live old new ht hmed db_id tgt")
 
 
 def tol(a):
@@ -117,7 +117,7 @@ def collect():
                     new = ro._predict_wait(p, target, current_wait=live, now=now, historical_now=hn, park_ratio=pr)
                     ht = ro._historical_wait_curve(p, target)
                     hm = hist_median(p, target) if ht is not None else None
-                    rows.append(R(idx, h, actual, live, old, new, ht, hm))
+                    rows.append(R(idx, h, actual, live, old, new, ht, hm, db_id, target))
         print(f"  done {day}", flush=True)
     return rows
 
