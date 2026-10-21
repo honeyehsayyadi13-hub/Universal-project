@@ -29,10 +29,10 @@ const rideById = Object.fromEntries(RIDES.map(r => [r.id, r]));
 
 // Icon-only map markers (no wait times, not in the sidebar or route).
 const SCAREZONES = [
-  { id: 'carnival', name: 'Infernal Carnival of Nightmares', icon: 'assets/logos/restroom.png', x: 300, y: 500, realX: 300, realY: 500, sizeMult: 0.8, brightness: 1.4 },
-  { id: 'sideshow', name: 'Sideshow of Decay', icon: 'assets/logos/restroom.png', x: 400, y: 500, realX: 400, realY: 500, sizeMult: 0.8, brightness: 1.4 },
-  { id: 'clowntown', name: 'Downtown Clowntown', icon: 'assets/logos/restroom.png', x: 500, y: 500, realX: 500, realY: 500, sizeMult: 0.8, brightness: 1.4 },
-  { id: 'fortnite', name: 'FORTNITEMARES', icon: 'assets/logos/restroom.png', x: 600, y: 500, realX: 600, realY: 500, sizeMult: 0.8, brightness: 1.4 },
+  { id: 'carnival', name: 'Infernal Carnival of Nightmares', icon: 'assets/logos/carnival.png', x: 300, y: 500, realX: 300, realY: 500, sizeMult: 0.8, brightness: 1.4 },
+  { id: 'sideshow', name: 'Sideshow of Decay', icon: 'assets/logos/downtown-clowntown.png', x: 400, y: 500, realX: 400, realY: 500, sizeMult: 0.8, brightness: 1.4 },
+  { id: 'clowntown', name: 'Downtown Clowntown', icon: 'assets/logos/sideshow-of-decay.png', x: 500, y: 500, realX: 500, realY: 500, sizeMult: 0.8, brightness: 1.4 },
+  { id: 'fortnite', name: 'FORTNITEMARES', icon: 'assets/logos/fortnite.png', x: 600, y: 500, realX: 600, realY: 500, sizeMult: 0.8, brightness: 1.4 },
 ];
 const scarezoneById = Object.fromEntries(SCAREZONES.map(l => [l.id, l]));
 
