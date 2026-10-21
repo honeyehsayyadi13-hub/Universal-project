@@ -7,23 +7,21 @@ const API_BASE = '';
 
 // ── ride catalogue (mirrors ride_names / raw_buttons / _ride_image_paths) ──
 const RIDES = [
-  { id: 'hulk',           name: 'The Incredible Hulk Coaster',                 displayName: "The Incredible Hulk",   icon: 'assets/logos/hulk_logo.png',            x: 456  , y: 668, realX: 454, realY: 741, sizeMult: 1, brightness: 1.4 },
-  { id: 'stormForce',     name: 'Storm Force Accelatron',                      displayName: "Storm Force", icon: 'assets/logos/stormForce_logo.png',      x: 429   , y: 762, realX: 387 , realY: 738, sizeMult: 1, brightness: 1.4 },
-  { id: 'doctorDoom',     name: "Doctor Doom's Fearfall",                      displayName: "Doctor Doom", icon: 'assets/logos/Doctor-dooms-fearfall-ride-logo-b.png', x: 305  , y: 695, realX: 329 , realY: 674, sizeMult: 1, brightness: 1.4 },
-  { id: 'spiderMan',      name: 'The Amazing Adventures of Spider-Man',        displayName: "Spider Man", icon: 'assets/logos/Amazing-adventures-spider-man-ride-logo-b.png', x: 305, y: 607, realX: 310 , realY: 622, sizeMult: 1, brightness: 1.4 },
-  { id: 'bilgeRat',       name: "Popeye & Bluto's Bilge-Rat Barges",           displayName: "Bilge-rat barges", icon: 'assets/logos/bilge_rat.png',            x: 321, y: 398, realX: 321, realY: 398, sizeMult: 1, brightness: 1.4 },
-  { id: 'ripsawFalls',    name: "Dudley Do-Right's Ripsaw Falls",              displayName: "Ripsaw Falls", icon: 'assets/logos/Dudley-do-rights-ripsaw-falls-water-ride-logo-b.png', x: 166, y: 411, realX: 166, realY: 411, sizeMult: 1, brightness: 1.4 },
-  { id: 'skullIsland',    name: 'Skull Island: Reign of Kong',                 displayName: "Skull Island", icon: 'assets/logos/Skull_Island-_Reign_of_Kong_Logo.png', x: 179, y: 246, realX: 179, realY: 246, sizeMult: 0.95, brightness: 1.6 },
-  { id: 'velociCoaster',  name: 'Jurassic World VelociCoaster',                displayName: "VelociCoaster", icon: 'assets/logos/velocicoaster.png',        x: 475 , y: 325, realX: 475, realY: 325, sizeMult: 1, brightness: 1.4 },
-  { id: 'riverAdventure', name: 'Jurassic Park River Adventure',               displayName: "River Adventure", icon: 'assets/logos/jurrasicPark.png',         x: 246, y: 164, realX: 329, realY: 194, sizeMult: 1, brightness: 1.6 },
-  { id: 'hogwartsTrain',  name: 'Hogwarts Express',                            displayName: "Hogwarts Express", icon: 'assets/logos/express.png',              x: 728   , y: 331, realX: 793, realY: 288, sizeMult: 1, brightness: 0.8 },
-  { id: 'hippogriff',     name: 'Flight of the Hippogriff',                    displayName: "Hippogriff", icon: 'assets/logos/hippogriph.png',           x: 657    , y: 106, realX: 587, realY: 152, sizeMult: 1, brightness: 1.4 },
-  { id: 'hagrid',         name: "Hagrid's Magical Creatures Motorbike Adventure", displayName: "Hagrids", icon: 'assets/logos/Hagrid27s_Magical_Creatures_Motorbike_Adventure.png', x: 714  , y: 228, realX: 697, realY: 238, sizeMult: 1, brightness: 1.4 },
-  { id: 'drSeussAirRide', name: 'High in the Sky Seuss Trolley Train Ride',    displayName: "Dr. Suess's Trolly", icon: 'assets/logos/seuss.png',                x: 684 , y: 531, realX: 680, realY: 578, sizeMult: 1.1, brightness: 1.4 },
-  { id: 'caroSeussel',    name: 'Caro-Seuss-el',                               displayName: "Caro-Suess-el", icon: 'assets/logos/caro.png',                 x: 587   , y: 603, realX: 587, realY: 603, sizeMult: 1.1, brightness: 1.4 },
-  { id: 'oneFishtwoFish', name: 'One Fish, Two Fish, Red Fish, Blue Fish',     displayName: "One Fish Two Fish", icon: 'assets/logos/blue.png',                 x: 720     , y: 655, realX: 650, realY: 626, sizeMult: 1, brightness: 1.4 },
-  { id: 'catInTheHat',    name: 'The Cat in the Hat',                          displayName: "Cat in the Hat", icon: 'assets/logos/cat.png',                  x: 634 , y: 744, realX: 645, realY: 715, sizeMult: 1, brightness: 1.4 },
-  { id: 'harryPotter',    name: 'Harry Potter and the Forbidden Journey',      displayName: "Forbidden Journey", icon: 'assets/logos/hogwarts.png',             x: 536  , y: 167, realX: 539, realY: 159, sizeMult: 1, brightness: 1.4 },
+  { id: 'Revenge of the Mummy',                       name: 'Revenge of the Mummy',                       displayName: "Revenge of the Mummy", icon: 'assets/logos/mummy.png',                                       x: 456, y: 668, realX: 454, realY: 741, sizeMult: 1,    brightness: 1.4 },
+  { id: 'Harry Potter and the Escape from Gringotts', name: 'Harry Potter and the Escape from Gringotts', displayName: "Gringotts",            icon: 'assets/logos/gringotts.png',                                 x: 429, y: 762, realX: 387, realY: 738, sizeMult: 1,    brightness: 1.4 },
+  { id: 'Transformers',                               name: "Transformers",                               displayName: "Transformers",          icon: 'assets/logos/transformers.png',               x: 305, y: 695, realX: 329, realY: 674, sizeMult: 1,    brightness: 1.4 },
+  { id: 'Men In Black',                               name: 'Men In Black',                               displayName: "Men In Black",           icon: 'assets/logos/MIB.png',       x: 305, y: 607, realX: 310, realY: 622, sizeMult: 1,    brightness: 1.4 },
+  { id: 'Stranger Things',                            name: "Stranger Things",                            displayName: "Stranger Things",     icon: 'assets/logos/stranger-things.png',                                       x: 321, y: 398, realX: 321, realY: 398, sizeMult: 1,    brightness: 1.4 },
+  { id: 'Evil Dead Burn',                             name: "Evil Dead Burn",                             displayName: "Evil Dead Burn",         icon: 'assets/logos/Evil-Dead-Burn.png', x: 166, y: 411, realX: 166, realY: 411, sizeMult: 1,    brightness: 1.4 },
+  { id: 'Jack and Oddfellow',                         name: 'Jack and Oddfellow',                         displayName: "Jack and Oddfellow",         icon: 'assets/logos/Jack-And-Oddfellow.png',                x: 179, y: 246, realX: 179, realY: 246, sizeMult: 0.95, brightness: 1.6 },
+  { id: 'Ozzy Osbourne',                               name: 'Ozzy Osbourne',                              displayName: "Ozzy Osbourne",        icon: 'assets/logos/Ozzy-Osbourne.png',                                   x: 475, y: 325, realX: 475, realY: 325, sizeMult: 1,    brightness: 1.4 },
+  { id: 'MADLANDS: Caged Cannibals',                  name: 'MADLANDS: Caged Cannibals',                  displayName: "MADLANDS: Caged Cannibals",      icon: 'assets/logos/MADLANDS.png',                                    x: 246, y: 164, realX: 329, realY: 194, sizeMult: 1,    brightness: 1.6 },
+  { id: 'Cybergoria',                                 name: 'Cybergoria',                                 displayName: "Cybergoria",     icon: 'assets/logos/cybergoria.png',                                         x: 728, y: 331, realX: 793, realY: 288, sizeMult: 1,    brightness: 0.8 },
+  { id: 'INVASION: Alien Abduction',                  name: 'INVASION: Alien Abduction',                  displayName: "INVASION: Alien Abduction",           icon: 'assets/logos/invasion.png',                                      x: 657, y: 106, realX: 587, realY: 152, sizeMult: 1,    brightness: 1.4 },
+  { id: 'H.R. Bloodngutz',                            name: "H.R. Bloodngutz",                            displayName: "H.R. Bloodngutz",              icon: 'assets/logos/bloodngutz.png', x: 714, y: 228, realX: 697, realY: 238, sizeMult: 1,    brightness: 1.4 },
+  { id: 'Hellraiser',                                 name: 'Hellraiser',                                 displayName: "Hellraiser",   icon: 'assets/logos/hellraiser.png',                                           x: 684, y: 531, realX: 680, realY: 578, sizeMult: 1.1,  brightness: 1.4 },
+  { id: 'Sinners',                                    name: 'Sinners',                                    displayName: "Sinners",        icon: 'assets/logos/sinners.png',                                            x: 587, y: 603, realX: 587, realY: 603, sizeMult: 1.1,  brightness: 1.4 },
+
 ];
 const MAP_NATIVE_W = 1000;
 const MAP_NATIVE_H = 800;
@@ -100,11 +98,12 @@ function getInitialDarkMode() {
 let darkModeOn = getInitialDarkMode();
 let advancedModeOn = localStorage.getItem(ADVANCED_MODE_KEY) === 'true';
 
+
 const DEFAULT_TIER_ORDER = {
-  1: ['velociCoaster', 'hulk', 'hagrid'],
-  2: ['harryPotter', 'spiderMan', 'hippogriff'],
-  3: ['stormForce', 'doctorDoom', 'skullIsland', 'hogwartsTrain', 'riverAdventure'],
-  4: ['caroSeussel', 'oneFishtwoFish', 'drSeussAirRide', 'catInTheHat', 'ripsawFalls', 'bilgeRat'],
+  1: ['Revenge of the Mummy', 'Harry Potter and the Escape from Gringotts', 'Stranger Things', 'Cybergoria'],
+  2: ['H.R. Bloodngutz', 'Ozzy Osbourne', 'Jack and Oddfellow'],
+  3: ['Sinners', 'Hellraiser', 'INVASION: Alien Abduction', 'Evil Dead Burn', 'MADLANDS: Caged Cannibals'],
+  4: ['Transformers', 'Men In Black'],
 };
 const TIER_LABELS = ['Most Important', 'Important', 'Less Important', 'Least Important'];
 
@@ -259,7 +258,7 @@ const startOptions = [{ id: 'entrance', label: 'Entrance' },
 
 // ── presets (persisted in localStorage) ────────────────────────
 // ── park clock + daily ride log (separate from the sidebar presets) ──
-const RIDE_LOG_KEY = 'urp.rideLog';
+const RIDE_LOG_KEY = 'hhn.rideLog';
 const LOG_VISIBLE_KEY = 'urp.logVisible';
 const PARK_TZ = 'America/New_York';
 let parkCloseMinutes = 20 * 60;    // fallback until /api/park-hours answers
@@ -444,7 +443,7 @@ function renderSnapshotInfo() {
   const btn = document.getElementById('logToggleBtn');
   if (btn) btn.textContent = rideLogVisible ? 'Hide Log' : 'Show Log';
 }
-const PRESET_KEY = 'urp.presets';
+const PRESET_KEY = 'hhn.presets';
 let presets = JSON.parse(localStorage.getItem(PRESET_KEY) || '[]');
 let presetIdCounter = presets.reduce((m, p) => Math.max(m, p.id), 0);
 let selectedPresetId = 'default';
