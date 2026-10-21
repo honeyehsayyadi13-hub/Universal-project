@@ -42,7 +42,7 @@ def rides():
         from zoneinfo import ZoneInfo
         now = datetime.now(ZoneInfo("America/New_York"))
         close_hour, close_minute = park_hours
-        if (now.hour, now.minute) >= (close_hour, close_minute):
+        if (2, 0) <= (now.hour, now.minute) < (18, 30):
             payload = {k: {**v, "is_open": False, "waittime": 0} for k, v in payload.items()}
 
     return jsonify(payload)
@@ -52,8 +52,8 @@ def rides():
 def route():
     payload = request.json or {}
 
-    # Pull today's real Islands of Adventure closing time if it's available;
-    # compute_and_print_route falls back to 8 PM on its own if this is None.
+    # Pull today's real Halloween Horror Night's closing time if it's available;
+    # compute_and_print_route falls back to 2 PM on its own if this is None.
     park_hours = Data.get_park_close_time()
     close_hour, close_minute = park_hours if park_hours else (None, None)
     try:

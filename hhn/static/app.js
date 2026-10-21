@@ -20,7 +20,7 @@ const RIDES = [
   { id: 'INVASION: Alien Abduction',                  name: 'INVASION: Alien Abduction',                  displayName: "INVASION: Alien Abduction",           icon: 'assets/logos/invasion.png',                                      x: 657, y: 106, realX: 587, realY: 152, sizeMult: 1,    brightness: 1.4 },
   { id: 'H.R. Bloodngutz',                            name: "H.R. Bloodngutz",                            displayName: "H.R. Bloodngutz",              icon: 'assets/logos/bloodngutz.png', x: 714, y: 228, realX: 697, realY: 238, sizeMult: 1,    brightness: 1.4 },
   { id: 'Hellraiser',                                 name: 'Hellraiser',                                 displayName: "Hellraiser",   icon: 'assets/logos/hellraiser.png',                                           x: 684, y: 531, realX: 680, realY: 578, sizeMult: 1.1,  brightness: 1.4 },
-  { id: 'Sinners',                                    name: 'Sinners',                                    displayName: "Sinners",        icon: 'assets/logos/sinners.png',                                            x: 587, y: 603, realX: 587, realY: 603, sizeMult: 1.1,  brightness: 1.4 },
+  { id: 'Sinners',                                    name: 'Sinners',                                    displayName: "Sinners",        icon: 'assets/logos/IDONTHAVETHIS.png',                                            x: 587, y: 603, realX: 587, realY: 603, sizeMult: 1.1,  brightness: 1.4 },
 
 ];
 const MAP_NATIVE_W = 1000;

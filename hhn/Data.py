@@ -12,23 +12,21 @@ _cache_ts: float = 0.0     # unix timestamp of that fetch
 CACHE_TTL = 30             # seconds before we re-hit queue-times.com
 
 RIDE_NAME_MAP = {
-    "The Incredible Hulk Coaster®":                    "hulk",
-    "Storm Force Accelatron®":                         "stormForce",
-    "Doctor Doom's Fearfall®":                         "doctorDoom",
-    "The Amazing Adventures of Spider-Man®":           "spiderMan",
-    "Popeye & Bluto's Bilge-Rat Barges®":             "bilgeRat",
-    "Dudley Do-Right's Ripsaw Falls®":                 "ripsawFalls",
-    "Skull Island: Reign of Kong":                     "skullIsland",
-    "Jurassic World VelociCoaster":                    "velociCoaster",
-    "Jurassic Park River Adventure":                   "riverAdventure",
-    "Harry Potter and the Forbidden Journey™":         "harryPotter",
-    "Hogwarts Express™ - Hogsmeade™ Station":          "hogwartsTrain",
-    "Flight of the Hippogriff™":                       "hippogriff",
-    "Hagrid's Magical Creatures Motorbike Adventure™": "hagrid",
-    "The High in the Sky Seuss Trolley Train Ride!™":  "drSeussAirRide",
-    "Caro-Seuss-el™":                                  "caroSeussel",
-    "One Fish, Two Fish, Red Fish, Blue Fish™":        "oneFishtwoFish",
-    "The Cat in The Hat™":                             "catInTheHat",
+    "Revenge of the Mummy":                                "Revenge of the Mummy",
+    "Harry Potter and the Escape from Gringotts™":         "Harry Potter and the Escape from Gringotts",
+    "TRANSFORMERS™: The Ride-3D":                         "Transformers",
+    "MEN IN BLACK™ Alien Attack!":                         "Men In Black",
+    "Stranger Things 5":              "Stranger Things",
+    "Evil Dead Burn":                 "Evil Dead Burn",
+    "Jack & Oddfellow: Chaos & Control":                     "Jack and Oddfellow",
+    "Ozzy Osbourne: Prince of Darkness":                    "Ozzy Osbourne",
+    "MADLANDS: Caged Cannibals":                   "MADLANDS: Caged Cannibals",
+    "Cybergoria":         "Cybergoria",
+    "INVASION: Alien Abduction":          "INVASION: Alien Abduction",
+    "H.R. Bloodengutz Presents: A Halloween Fright-Tacular!":                       "H.R. Bloodngutz",
+    "Hellraiser": "Hellraiser",
+    "Sinners":  "Sinners",
+ 
 }
 
 
@@ -47,7 +45,7 @@ def get_live_wait_times() -> dict:
     if _cache and (now - _cache_ts) < CACHE_TTL:
         return _cache
 
-    url = "https://queue-times.com/parks/64/queue_times.json"
+    url = "https://queue-times.com/parks/65/queue_times.json"
 
     headers = {
         "User-Agent": "Mozilla/5.0 (compatible; UniversalRoutePlanner/1.0; +https://universal-project.onrender.com)",
@@ -157,6 +155,10 @@ def _resolve_ioa_entity_id():
 
 
 def get_park_close_time(for_date=None):
+    return (2, 0)  # HHN closes at 2 AM
+
+
+def _old_get_park_close_time(for_date=None):
     """
     Return (hour, minute) that Islands of Adventure closes on `for_date`
     (defaults to today), fetched live from ThemeParks.wiki.
