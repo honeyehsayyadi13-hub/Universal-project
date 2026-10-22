@@ -830,8 +830,9 @@ input { font-family: inherit; }
 }
 
 .pin.closed img {
-  filter: grayscale(0.6) drop-shadow(0 2px 4px rgba(0,0,0,0.5)) drop-shadow(0 0 2px rgba(0,0,0,0.45));
-  opacity: 0.6; /*hon - 0.6*/
+  /*filter: grayscale(0.6) drop-shadow(0 2px 4px rgba(0,0,0,0.5)) drop-shadow(0 0 2px rgba(0,0,0,0.45)); TEMP DISABLED*/
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5)) drop-shadow(0 0 2px rgba(0,0,0,0.45));
+  /* opacity: 0.6; */ /* TEMP DISABLED */
 }
 
 .wait-bubble {

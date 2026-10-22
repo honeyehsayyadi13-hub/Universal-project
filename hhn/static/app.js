@@ -7,20 +7,20 @@ const API_BASE = '';
 
 // ── ride catalogue (mirrors ride_names / raw_buttons / _ride_image_paths) ──
 const RIDES = [
-  { id: 'Revenge of the Mummy',                       name: 'Revenge of the Mummy',                       displayName: "Revenge of the Mummy", icon: 'assets/logos/mummy.png',                                       x: 420, y: 316, realX: 454, realY: 741, sizeMult: 0.8,    brightness: 1 },
+  { id: 'Revenge of the Mummy',                       name: 'Revenge of the Mummy',                       displayName: "Revenge of the Mummy", icon: 'assets/logos/mummy.png',                                       x: 420, y: 299, realX: 408, realY: 319, sizeMult: 1.2,    brightness: 1.2 },
   { id: 'Harry Potter and the Escape from Gringotts', name: 'Harry Potter and the Escape from Gringotts', displayName: "Gringotts",            icon: 'assets/logos/gringotts.png',                                 x: 793, y: 293, realX: 787, realY: 309, sizeMult: 0.9,    brightness: 2.4 },
-  { id: 'Transformers',                               name: "Transformers",                               displayName: "Transformers",          icon: 'assets/logos/Transformers.png',               x: 365, y: 492, realX: 329, realY: 674, sizeMult: 0.8,    brightness: 1.4 },
-  { id: 'Men In Black',                               name: 'Men In Black',                               displayName: "Men In Black",           icon: 'assets/logos/MIB.png',       x: 924, y: 603, realX: 935, realY: 586, sizeMult: 0.9,    brightness: 1.4 },
-  { id: 'Stranger Things',                            name: "Stranger Things",                            displayName: "Stranger Things",     icon: 'assets/logos/stranger-things.png',                                       x: 321, y: 398, realX: 321, realY: 398, sizeMult: 1,    brightness: 1.4 },
-  { id: 'Evil Dead Burn',                             name: "Evil Dead Burn",                             displayName: "Evil Dead Burn",         icon: 'assets/logos/Evil-Dead-Burn.png', x: 166, y: 411, realX: 166, realY: 411, sizeMult: 0.7,    brightness: 1.4 },
-  { id: 'Jack and Oddfellow',                         name: 'Jack and Oddfellow',                         displayName: "Jack and Oddfellow",         icon: 'assets/logos/Jack-And-Oddfellow.png',                x: 241, y: 446, realX: 179, realY: 246, sizeMult: 0.8, brightness: 1.6 },
-  { id: 'Ozzy Osbourne',                              name: 'Ozzy Osbourne',                              displayName: "Ozzy Osbourne",        icon: 'assets/logos/Ozzy Osbourne.png',                                   x: 475, y: 325, realX: 475, realY: 325, sizeMult: 1,    brightness: 1.4 },
-  { id: 'MADLANDS: Caged Cannibals',                  name: 'MADLANDS: Caged Cannibals',                  displayName: "MADLANDS: Caged Cannibals",      icon: 'assets/logos/MADLANDS.png',                                    x: 166, y: 341, realX: 329, realY: 194, sizeMult: 1,    brightness: 1.6 },
-  { id: 'Cybergoria',                                 name: 'Cybergoria',                                 displayName: "Cybergoria",     icon: 'assets/logos/cybergoria.png',                                         x: 554, y: 376, realX: 793, realY: 288, sizeMult: 1,    brightness: 1.2 },
-  { id: 'INVASION: Alien Abduction',                  name: 'INVASION: Alien Abduction',                  displayName: "INVASION: Alien Abduction",           icon: 'assets/logos/invasion.png',                                      x: 737, y: 612, realX: 587, realY: 152, sizeMult: 1,    brightness: 1.6 },
-  { id: 'H.R. Bloodngutz',                            name: "H.R. Bloodngutz",                            displayName: "H.R. Bloodngutz",              icon: 'assets/logos/bloodngutz.png', x: 853, y: 687, realX: 697, realY: 238, sizeMult: 1,    brightness: 1.4 },
-  { id: 'Hellraiser',                                 name: 'Hellraiser',                                 displayName: "Hellraiser",   icon: 'assets/logos/hellraiser.png',                                           x: 919, y: 444, realX: 680, realY: 578, sizeMult: 1.1,  brightness: 1.4 },
-  { id: 'Sinners',                                    name: 'Sinners',                                    displayName: "Sinners",        icon: 'assets/logos/sinners.png',                                            x: 909, y: 510, realX: 587, realY: 603, sizeMult: 1.1,  brightness: 1.4 },
+  { id: 'Transformers',                               name: "Transformers",                               displayName: "Transformers",          icon: 'assets/logos/Transformers.png',               x: 375, y: 479, realX: 356, realY: 475, sizeMult: 0.8,    brightness: 1.4 },
+  { id: 'Men In Black',                               name: 'Men In Black',                               displayName: "Men In Black",           icon: 'assets/logos/MIB.png',       x: 923, y: 582, realX: 904, realY: 579, sizeMult: 0.8,    brightness: 1.4 },
+  { id: 'Stranger Things',                            name: "Stranger Things",                            displayName: "Stranger Things",     icon: 'assets/logos/stranger-things.png',                                       x: 139, y: 537, realX: 167, realY: 538, sizeMult: 1,    brightness: 1.4 },
+  { id: 'Evil Dead Burn',                             name: "Evil Dead Burn",                             displayName: "Evil Dead Burn",         icon: 'assets/logos/Evil-Dead-Burn.png', x: 104, y: 629, realX: 134, realY: 528, sizeMult: 0.7,    brightness: 2 },
+  { id: 'Jack and Oddfellow',                         name: 'Jack and Oddfellow',                         displayName: "Jack and Oddfellow",         icon: 'assets/logos/Jack-And-Oddfellow.png',                x: 241, y: 483, realX: 269, realY: 444, sizeMult: 0.8, brightness: 1.6 },
+  { id: 'Ozzy Osbourne',                              name: 'Ozzy Osbourne',                              displayName: "Ozzy Osbourne",        icon: 'assets/logos/Ozzy Osbourne.png',                                   x: 261, y: 363, realX: 280, realY: 413, sizeMult: 1,    brightness: 1.4 },
+  { id: 'MADLANDS: Caged Cannibals',                  name: 'MADLANDS: Caged Cannibals',                  displayName: "MADLANDS: Caged Cannibals",      icon: 'assets/logos/MADLANDS.png',                                    x: 133, y: 360, realX: 243, realY: 411, sizeMult: 1,    brightness: 5 },
+  { id: 'Cybergoria',                                 name: 'Cybergoria',                                 displayName: "Cybergoria",     icon: 'assets/logos/cybergoria.png',                                         x: 554, y: 376, realX: 547, realY: 386, sizeMult: 1,    brightness: 5},
+  { id: 'INVASION: Alien Abduction',                  name: 'INVASION: Alien Abduction',                  displayName: "INVASION: Alien Abduction",           icon: 'assets/logos/invasion.png',                                      x: 737, y: 612, realX: 741, realY: 591, sizeMult: 1,    brightness: 5 },
+  { id: 'H.R. Bloodngutz',                            name: "H.R. Bloodngutz",                            displayName: "H.R. Bloodngutz",              icon: 'assets/logos/bloodngutz.png', x: 853, y: 687, realX: 807, realY: 603, sizeMult: 1,    brightness: 1.4 },
+  { id: 'Hellraiser',                                 name: 'Hellraiser',                                 displayName: "Hellraiser",   icon: 'assets/logos/hellraiser.png',                                           x: 899, y: 439, realX: 916, realY: 486, sizeMult: 1.3,  brightness: 1.4 },
+  { id: 'Sinners',                                    name: 'Sinners',                                    displayName: "Sinners",        icon: 'assets/logos/sinners.png',                                            x: 909, y: 510, realX: 916, realY: 507, sizeMult: 1.1,  brightness: 1.4 },
 
 ];
 const MAP_NATIVE_W = 1000;
@@ -29,7 +29,7 @@ const rideById = Object.fromEntries(RIDES.map(r => [r.id, r]));
 
 // Icon-only map markers (no wait times, not in the sidebar or route).
 const SCAREZONES = [
-  { id: 'carnival', name: 'Infernal Carnival of Nightmares', icon: 'assets/logos/carnival.png', x: 220, y: 609, realX: 231, realY: 586, sizeMult: 1, brightness: 1.4 },
+  { id: 'carnival', name: 'Infernal Carnival of Nightmares', icon: 'assets/logos/carnival.png', x: 220, y: 609, realX: 231, realY: 586, sizeMult: 0.9, brightness: 1.4 },
   { id: 'sideshow', name: 'Sideshow of Decay', icon: 'assets/logos/sideshow-of-decay.png', x: 375, y: 609, realX: 347, realY: 622, sizeMult: 1, brightness: 1.4 },
   { id: 'clowntown', name: 'Downtown Clowntown', icon: 'assets/logos/downtown-clowntown.png', x: 400, y: 382, realX: 390, realY: 379, sizeMult: 0.9, brightness: 1.4 },
   { id: 'fortnite', name: 'FORTNITEMARES', icon: 'assets/logos/fortnite.png', x: 516, y: 568, realX: 522, realY: 554, sizeMult: 1, brightness: 1.4 },
@@ -109,9 +109,9 @@ let advancedModeOn = localStorage.getItem(ADVANCED_MODE_KEY) === 'true';
 
 
 const DEFAULT_TIER_ORDER = {
-  1: ['Revenge of the Mummy', 'Harry Potter and the Escape from Gringotts', 'Stranger Things', 'Cybergoria'],
-  2: ['H.R. Bloodngutz', 'Ozzy Osbourne', 'Jack and Oddfellow'],
-  3: ['Sinners', 'Hellraiser', 'INVASION: Alien Abduction', 'Evil Dead Burn', 'MADLANDS: Caged Cannibals'],
+  1: ['Revenge of the Mummy', 'Harry Potter and the Escape from Gringotts', 'Stranger Things', 'Cybergoria', 'Ozzy Osbourne', 'Evil Dead Burn'],
+  2: ['H.R. Bloodngutz', 'Jack and Oddfellow'],
+  3: ['Sinners', 'Hellraiser', 'INVASION: Alien Abduction', 'MADLANDS: Caged Cannibals'],
   4: ['Transformers', 'Men In Black'],
 };
 const TIER_LABELS = ['Most Important', 'Important', 'Less Important', 'Least Important'];
