@@ -1138,16 +1138,16 @@ function renderscarezoneByIdPins() {
     pin.addEventListener('click', e => {
       e.stopPropagation();
       const now = Date.now();
-      if (now - lastPinTapTime < DOUBLE_TAP_MS && lastPinTapRideId === z.id) {
+      if (now - lastPinTapTime < DOUBLE_TAP_MS && lastPinTapRideId === l.id) {
         lastPinTapTime = 0;
         lastPinTapRideId = null;
         hidePopup();
-        toggleWaitBubbles();
+        toggleWaitBubbles('scarezones');
         return;
       }
       lastPinTapTime = now;
-      lastPinTapRideId = z.id;
-      showPopup(z.id, pin);
+      lastPinTapRideId = l.id;
+      showPopup(l.id, pin);
     });
     pinElements.push({ el: pin, rideId: l.id, mx: l.x, my: l.y, sizeMult: l.sizeMult ?? 1 });
     pinLayerEl.appendChild(pin);
@@ -1185,7 +1185,7 @@ function renderRidePins() {
         lastPinTapTime = 0;
         lastPinTapRideId = null;
         hidePopup();
-        toggleWaitBubbles();
+        toggleWaitBubbles('rides');
         return;
       }
       lastPinTapTime = now;
@@ -1201,6 +1201,14 @@ function renderRidePins() {
 function showPopup(rideId, anchorEl) {
   popupState.rideId = rideId;
   popupState.anchorEl = anchorEl;
+  const zone = scarezoneById[rideId];
+  if (zone) {
+    popupEl.textContent = zone.name;
+    popupEl.classList.remove('closed', 'hidden');
+    positionPopup(anchorEl);
+    return;
+  }
+
   const r = rideById[rideId];
   const wait = state.liveWaits[rideId];
   const isOpen = state.liveOpen[rideId];
@@ -1238,7 +1246,8 @@ document.addEventListener('click', e => {
       && !e.target.closest('#bottomBar')
       && !e.target.closest('.edge-toggle')
       && !e.target.closest('.dropdown')) {
-    toggleWaitBubbles();
+    showWaitBubbles = null;
+    renderWaitBubbles();
   }
 });
 
@@ -1268,7 +1277,7 @@ let mapFitWidth = 0;
 const PIN_SIZE = 54 * 0.9 * 1.1;
 
 const waitBubbleLayerEl = document.getElementById('waitBubbleLayer');
-let showWaitBubbles = false;
+let showWaitBubbles = null;   // null | 'rides' | 'scarezones'
 let waitBubbleElements = [];
 let lastWaitChipTapTime = 0; 
 const DOUBLE_TAP_MS = 350;
@@ -1280,6 +1289,7 @@ function renderWaitBubbles() {
   waitBubbleElements = [];
   if (!showWaitBubbles) { return; }
   SCAREZONES.forEach(z => {
+    if (showWaitBubbles !== 'scarezones') return;
     const bubble = document.createElement('div');
     bubble.className = 'wait-bubble';
     bubble.textContent = z.name;
@@ -1287,6 +1297,7 @@ function renderWaitBubbles() {
     waitBubbleElements.push({ el: bubble, rideId: z.id });
   });
   RIDES.forEach(r => {
+    if (showWaitBubbles !== 'rides') return;
     const wait = state.liveWaits[r.id];
     const isOpen = state.liveOpen[r.id];
     if (wait == null && isOpen !== false) return;
@@ -1312,8 +1323,8 @@ function updateBubbleLayout() {
   });
 }
 
-function toggleWaitBubbles() {
-  showWaitBubbles = !showWaitBubbles;
+function toggleWaitBubbles(mode) {
+  showWaitBubbles = (showWaitBubbles === mode) ? null : mode;
   renderWaitBubbles();
 }
 
@@ -1787,7 +1798,7 @@ function renderRouteBar() {
         const now = Date.now();
         if (now - lastWaitChipTapTime < DOUBLE_TAP_MS) {
           lastWaitChipTapTime = 0;
-          toggleWaitBubbles();
+          toggleWaitBubbles('rides');
         } else {
           lastWaitChipTapTime = now;
         }
@@ -2057,7 +2068,10 @@ async function pollStatus() {
     renderSidebarList();
     renderPins();
     if (showWaitBubbles) renderWaitBubbles();
-    if (popupState.rideId) showPopup(popupState.rideId, [...pinLayerEl.children].find(p => p.querySelector('img')?.alt === rideById[popupState.rideId]?.name));
+    if (popupState.rideId) {
+      const item = rideById[popupState.rideId] || scarezoneById[popupState.rideId];
+      showPopup(popupState.rideId, [...pinLayerEl.children].find(p => p.querySelector('img')?.alt === item?.name));
+    }
   } catch (err) {
     // best-effort; app still works with unknown wait times
   }
