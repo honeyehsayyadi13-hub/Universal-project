@@ -1828,6 +1828,9 @@ async function generateRoute(triggerBtn) {
   const btns = [document.getElementById('getRouteBtn'), document.getElementById('generateRouteBtn')];
   btns.forEach(b => { if (b) b.disabled = true; });
 
+  // Always send fresh live waits / open-closed status, never the copy from page load.
+  await pollStatus();
+
   const ride_counts = {};
   RIDES.forEach(r => { if (state.visible[r.id] && state.counts[r.id] > 0) ride_counts[r.id] = state.counts[r.id]; });
 
@@ -1836,7 +1839,7 @@ async function generateRoute(triggerBtn) {
 
   ensureLog();
   persistRideLog();
-  const doneStops = logStops();
+  const doneStops = rideLogVisible ? logStops() : [];
   const doneUids  = new Set(doneStops.map(s => s.uid));
   const completed_counts = {};
   doneStops.forEach(s => { completed_counts[s.rideId] = (completed_counts[s.rideId] || 0) + 1; });

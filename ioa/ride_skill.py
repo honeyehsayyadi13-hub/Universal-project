@@ -20,7 +20,7 @@ def pct(xs):
     return f"{100 * mean(xs):5.1f}%" if xs else "   n/a"
 
 
-def collect():
+def collect(from_date=None, to_date=None, max_days=None):
     key_to_id, id_to_key = ro._load_ride_id_map()
     ids = [i for i in key_to_id.values() if i != ro.ENTRANCE_DB_ID]
     print("Loading history...")
@@ -33,8 +33,12 @@ def collect():
 
     today = datetime.now(ro.PARK_TIMEZONE).date()
     rows = []   # (idx, horizon, db_id, actual, live, new)
-    for idx in range(1, TEST_DAYS + 1):
+    for idx in range(1, (max_days or TEST_DAYS) + 1):
         day = today - timedelta(days=idx)
+        if from_date is not None and day < from_date:
+            continue
+        if to_date is not None and day > to_date:
+            continue
         ro._ctx.bins = {}
         midnight = datetime.combine(day, datetime.min.time())
         prevs = {}

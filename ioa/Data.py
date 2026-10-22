@@ -2,6 +2,7 @@
 import os
 import requests
 from datetime import datetime
+from zoneinfo import ZoneInfo
 import time
 from dotenv import load_dotenv
 
@@ -167,7 +168,7 @@ def get_park_close_time(for_date=None):
     """
     global _park_hours_cache, _park_hours_cache_ts
 
-    target_date = (for_date or datetime.now()).date()
+    target_date = (for_date or datetime.now(ZoneInfo("America/New_York"))).date()
     now = time.time()
 
     if (
@@ -201,6 +202,8 @@ def get_park_close_time(for_date=None):
             continue
         try:
             closing_dt = datetime.fromisoformat(closing_raw)
+            if closing_dt.tzinfo is not None:
+                closing_dt = closing_dt.astimezone(ZoneInfo("America/New_York"))
         except ValueError:
             continue
         _park_hours_cache = {
