@@ -19,8 +19,8 @@ const RIDES = [
   { id: 'Cybergoria',                                 name: 'Cybergoria',                                 displayName: "Cybergoria",     icon: 'assets/logos/cybergoria.png',                                         x: 554, y: 376, realX: 793, realY: 288, sizeMult: 1,    brightness: 1.2 },
   { id: 'INVASION: Alien Abduction',                  name: 'INVASION: Alien Abduction',                  displayName: "INVASION: Alien Abduction",           icon: 'assets/logos/invasion.png',                                      x: 737, y: 612, realX: 587, realY: 152, sizeMult: 1,    brightness: 1.6 },
   { id: 'H.R. Bloodngutz',                            name: "H.R. Bloodngutz",                            displayName: "H.R. Bloodngutz",              icon: 'assets/logos/bloodngutz.png', x: 853, y: 687, realX: 697, realY: 238, sizeMult: 1,    brightness: 1.4 },
-  { id: 'Hellraiser',                                 name: 'Hellraiser',                                 displayName: "Hellraiser",   icon: 'assets/logos/hellraiser.png',                                           x: 912, y: 503, realX: 680, realY: 578, sizeMult: 1.1,  brightness: 1.4 },
-  { id: 'Sinners',                                    name: 'Sinners',                                    displayName: "Sinners",        icon: 'assets/logos/sinners.png',                                            x: 911, y: 448, realX: 587, realY: 603, sizeMult: 1.1,  brightness: 1.4 },
+  { id: 'Hellraiser',                                 name: 'Hellraiser',                                 displayName: "Hellraiser",   icon: 'assets/logos/hellraiser.png',                                           x: 919, y: 444, realX: 680, realY: 578, sizeMult: 1.1,  brightness: 1.4 },
+  { id: 'Sinners',                                    name: 'Sinners',                                    displayName: "Sinners",        icon: 'assets/logos/sinners.png',                                            x: 909, y: 510, realX: 587, realY: 603, sizeMult: 1.1,  brightness: 1.4 },
 
 ];
 const MAP_NATIVE_W = 1000;
