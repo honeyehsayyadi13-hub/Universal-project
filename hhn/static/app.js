@@ -8,8 +8,8 @@ const API_BASE = '';
 // ── ride catalogue (mirrors ride_names / raw_buttons / _ride_image_paths) ──
 const RIDES = [
   { id: 'Revenge of the Mummy',                       name: 'Revenge of the Mummy',                       displayName: "Revenge of the Mummy", icon: 'assets/logos/mummy.png',                                       x: 420, y: 316, realX: 454, realY: 741, sizeMult: 0.8,    brightness: 1 },
-  { id: 'Harry Potter and the Escape from Gringotts', name: 'Harry Potter and the Escape from Gringotts', displayName: "Gringotts",            icon: 'assets/logos/gringotts.png',                                 x: 782, y: 324, realX: 790, realY: 308, sizeMult: 1,    brightness: 2.4 },
-  { id: 'Transformers',                               name: "Transformers",                               displayName: "Transformers",          icon: 'assets/logos/transformers.png',               x: 365, y: 492, realX: 329, realY: 674, sizeMult: 0.8,    brightness: 1.4 },
+  { id: 'Harry Potter and the Escape from Gringotts', name: 'Harry Potter and the Escape from Gringotts', displayName: "Gringotts",            icon: 'assets/logos/gringotts.png',                                 x: 782, y: 324, realX: 790, realY: 308, sizeMult: 0.9,    brightness: 2.4 },
+  { id: 'Transformers',                               name: "Transformers",                               displayName: "Transformers",          icon: 'assets/logos/Transformers.png',               x: 365, y: 492, realX: 329, realY: 674, sizeMult: 0.8,    brightness: 1.4 },
   { id: 'Men In Black',                               name: 'Men In Black',                               displayName: "Men In Black",           icon: 'assets/logos/MIB.png',       x: 924, y: 603, realX: 935, realY: 586, sizeMult: 0.9,    brightness: 1.4 },
   { id: 'Stranger Things',                            name: "Stranger Things",                            displayName: "Stranger Things",     icon: 'assets/logos/stranger-things.png',                                       x: 321, y: 398, realX: 321, realY: 398, sizeMult: 1,    brightness: 1.4 },
   { id: 'Evil Dead Burn',                             name: "Evil Dead Burn",                             displayName: "Evil Dead Burn",         icon: 'assets/logos/Evil-Dead-Burn.png', x: 166, y: 411, realX: 166, realY: 411, sizeMult: 0.7,    brightness: 1.4 },
@@ -29,10 +29,10 @@ const rideById = Object.fromEntries(RIDES.map(r => [r.id, r]));
 
 // Icon-only map markers (no wait times, not in the sidebar or route).
 const SCAREZONES = [
-  { id: 'carnival', name: 'Infernal Carnival of Nightmares', icon: 'assets/logos/carnival.png', x: 220, y: 609, realX: 300, realY: 500, sizeMult: 0.9, brightness: 1.4 },
-  { id: 'sideshow', name: 'Sideshow of Decay', icon: 'assets/logos/sideshow-of-decay.png', x: 375, y: 609, realX: 400, realY: 500, sizeMult: 0.9, brightness: 1.4 },
-  { id: 'clowntown', name: 'Downtown Clowntown', icon: 'assets/logos/downtown-clowntown.png', x: 398, y: 393, realX: 500, realY: 500, sizeMult: 0.9, brightness: 1.4 },
-  { id: 'fortnite', name: 'FORTNITEMARES', icon: 'assets/logos/fortnite.png', x: 515, y: 563, realX: 600, realY: 500, sizeMult: 0.9, brightness: 1.4 },
+  { id: 'carnival', name: 'Infernal Carnival of Nightmares', icon: 'assets/logos/carnival.png', x: 220, y: 609, realX: 300, realY: 500, sizeMult: 1, brightness: 1.4 },
+  { id: 'sideshow', name: 'Sideshow of Decay', icon: 'assets/logos/sideshow-of-decay.png', x: 375, y: 609, realX: 400, realY: 500, sizeMult: 1, brightness: 1.4 },
+  { id: 'clowntown', name: 'Downtown Clowntown', icon: 'assets/logos/downtown-clowntown.png', x: 398, y: 393, realX: 500, realY: 500, sizeMult: 1, brightness: 1.4 },
+  { id: 'fortnite', name: 'FORTNITEMARES', icon: 'assets/logos/fortnite.png', x: 516, y: 568, realX: 522, realY: 554, sizeMult: 1, brightness: 1.4 },
 ];
 const scarezoneById = Object.fromEntries(SCAREZONES.map(l => [l.id, l]));
 
