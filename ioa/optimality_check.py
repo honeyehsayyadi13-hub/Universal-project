@@ -125,6 +125,9 @@ def timing():
                                          closed_ride_keys=["riverAdventure"], **kw)
         dt = time.time() - t0
         joins = [j for _, _, j in out]
+        if "ride_locked" in kw:
+            missing = [k for k in keys if k not in {r for r, _, _ in out}]
+            print("  locked rides missing from the plan:", missing or "none")
         problems = []
         if joins != sorted(joins):
             problems.append("join times not in order")
