@@ -48,9 +48,15 @@ def rides():
     return jsonify(payload)
 
 
+_last_route = {}
+
+
 @app.route("/api/route", methods=["POST"])
 def route():
     payload = request.json or {}
+    _last_route["payload"] = payload
+    _last_route["result_length"] = "still computing (or crashed)"
+    _last_route.pop("error", None)
 
     # Pull today's real Halloween Horror Night's closing time if it's available;
     # compute_and_print_route falls back to 2 PM on its own if this is None.
@@ -74,8 +80,11 @@ def route():
             )
     except Exception as e:
         app.logger.exception("route computation failed")
+        _last_route["error"] = str(e)
         return jsonify({"error": str(e)}), 500
 
+    _last_route["result_length"] = None if result is None else len(result)
+    _last_route["first_stops"] = (result or [])[:3]
     if result is None:
         return jsonify({"error": "Route could not be computed (backend data unreachable)."}), 502
 
@@ -86,6 +95,11 @@ def route():
 def park_hours():
     close = Data.get_park_close_time()
     return jsonify({"close_minutes": close[0] * 60 + close[1] if close else None})
+
+
+@app.route("/api/debug-last")
+def debug_last():
+    return jsonify(_last_route)
 
 
 @app.route("/api/debug")

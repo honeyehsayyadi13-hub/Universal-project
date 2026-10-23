@@ -4,6 +4,14 @@
    ════════════════════════════════════════════════════════════════ */
 
 const API_BASE = '';
+window.addEventListener('error', e => {
+  const p = document.getElementById('routePlaceholder');
+  if (p) { p.textContent = 'JS error: ' + e.message + ' (line ' + e.lineno + ')'; p.style.display = 'block'; }
+});
+window.addEventListener('unhandledrejection', e => {
+  const p = document.getElementById('routePlaceholder');
+  if (p) { p.textContent = 'JS error: ' + ((e.reason && e.reason.message) || e.reason); p.style.display = 'block'; }
+});
 
 // ── ride catalogue (mirrors ride_names / raw_buttons / _ride_image_paths) ──
 const RIDES = [
