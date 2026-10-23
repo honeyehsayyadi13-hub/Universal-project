@@ -2064,7 +2064,9 @@ $('#generateRouteBtn').addEventListener('click', () => generateRoute($('#generat
 
 async function pollStatus() {
   try {
-    const res = await fetch(`${API_BASE}/api/rides`);
+    const res = await fetch(`${API_BASE}/api/rides`, {
+  signal: AbortSignal.timeout(10000)
+});
     if (!res.ok) return;
     const data = await res.json();
     const waits = {}, open = {};
@@ -2213,6 +2215,12 @@ function init() {
 }
 
 init();
+
+setInterval(() => {
+  if (!document.hidden) {
+    pollStatus();
+  }
+}, 10000);
 
 // ═══════ TEMP: PIN DRAG TOOL (delete this whole block when done) ═══════
 (function pinDragTool() {
