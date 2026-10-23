@@ -88,5 +88,46 @@ def park_hours():
     return jsonify({"close_minutes": close[0] * 60 + close[1] if close else None})
 
 
+@app.route("/api/debug")
+def debug():
+    from datetime import datetime
+    import routeOptimizer as ro
+    out = {"new_optimizer_code_loaded": hasattr(ro, "_op_date")}
+    try:
+        now = datetime.now(ro.PARK_TIMEZONE).replace(tzinfo=None)
+        out["park_time_now"] = now.isoformat()
+        close = Data.get_park_close_time()
+        out["park_close"] = close
+        if hasattr(ro, "_op_date"):
+            day0 = datetime.combine(ro._op_date(now), datetime.min.time())
+            out["s0_minutes"] = round((now - day0).total_seconds() / 60)
+        if close:
+            c = close[0] * 60 + close[1]
+            out["closing_minutes_expected"] = c + 1440 if c <= 360 else c
+        key_to_id, _ = ro._load_ride_id_map()
+        live = Data.get_live_wait_times()
+        out["live_not_in_supabase"] = sorted(k for k in live if k not in key_to_id)
+        out["supabase_not_in_live"] = sorted(k for k in key_to_id if k not in live and k != "Entrance")
+        out["walk_rows"] = len(ro._load_walk_times())
+        out["durations_rows"] = len(ro._load_ride_durations())
+        ids = [i for k, i in key_to_id.items() if k != "Entrance"]
+        hist = ro._load_wait_history(ids)
+        out["history_samples_per_ride_id"] = {str(i): len(hist.get(i, [])) for i in ids}
+        counts = {k: 1 for k in key_to_id if k != "Entrance"}
+        res = ro.compute_and_print_route(
+            counts,
+            live_waits={k: v["waittime"] for k, v in live.items()},
+            close_hour=close[0] if close else None,
+            close_minute=close[1] if close else None,
+        )
+        out["route_result_length"] = None if res is None else len(res)
+        out["route_first_stops"] = (res or [])[:3]
+    except Exception as e:
+        import traceback
+        out["error"] = repr(e)
+        out["traceback"] = traceback.format_exc()[-1500:]
+    return jsonify(out)
+
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
