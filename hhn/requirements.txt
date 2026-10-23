@@ -4,3 +4,4 @@ requests
 supabase
 beautifulsoup4
 python-dotenv
+httpcore==1.0.9
