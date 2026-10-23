@@ -23,7 +23,7 @@ RIDE_NAME_MAP = {
     "MADLANDS: Caged Cannibals":                   "MADLANDS: Caged Cannibals",
     "Cybergoria":         "Cybergoria",
     "INVASION: Alien Abduction":          "INVASION: Alien Abduction",
-    "H.R. Bloodengutz Presents: A Halloween Fright-Tacular!":                       "H.R. Bloodngutz",
+    "H.R. Bloodengutz Presents: A Halloween Fright-Tacular!":                       "H.R. Bloodengutz",
     "Hellraiser": "Hellraiser",
     "Sinners":  "Sinners",
  

@@ -18,7 +18,7 @@ const RIDES = [
   { id: 'MADLANDS: Caged Cannibals',                  name: 'MADLANDS: Caged Cannibals',                  displayName: "MADLANDS: Caged Cannibals",      icon: 'assets/logos/MADLANDS.png',                                    x: 133, y: 360, realX: 243, realY: 411, sizeMult: 1,    brightness: 5 },
   { id: 'Cybergoria',                                 name: 'Cybergoria',                                 displayName: "Cybergoria",     icon: 'assets/logos/cybergoria.png',                                         x: 554, y: 376, realX: 547, realY: 386, sizeMult: 1,    brightness: 5},
   { id: 'INVASION: Alien Abduction',                  name: 'INVASION: Alien Abduction',                  displayName: "INVASION: Alien Abduction",           icon: 'assets/logos/invasion.png',                                      x: 737, y: 612, realX: 741, realY: 591, sizeMult: 1,    brightness: 5 },
-  { id: 'H.R. Bloodngutz',                            name: "H.R. Bloodngutz",                            displayName: "H.R. Bloodngutz",              icon: 'assets/logos/bloodngutz.png', x: 853, y: 687, realX: 807, realY: 603, sizeMult: 1,    brightness: 1.4 },
+  { id: 'H.R. Bloodengutz',                            name: "H.R. Bloodengutz",                            displayName: "H.R. Bloodengutz",              icon: 'assets/logos/bloodngutz.png', x: 853, y: 687, realX: 807, realY: 603, sizeMult: 1,    brightness: 1.4 },
   { id: 'Hellraiser',                                 name: 'Hellraiser',                                 displayName: "Hellraiser",   icon: 'assets/logos/hellraiser.png',                                           x: 899, y: 439, realX: 916, realY: 486, sizeMult: 1.3,  brightness: 1.4 },
   { id: 'Sinners',                                    name: 'Sinners',                                    displayName: "Sinners",        icon: 'assets/logos/sinners.png',                                            x: 909, y: 510, realX: 916, realY: 507, sizeMult: 1.1,  brightness: 1.4 },
 
@@ -110,7 +110,7 @@ let advancedModeOn = localStorage.getItem(ADVANCED_MODE_KEY) === 'true';
 
 const DEFAULT_TIER_ORDER = {
   1: ['Revenge of the Mummy', 'Harry Potter and the Escape from Gringotts', 'Stranger Things', 'Cybergoria', 'Ozzy Osbourne', 'Evil Dead Burn'],
-  2: ['H.R. Bloodngutz', 'Jack and Oddfellow'],
+  2: ['H.R. Bloodengutz', 'Jack and Oddfellow'],
   3: ['Sinners', 'Hellraiser', 'INVASION: Alien Abduction', 'MADLANDS: Caged Cannibals'],
   4: ['Transformers', 'Men In Black'],
 };
@@ -270,7 +270,7 @@ const startOptions = [{ id: 'entrance', label: 'Entrance' },
 const RIDE_LOG_KEY = 'hhn.rideLog';
 const LOG_VISIBLE_KEY = 'urp.logVisible';
 const PARK_TZ = 'America/New_York';
-let parkCloseMinutes = 20 * 60;    // fallback until /api/park-hours answers
+let parkCloseMinutes = 26 * 60;    // fallback until /api/park-hours answers
 
 function parkNow() {
   const parts = new Intl.DateTimeFormat('en-US', {
@@ -278,9 +278,12 @@ function parkNow() {
     hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
   }).formatToParts(new Date());
   const get = t => parts.find(p => p.type === t).value;
+  const rawMin = parseInt(get('hour'), 10) * 60 + parseInt(get('minute'), 10);
+  const afterMidnight = rawMin < 6 * 60;   // still last night's operating day
+  const d = new Date(Date.UTC(+get('year'), +get('month') - 1, +get('day') - (afterMidnight ? 1 : 0)));
   return {
-    day: `${get('year')}-${get('month')}-${get('day')}`,
-    minutes: parseInt(get('hour'), 10) * 60 + parseInt(get('minute'), 10),
+    day: d.toISOString().slice(0, 10),
+    minutes: afterMidnight ? rawMin + 1440 : rawMin,
   };
 }
 
@@ -289,7 +292,7 @@ async function fetchParkClose() {
     const res = await fetch(`${API_BASE}/api/park-hours`);
     if (!res.ok) return;
     const d = await res.json();
-    if (typeof d.close_minutes === 'number') parkCloseMinutes = d.close_minutes;
+    if (typeof d.close_minutes === 'number') parkCloseMinutes = d.close_minutes < 720 ? d.close_minutes + 1440 : d.close_minutes;
   } catch (e) { /* keep fallback */ }
 }
 
@@ -677,10 +680,11 @@ function parseTimeInput(text) {
 }
 
 function toAmPm(hour, minute) {
-  let period, hour24;
-  if ([9, 10, 11].includes(hour)) { period = 'AM'; hour24 = hour; }
-  else { period = 'PM'; hour24 = hour === 12 ? 12 : hour + 12; }
-  const totalMinutes = hour24 * 60 + minute;
+  // HHN runs ~6 PM to 2 AM: 12 = midnight hour, 1-2 = AM after midnight, 3-11 = PM
+  let period, totalMinutes;
+  if (hour === 12)    { period = 'AM'; totalMinutes = 1440 + minute; }
+  else if (hour <= 2) { period = 'AM'; totalMinutes = 1440 + hour * 60 + minute; }
+  else                { period = 'PM'; totalMinutes = (hour + 12) * 60 + minute; }
   const label = `${hour}:${String(minute).padStart(2, '0')} ${period}`;
   return { totalMinutes, label };
 }
