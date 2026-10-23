@@ -98,7 +98,7 @@ TIME_KERNEL_BANDWIDTH_MIN = 45   # width of the time-of-day matching window
 SAME_DAY_WEIGHT = 1.0            # weight boost for samples on the same weekday
 WEEKEND_GROUP_WEIGHT = 0.6       # weight when both days are weekend (or both weekday)
 DIFF_DAY_WEIGHT = 0.35           # weight for a weekday-vs-weekend mismatch
-WEEKEND_DAYS = {4, 5}            # Saturday, Sunday (Monday == 0)
+WEEKEND_DAYS = {4, 5}            # Friday, Saturday (Monday == 0)
 RECENCY_HALF_LIFE_DAYS = 45      # historical samples lose half their weight every 45 days
 ANCHOR_MODE = "ratio"            # "ratio" or "add" -- how the live reading shifts the historical curve
 ANCHOR_DECAY_HOURS = 3.0         # how many hours out we keep trusting today's live reading
@@ -110,7 +110,7 @@ DEFAULT_WALK_MIN = 10            # fallback if a ride pair has no walk_times row
 DEFAULT_RIDE_DURATION_MIN = 3    # fallback if a ride has no ride_duration row
 BRUTE_FORCE_LIMIT = 7            # exact solve (permutations) up to this many stops
 MAX_2OPT_PASSES = 3              # cap full 2-opt sweeps for larger stop lists
-DEFAULT_PARK_CLOSE_HOUR = 2     # 8:00 PM -- fallback used only when live park hours can't be fetched
+DEFAULT_PARK_CLOSE_HOUR = 2     # 2:00 AM -- fallback used only when live park hours can't be fetched
 DEFAULT_PARK_CLOSE_MINUTE = 0
 HISTORY_WINDOW_DAYS = 150        # only learn from the most recent ~5 months of readings
 HISTORY_PAGE_SIZE = 1000         # Supabase returns at most 1000 rows per request
@@ -324,7 +324,7 @@ def _get_bins(history_for_ride, target_time):
     bw = [0.0] * _NBINS
     bws = [0.0] * _NBINS
     for ts, wait in history_for_ride:
-        ts_wd = _op_date(ts).weekday()
+        ts_wd = (ts.weekday() - 1) % 7 if ts.hour < OPERATING_DAY_START_HOUR else ts.weekday()
         if ts_wd == target_weekday:
             day_weight = SAME_DAY_WEIGHT
         elif (ts_wd in WEEKEND_DAYS) == target_is_weekend:
@@ -617,10 +617,10 @@ def _make_problem(checked, key_to_id, ride_locked, completed_counts, max_counts,
             t = float(t)
         except (TypeError, ValueError):
             continue
-        if t == 0:
+        if t == -1:
             if first_key is None:
                 first_key = key
-        elif t == 1440:
+        elif t == -2:
             if last_key is None:
                 last_key = key
         else:
@@ -1090,7 +1090,7 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
     if closing_min <= OPERATING_DAY_START_HOUR * 60:
         closing_min += 1440          # an after-midnight close (2 AM) = minute 1560 of the operating day
 
-    s0 = start_time.hour * 60 + start_time.minute + start_time.second / 60.0
+
     s0 = (start_time - datetime.combine(_op_date(start_time), datetime.min.time())).total_seconds() / 60.0
     earliest_min = {
         key_to_id[k]: s0 + FORCE_OPEN_BUFFER_MIN

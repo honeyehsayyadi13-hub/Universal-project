@@ -33,6 +33,7 @@ const RIDES = [
 ];
 const MAP_NATIVE_W = 1000;
 const MAP_NATIVE_H = 800;
+const PIN_FIRST = -1, PIN_LAST = -2;
 const rideById = Object.fromEntries(RIDES.map(r => [r.id, r]));
 
 // Icon-only map markers (no wait times, not in the sidebar or route).
@@ -240,8 +241,8 @@ function executeDrop(srcIdx, destIdx) {
   const isFirst = destIdx === first;
   const isLast  = destIdx === state.route.length - 1;
   const targetStop = state.route[destIdx];
-  const targetMinutes = isFirst ? 0
-                      : isLast  ? 1440
+  const targetMinutes = isFirst ? PIN_FIRST
+                      : isLast  ? PIN_LAST
                       : (targetStop?.queueJoinMinutes ?? null);
 
   const moved = state.route.splice(srcIdx, 1)[0];
@@ -256,8 +257,8 @@ function executeDrop(srcIdx, destIdx) {
 
   state.timePinned[moved.uid] = { rideId: moved.rideId, targetMinutes };
 
-  if (isFirst) clearConflictingSentinelPins(0, moved.uid);
-  if (isLast)  clearConflictingSentinelPins(1440, moved.uid);
+  if (isFirst) clearConflictingSentinelPins(PIN_FIRST, moved.uid);
+  if (isLast)  clearConflictingSentinelPins(PIN_LAST, moved.uid);
 
   if (!state.locked[moved.rideId]) {
     state.locked[moved.rideId] = true;
@@ -276,7 +277,7 @@ const startOptions = [{ id: 'entrance', label: 'Entrance' },
 // ── presets (persisted in localStorage) ────────────────────────
 // ── park clock + daily ride log (separate from the sidebar presets) ──
 const RIDE_LOG_KEY = 'hhn.rideLog';
-const LOG_VISIBLE_KEY = 'urp.logVisible';
+const LOG_VISIBLE_KEY = 'hhn.logVisible';
 const PARK_TZ = 'America/New_York';
 let parkCloseMinutes = 26 * 60;    // fallback until /api/park-hours answers
 
@@ -1781,10 +1782,10 @@ function renderRouteBar() {
           const isLast  = i === state.route.length - 1;
           state.timePinned[stop.uid] = {
             rideId: stop.rideId,
-            targetMinutes: isFirst ? 0 : isLast ? 1440 : (stop.queueJoinMinutes ?? null),
+            targetMinutes: isFirst ? PIN_FIRST : isLast ? PIN_LAST : (stop.queueJoinMinutes ?? null),
           };
-          if (isFirst) clearConflictingSentinelPins(0, stop.uid);
-          if (isLast)  clearConflictingSentinelPins(1440, stop.uid);
+          if (isFirst) clearConflictingSentinelPins(PIN_FIRST, stop.uid);
+          if (isLast)  clearConflictingSentinelPins(PIN_LAST, stop.uid);
           if (!state.locked[stop.rideId]) {
             state.locked[stop.rideId] = true;
             state.pinnedLocked[stop.rideId] = true;
@@ -1903,6 +1904,8 @@ async function generateRoute(triggerBtn) {
   const btns = [document.getElementById('getRouteBtn'), document.getElementById('generateRouteBtn')];
   btns.forEach(b => { if (b) b.disabled = true; });
 
+  await pollStatus();
+
   const ride_counts = {};
   RIDES.forEach(r => { if (state.visible[r.id] && state.counts[r.id] > 0) ride_counts[r.id] = state.counts[r.id]; });
 
@@ -1911,7 +1914,7 @@ async function generateRoute(triggerBtn) {
 
   ensureLog();
   persistRideLog();
-  const doneStops = logStops();
+  const doneStops = rideLogVisible ? logStops() : [];
   const doneUids  = new Set(doneStops.map(s => s.uid));
   const completed_counts = {};
   doneStops.forEach(s => { completed_counts[s.rideId] = (completed_counts[s.rideId] || 0) + 1; });
@@ -2001,9 +2004,9 @@ async function generateRoute(triggerBtn) {
 
     oldPins.forEach(pin => {
       let stop = null;
-      if (pin.targetMinutes === 0) {
+      if (pin.targetMinutes === PIN_FIRST) {
         stop = claimStop(0);
-      } else if (pin.targetMinutes === 1440) {
+      } else if (pin.targetMinutes === PIN_LAST) {
         stop = claimStop(state.route.length - 1);
       } else if (pin.targetMinutes !== null) {
         let bestIdx = -1, bestDist = Infinity;
