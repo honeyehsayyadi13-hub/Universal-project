@@ -237,7 +237,8 @@ def _load_wait_history(db_ids):
 def warm_history_cache():
     """Preload wait history for every ride so the first real request is fast."""
     key_to_id, _ = _load_ride_id_map()
-    _load_wait_history([i for i in key_to_id.values() if i != ENTRANCE_DB_ID])
+    _entrance = key_to_id.get("Entrance", ENTRANCE_DB_ID)
+    _load_wait_history([i for i in key_to_id.values() if i != _entrance])
 
 
 def _load_walk_times():
@@ -1053,7 +1054,8 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
         except Exception:
             park_ratio = None
 
-    start_db_id = ENTRANCE_DB_ID if start_key == "entrance" else key_to_id.get(start_key, ENTRANCE_DB_ID)
+    entrance_id = key_to_id.get("Entrance", ENTRANCE_DB_ID)
+    start_db_id = entrance_id if start_key == "entrance" else key_to_id.get(start_key, entrance_id)
 
     close_hour = close_hour if close_hour is not None else DEFAULT_PARK_CLOSE_HOUR
     close_minute = close_minute if close_minute is not None else DEFAULT_PARK_CLOSE_MINUTE
