@@ -1,6 +1,6 @@
 # server.py
 import threading
-
+import time
 from flask import Flask, jsonify, request, send_from_directory
 
 import Data
@@ -14,13 +14,17 @@ app = Flask(__name__, static_folder="static", static_url_path="")
 # with a 30 s cache -- the thread is only a backstop, not the live feed.
 threading.Thread(target=Data.update_backend, daemon=True).start()
 
-
 def _warm():
-    try:
-        warm_history_cache()
-        print("history warm-up finished", flush=True)
-    except Exception:
-        app.logger.exception("history warm-up failed")
+    first = True
+    while True:
+        try:
+            warm_history_cache()
+            if first:
+                print("history warm-up finished", flush=True)
+                first = False
+        except Exception:
+            app.logger.exception("history warm-up failed")
+        time.sleep(30)
 
 
 threading.Thread(target=_warm, daemon=True).start()
@@ -99,7 +103,8 @@ def park_hours():
 
 @app.route("/api/debug-last")
 def debug_last():
-    return jsonify(_last_route)
+    import routeOptimizer as ro
+    return jsonify({**_last_route, "timing": ro.last_timing})
 
 
 @app.route("/api/debug")

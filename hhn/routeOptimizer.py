@@ -157,7 +157,25 @@ def _priority_fill_weights(ride_priority_order, checked_keys):
 
 
 # ── data loading ─────────────────────────────────────────────────────
+_static_cache = {}
+STATIC_TTL_SEC = 600      # walk times / ride list / durations are re-read every 10 min
+last_timing = {}          # filled in by each route request (see /api/debug-last)
+
+
+def _cached(name, fn):
+    hit = _static_cache.get(name)
+    if hit and time.time() - hit[0] < STATIC_TTL_SEC:
+        return hit[1]
+    val = fn()
+    _static_cache[name] = (time.time(), val)
+    return val
+
+
 def _load_ride_id_map():
+    return _cached("ride_map", _load_ride_id_map_uncached)
+
+
+def _load_ride_id_map_uncached():
     """Return (key_to_id, id_to_key) using the short keys in `rides.name`."""
     resp = _get_client().table("rides").select("id, name").execute()
     key_to_id, id_to_key = {}, {}
@@ -242,6 +260,10 @@ def warm_history_cache():
 
 
 def _load_walk_times():
+    return _cached("walk", _load_walk_times_uncached)
+
+
+def _load_walk_times_uncached():
     """Return {(start_db_id, end_db_id): minutes}."""
     resp = (
         _get_client()
@@ -259,6 +281,10 @@ def _load_walk_times():
 
 
 def _load_ride_durations():
+    return _cached("durations", _load_ride_durations_uncached)
+
+
+def _load_ride_durations_uncached():
     """Return {db_id: duration_minutes} from the `ride_duration` table."""
     resp = _get_client().table("ride_duration").select("id, duration").execute()
     return {row["id"]: row["duration"] for row in resp.data}
@@ -952,6 +978,7 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
         List of (ride_key, predicted_wait, queue_join_minutes) tuples.
         [] if nothing fits, None if computation failed entirely.
     """
+    _t_start = time.time()
     ride_locked = dict(ride_locked or {})
     completed_counts = dict(completed_counts or {})
 
@@ -1080,5 +1107,10 @@ def compute_and_print_route(ride_counts, ride_locked=None, closed_ride_keys=None
                        start_db_id, current_waits, historical_now_by_id, earliest_min, park_ratio)
     prob.lam = _estimate_lambda(prob, planner)
 
+    _t_plan = time.time()
+    last_timing["load_s"] = round(_t_plan - _t_start, 2)
     seq = _plan(prob, planner)
+    last_timing["plan_s"] = round(time.time() - _t_plan, 2)
+    last_timing["total_s"] = round(time.time() - _t_start, 2)
+    last_timing["stops"] = len(seq)
     return _build_output(prob, planner, seq)
